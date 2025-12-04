@@ -191,24 +191,36 @@
                 document.getElementById('total-points').textContent = `Összes pont: ${points.length}`;
                 document.getElementById('avg-rqi').textContent = `Átlagos RQI: ${avgRqi}`;
                 
-                // Pontok csoportosítása szomszédos pontok szerint (út szakaszok)
-                const segments = createSegments(points);
-                
-                // Út szakaszok rajzolása
-                segments.forEach(segment => {
-                    if (segment.points.length < 2) return;
+                // Pont-pont alapú színezés: minden két szomszédos pont között egy vonal
+                // A szín a két pont közül a rosszabbik (magasabb) RQI-ját tükrözi
+                for (let i = 0; i < points.length - 1; i++) {
+                    const point1 = points[i];
+                    const point2 = points[i + 1];
                     
-                    const path = segment.points.map(p => ({
-                        lat: p.latitude,
-                        lng: p.longitude
-                    }));
+                    // Számítsuk ki a távolságot
+                    const distance = calculateDistance(
+                        point1.latitude,
+                        point1.longitude,
+                        point2.latitude,
+                        point2.longitude
+                    );
                     
-                    const avgRqi = segment.avgRqi;
-                    const color = getRqiColor(avgRqi);
-                    const opacity = getRqiOpacity(avgRqi);
+                    // Csak akkor rajzolunk vonalat, ha a pontok közel vannak (< 50m)
+                    if (distance > 50) continue;
+                    
+                    // A rosszabbik (magasabb) RQI-t használjuk a színhez
+                    const rqi1 = point1.rqi_score || 3; // Default közepes, ha nincs RQI
+                    const rqi2 = point2.rqi_score || 3;
+                    const worstRqi = Math.max(rqi1, rqi2);
+                    
+                    const color = getRqiColor(worstRqi);
+                    const opacity = getRqiOpacity(worstRqi);
                     
                     const polyline = new google.maps.Polyline({
-                        path: path,
+                        path: [
+                            { lat: point1.latitude, lng: point1.longitude },
+                            { lat: point2.latitude, lng: point2.longitude }
+                        ],
                         geodesic: true,
                         strokeColor: color,
                         strokeOpacity: opacity,
@@ -217,7 +229,7 @@
                     });
                     
                     polylines.push(polyline);
-                });
+                }
                 
                 // Markerek hozzáadása (opcionális, csak első és utolsó pont)
                 if (points.length > 0) {
@@ -259,55 +271,8 @@
             }
         }
         
-        // Pontok csoportosítása út szakaszokká
-        function createSegments(points) {
-            if (points.length === 0) return [];
-            
-            const segments = [];
-            let currentSegment = {
-                points: [points[0]],
-                avgRqi: points[0].rqi_score || null
-            };
-            
-            for (let i = 1; i < points.length; i++) {
-                const prevPoint = points[i - 1];
-                const currentPoint = points[i];
-                
-                // Számítsuk ki a távolságot
-                const distance = calculateDistance(
-                    prevPoint.latitude,
-                    prevPoint.longitude,
-                    currentPoint.latitude,
-                    currentPoint.longitude
-                );
-                
-                // Ha a pontok közel vannak egymáshoz (< 50m), ugyanahhoz a szegmenshez tartoznak
-                if (distance < 50) {
-                    currentSegment.points.push(currentPoint);
-                    // Frissítsük az átlagos RQI-t
-                    const rqiScores = currentSegment.points
-                        .map(p => p.rqi_score)
-                        .filter(rqi => rqi !== null);
-                    if (rqiScores.length > 0) {
-                        currentSegment.avgRqi = rqiScores.reduce((sum, rqi) => sum + rqi, 0) / rqiScores.length;
-                    }
-                } else {
-                    // Új szegmens kezdése
-                    segments.push(currentSegment);
-                    currentSegment = {
-                        points: [currentPoint],
-                        avgRqi: currentPoint.rqi_score || null
-                    };
-                }
-            }
-            
-            // Utolsó szegmens hozzáadása
-            if (currentSegment.points.length > 0) {
-                segments.push(currentSegment);
-            }
-            
-            return segments;
-        }
+        // Pont-pont alapú színezés: nincs szükség szegmensekre,
+        // minden két szomszédos pont között külön vonalat rajzolunk
         
         // Távolság számítás (Haversine formula)
         function calculateDistance(lat1, lon1, lat2, lon2) {
