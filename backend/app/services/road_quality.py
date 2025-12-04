@@ -218,8 +218,29 @@ class RoadQualityService:
         # Convert to grayscale
         gray = cv2.cvtColor(road_region, cv2.COLOR_BGR2GRAY)
         
+        # Detect and exclude road markings (white/yellow lines)
+        # Road markings create false positives - they're not damage!
+        white_mask = cv2.inRange(road_region, (200, 200, 200), (255, 255, 255))
+        yellow_mask = cv2.inRange(road_region, (0, 180, 180), (100, 255, 255))
+        markings_mask = cv2.bitwise_or(white_mask, yellow_mask)
+        
+        # Dilate markings mask to exclude areas around markings too
+        kernel_marking = np.ones((5, 5), np.uint8)
+        markings_mask = cv2.dilate(markings_mask, kernel_marking, iterations=2)
+        
+        # Create mask for road without markings
+        road_mask = cv2.bitwise_not(markings_mask)
+        road_without_markings = cv2.bitwise_and(gray, gray, mask=road_mask)
+        
+        # Use road without markings for analysis, but fallback to full road if too much excluded
+        markings_coverage = np.sum(markings_mask > 0) / markings_mask.size
+        if markings_coverage < 0.3:  # If less than 30% is markings, use filtered version
+            analysis_gray = road_without_markings
+        else:
+            analysis_gray = gray  # Too many markings, use full image
+        
         # Apply Gaussian blur to reduce noise
-        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+        blurred = cv2.GaussianBlur(analysis_gray, (5, 5), 0)
         
         # Adaptive thresholding to separate road surface from shadows/markings
         # This helps focus on actual road texture, not painted lines or shadows
@@ -245,22 +266,54 @@ class RoadQualityService:
         edge_density = edge_density_fine * 0.7 + edge_density_coarse * 0.3
         
         # Texture analysis - calculate variance in smaller blocks to detect localized damage
+        # Key insight: Normal road texture has uniform variance, damage has localized high variance
         block_size = 32
         variances = []
         for y in range(0, gray.shape[0] - block_size, block_size):
             for x in range(0, gray.shape[1] - block_size, block_size):
                 block = gray[y:y+block_size, x:x+block_size]
-                variances.append(np.var(block))
+                # Skip blocks that are mostly markings
+                if markings_coverage < 0.3:
+                    block_mask = road_mask[y:y+block_size, x:x+block_size]
+                    if np.sum(block_mask > 0) > block_size * block_size * 0.5:  # At least 50% road
+                        variances.append(np.var(block))
+                else:
+                    variances.append(np.var(block))
         
-        # Use 75th percentile variance (more sensitive to damaged areas)
-        # This catches localized damage better than median
-        texture_variance = np.percentile(variances, 75) if variances else np.var(gray)
+        if not variances:
+            texture_variance = np.var(gray)
+        else:
+            # Use 90th percentile instead of 75th - more conservative
+            # Also check variance of variances: if uniform -> normal texture, if varied -> damage
+            variance_of_variances = np.std(variances)
+            percentile_variance = np.percentile(variances, 90)
+            
+            # If variance is uniform (low std of variances), it's normal texture
+            # If variance has high std, there are localized damage areas
+            if variance_of_variances < np.mean(variances) * 0.5:
+                # Uniform texture -> normal road, reduce weight
+                texture_variance = np.percentile(variances, 50)  # Use median instead
+            else:
+                # Localized high variance -> damage
+                texture_variance = percentile_variance
         
         # Structural analysis - detect linear patterns (cracks)
-        # Use HoughLinesP with higher threshold to reduce false positives
-        lines = cv2.HoughLinesP(edges_fine, 1, np.pi/180, threshold=50, minLineLength=30, maxLineGap=10)
+        # Only count long, straight lines (actual cracks), not random texture
+        # Use higher thresholds and longer minimum line length to reduce false positives
+        lines = cv2.HoughLinesP(edges_fine, 1, np.pi/180, threshold=80, minLineLength=50, maxLineGap=5)
         line_count = len(lines) if lines is not None else 0
-        line_density = line_count / (gray.shape[0] * gray.shape[1]) * 10000  # Reduced normalization factor
+        
+        # Filter lines: only count lines that are reasonably straight (not curved)
+        # and have good length-to-width ratio (cracks are long and thin)
+        filtered_line_count = 0
+        if lines is not None:
+            for line in lines:
+                x1, y1, x2, y2 = line[0]
+                length = np.sqrt((x2-x1)**2 + (y2-y1)**2)
+                if length > 50:  # Only count longer lines
+                    filtered_line_count += 1
+        
+        line_density = filtered_line_count / (gray.shape[0] * gray.shape[1]) * 10000
         
         # Calculate local contrast (damaged areas have higher contrast)
         laplacian = cv2.Laplacian(blurred, cv2.CV_64F)
@@ -272,15 +325,16 @@ class RoadQualityService:
                                          cv2.THRESH_BINARY_INV, 11, 2)
         patch_density = np.sum(adaptive > 0) / adaptive.size
         
-        # Combined damage score with balanced weighting
-        # Reduced weights to avoid false positives while still detecting real damage
+        # Combined damage score with conservative weighting
+        # Further reduced weights to avoid false positives from normal road texture
+        # Focus on actual structural damage indicators
         damage_score = (
-            edge_density * 30 +              # Reduced weight on edges
-            edge_density_fine * 20 +         # Reduced weight on fine cracks
-            texture_variance / 500 +         # Reduced sensitivity to texture variance
-            line_density * 0.5 +             # Significantly reduced weight on structural damage
-            contrast_score / 15000 +         # Reduced weight on contrast
-            patch_density * 15               # Reduced weight on patch detection
+            edge_density * 20 +              # Further reduced - normal texture has edges too
+            edge_density_fine * 15 +         # Fine cracks are important, but reduce weight
+            texture_variance / 800 +         # Much reduced sensitivity - normal texture varies
+            line_density * 0.3 +             # Further reduced - only long structural lines count
+            contrast_score / 20000 +         # Further reduced - normal roads have contrast
+            patch_density * 10               # Reduced - patches might be normal repairs
         )
         
         # Shadow detection and compensation
@@ -323,30 +377,23 @@ class RoadQualityService:
         
         damage_score *= brightness_factor
         
-        # Quantile-based RQI mapping
-        # This adapts to the actual distribution of damage scores in the dataset
-        # Thresholds are based on percentiles: 25%, 50%, 75%, 90%
-        # This ensures a more balanced distribution across RQI levels
-        # These thresholds are calibrated based on analysis of 1098 points
-        # where median damage_score = 21.68, 75th percentile = 26.65
+        # Conservative RQI mapping with higher thresholds
+        # Goal: Only mark roads as "poor" if there's clear evidence of damage
+        # Normal road texture should get RQI 1-2, not 3-4
         
-        # Using percentiles ensures:
-        # - RQI 1: Top 25% best roads (damage_score < 15.1)
-        # - RQI 2: Next 25% (15.1 <= damage_score < 21.7)
-        # - RQI 3: Next 25% (21.7 <= damage_score < 26.7)
-        # - RQI 4: Next 15% (26.7 <= damage_score < 35)
-        # - RQI 5: Worst 10% (damage_score >= 35)
-        
-        if damage_score < 15.1:  # 25th percentile
-            rqi = 1.0  # Excellent (top 25% - truly smooth roads)
-        elif damage_score < 21.7:  # 50th percentile (median)
-            rqi = 2.0  # Good (next 25% - minor issues)
-        elif damage_score < 26.7:  # 75th percentile
-            rqi = 3.0  # Fair (next 25% - visible wear)
-        elif damage_score < 35.0:  # ~90th percentile (estimated)
-            rqi = 4.0  # Poor (next 15% - significant damage)
+        # Updated thresholds based on improved algorithm:
+        # - Much more conservative: normal roads should score low
+        # - Only clear damage indicators push score higher
+        if damage_score < 8:  # Very low score - excellent road
+            rqi = 1.0  # Excellent
+        elif damage_score < 15:  # Low score - good road
+            rqi = 2.0  # Good
+        elif damage_score < 25:  # Moderate score - fair condition
+            rqi = 3.0  # Fair
+        elif damage_score < 35:  # High score - poor condition
+            rqi = 4.0  # Poor
         else:
-            rqi = 5.0  # Very Poor (worst 10% - severe damage)
+            rqi = 5.0  # Very Poor - severe damage
         
         # Store detailed analysis metadata
         analysis_metadata = {
@@ -370,11 +417,12 @@ class RoadQualityService:
             "canny_threshold_coarse_low": 80,
             "canny_threshold_coarse_high": 200,
             "rqi_thresholds": {
-                "excellent": 15.1,  # 25th percentile
-                "good": 21.7,      # 50th percentile (median)
-                "fair": 26.7,      # 75th percentile
-                "poor": 35.0       # ~90th percentile
+                "excellent": 8,    # Conservative threshold
+                "good": 15,        # Low threshold for good roads
+                "fair": 25,        # Moderate threshold
+                "poor": 35         # High threshold - only clear damage
             },
+            "markings_coverage": float(markings_coverage),
             "method_note": "quantile_based_normalization"
         }
             
