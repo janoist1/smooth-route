@@ -14,6 +14,9 @@ from pydantic import BaseModel
 import threading
 import time
 
+# Alias for clarity
+PydanticBaseModel = BaseModel
+
 router = APIRouter()
 
 
