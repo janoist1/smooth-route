@@ -31,12 +31,74 @@ class PointResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class PointDetailResponse(BaseModel):
+    id: int
+    latitude: float
+    longitude: float
+    heading: float
+    pitch: Optional[float]
+    rqi_score: Optional[float]
+    damage_count: int
+    damage_types: Optional[dict]
+    image_url: Optional[str]
+    image_path: Optional[str]  # Relative path for serving
+    created_at: str
+    
+    class Config:
+        from_attributes = True
+
 @router.get("/api/v1/config")
 async def get_config():
     """Get frontend configuration (Google Maps API key)."""
     return {
         "google_maps_api_key": settings.GOOGLE_MAPS_API_KEY or ""
     }
+
+@router.get("/api/v1/points/{point_id}", response_model=PointDetailResponse)
+async def get_point_detail(point_id: int, db: Session = Depends(get_db)):
+    """Get detailed information about a specific point."""
+    import os
+    
+    point = db.query(StreetViewImage).filter(StreetViewImage.id == point_id).first()
+    if not point:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Point not found")
+    
+    # Convert image path to relative URL if it's a local file
+    image_path = None
+    if point.image_url:
+        if point.image_url.startswith('/Users/') or point.image_url.startswith('/home/') or '/data/images/' in point.image_url:
+            # Extract filename
+            if '/data/images/' in point.image_url:
+                filename = point.image_url.split('/data/images/')[-1]
+                image_path = f"/api/v1/images/{filename}"
+            elif os.path.exists(point.image_url):
+                # Try to find relative path
+                data_dir = settings.DATA_DIR
+                if not os.path.isabs(data_dir):
+                    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                    project_root = os.path.dirname(backend_dir)
+                    data_dir = os.path.join(project_root, data_dir)
+                images_dir = os.path.join(data_dir, "images")
+                if point.image_url.startswith(images_dir):
+                    filename = os.path.basename(point.image_url)
+                    image_path = f"/api/v1/images/{filename}"
+        elif point.image_url.startswith('http'):
+            image_path = point.image_url
+    
+    return PointDetailResponse(
+        id=point.id,
+        latitude=point.latitude,
+        longitude=point.longitude,
+        heading=point.heading,
+        pitch=point.pitch,
+        rqi_score=point.rqi_score,
+        damage_count=point.damage_count or 0,
+        damage_types=point.damage_types,
+        image_url=point.image_url,
+        image_path=image_path,
+        created_at=point.created_at.isoformat() if point.created_at else ""
+    )
 
 @router.get("/api/v1/points", response_model=List[PointResponse])
 async def get_points(

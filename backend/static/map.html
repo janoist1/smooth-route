@@ -228,6 +228,25 @@
                         map: map
                     });
                     
+                    // Store point IDs for click handling
+                    polyline.point1Id = point1.id;
+                    polyline.point2Id = point2.id;
+                    polyline.point1 = point1;
+                    polyline.point2 = point2;
+                    
+                    // Add click listener
+                    polyline.addListener('click', function(event) {
+                        // Show info for the point closer to the click
+                        const clickLat = event.latLng.lat();
+                        const clickLng = event.latLng.lng();
+                        
+                        const dist1 = calculateDistance(clickLat, clickLng, point1.latitude, point1.longitude);
+                        const dist2 = calculateDistance(clickLat, clickLng, point2.latitude, point2.longitude);
+                        
+                        const clickedPoint = dist1 < dist2 ? point1 : point2;
+                        showPointInfo(clickedPoint, event.latLng);
+                    });
+                    
                     polylines.push(polyline);
                 }
                 
@@ -271,8 +290,80 @@
             }
         }
         
-        // Pont-pont alapú színezés: nincs szükség szegmensekre,
-        // minden két szomszédos pont között külön vonalat rajzolunk
+        let infoWindow = null;
+        
+        async function showPointInfo(point, position) {
+            try {
+                // Close existing info window
+                if (infoWindow) {
+                    infoWindow.close();
+                }
+                
+                // Fetch point details
+                const response = await fetch(`/api/v1/points/${point.id}`);
+                const details = await response.json();
+                
+                // Create info window content
+                const rqiColor = getRqiColor(details.rqi_score);
+                const rqiText = details.rqi_score ? details.rqi_score.toFixed(1) : 'N/A';
+                const rqiLabel = details.rqi_score ? 
+                    (details.rqi_score <= 1 ? 'Kiváló' :
+                     details.rqi_score <= 2 ? 'Jó' :
+                     details.rqi_score <= 3 ? 'Közepes' :
+                     details.rqi_score <= 4 ? 'Rossz' : 'Nagyon rossz') : 'Nincs elemzés';
+                
+                let imageHtml = '';
+                if (details.image_path) {
+                    imageHtml = `<img src="${details.image_path}" style="max-width: 400px; max-height: 300px; border-radius: 4px; margin-bottom: 10px;" />`;
+                } else if (details.image_url && details.image_url.startsWith('http')) {
+                    imageHtml = `<img src="${details.image_url}" style="max-width: 400px; max-height: 300px; border-radius: 4px; margin-bottom: 10px;" />`;
+                } else {
+                    imageHtml = '<p style="color: #999; font-style: italic;">Kép nem elérhető</p>';
+                }
+                
+                let damageHtml = '';
+                if (details.damage_types && Object.keys(details.damage_types).length > 0) {
+                    damageHtml = '<div style="margin-top: 10px;"><strong>Károsodások:</strong><ul style="margin: 5px 0; padding-left: 20px;">';
+                    for (const [type, count] of Object.entries(details.damage_types)) {
+                        damageHtml += `<li>${type}: ${count}</li>`;
+                    }
+                    damageHtml += '</ul></div>';
+                } else if (details.damage_count > 0) {
+                    damageHtml = `<div style="margin-top: 10px;"><strong>Károsodások száma:</strong> ${details.damage_count}</div>`;
+                }
+                
+                const content = `
+                    <div style="min-width: 300px; max-width: 450px;">
+                        <h3 style="margin: 0 0 10px 0; color: #333;">Pont #${details.id}</h3>
+                        <div style="margin-bottom: 10px;">
+                            <strong>RQI:</strong> 
+                            <span style="color: ${rqiColor}; font-weight: bold; font-size: 1.2em;">${rqiText}</span>
+                            <span style="color: #666; margin-left: 5px;">(${rqiLabel})</span>
+                        </div>
+                        ${imageHtml}
+                        <div style="font-size: 0.9em; color: #666; margin-top: 10px;">
+                            <div><strong>Koordináták:</strong> ${details.latitude.toFixed(6)}, ${details.longitude.toFixed(6)}</div>
+                            <div><strong>Irani:</strong> ${Math.round(details.heading)}°</div>
+                            ${damageHtml}
+                            <div style="margin-top: 5px; font-size: 0.85em; color: #999;">
+                                Rögzítve: ${new Date(details.created_at).toLocaleString('hu-HU')}
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                infoWindow = new google.maps.InfoWindow({
+                    content: content,
+                    position: position
+                });
+                
+                infoWindow.open(map);
+                
+            } catch (error) {
+                console.error('Hiba a pont részleteinek betöltésekor:', error);
+                alert('Hiba a pont részleteinek betöltésekor');
+            }
+        }
         
         // Távolság számítás (Haversine formula)
         function calculateDistance(lat1, lon1, lat2, lon2) {

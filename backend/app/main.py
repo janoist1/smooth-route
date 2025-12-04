@@ -3,6 +3,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from app.core.config import settings
 import os
+from pathlib import Path
 
 app = FastAPI(
     title="Kátyúőr API",
@@ -57,3 +58,26 @@ async def collect_page():
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
+
+@app.get("/api/v1/images/{filename}")
+async def get_image(filename: str):
+    """Serve images from the data/images directory."""
+    import os
+    from fastapi import HTTPException
+    
+    data_dir = settings.DATA_DIR
+    if not os.path.isabs(data_dir):
+        backend_dir = os.path.dirname(os.path.dirname(__file__))
+        project_root = os.path.dirname(backend_dir)
+        data_dir = os.path.join(project_root, data_dir)
+    
+    image_path = os.path.join(data_dir, "images", filename)
+    
+    # Security: prevent directory traversal
+    if not os.path.abspath(image_path).startswith(os.path.abspath(os.path.join(data_dir, "images"))):
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    if not os.path.exists(image_path):
+        raise HTTPException(status_code=404, detail="Image not found")
+    
+    return FileResponse(image_path, media_type="image/jpeg")
