@@ -95,6 +95,251 @@
             margin-bottom: 5px;
         }
         
+        /* Floating Action Button */
+        #fab {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            width: 64px;
+            height: 64px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 2000;
+            transition: transform 0.3s, box-shadow 0.3s;
+            font-size: 28px;
+            color: white;
+        }
+        
+        #fab:hover {
+            transform: scale(1.1);
+            box-shadow: 0 6px 16px rgba(0,0,0,0.4);
+        }
+        
+        #fab.active {
+            background: #f44336;
+        }
+        
+        /* Collect Modal */
+        #collect-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 3000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        #collect-modal.active {
+            display: flex;
+        }
+        
+        #collect-panel {
+            background: white;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 600px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+            display: flex;
+            flex-direction: column;
+        }
+        
+        #collect-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1.5rem;
+            border-radius: 12px 12px 0 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        #collect-header h2 {
+            font-size: 1.3rem;
+            margin: 0;
+        }
+        
+        #close-modal {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 1.2rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.3s;
+        }
+        
+        #close-modal:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        
+        #collect-content {
+            padding: 1.5rem;
+        }
+        
+        .control-group {
+            margin-bottom: 1rem;
+        }
+        
+        .control-group label {
+            display: block;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+        }
+        
+        .control-group input {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 0.9rem;
+        }
+        
+        .control-group input:read-only {
+            background: #f5f5f5;
+            cursor: not-allowed;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+        
+        button {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 6px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary {
+            background: #667eea;
+            color: white;
+            flex: 1;
+        }
+        
+        .btn-primary:hover:not(:disabled) {
+            background: #5568d3;
+        }
+        
+        .btn-secondary {
+            background: #e0e0e0;
+            color: #333;
+        }
+        
+        .btn-secondary:hover {
+            background: #d0d0d0;
+        }
+        
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        
+        #status-panel {
+            margin-top: 1.5rem;
+            padding: 1rem;
+            background: #f8f9fa;
+            border-radius: 8px;
+            display: none;
+        }
+        
+        #status-panel.active {
+            display: block;
+        }
+        
+        .step-indicator {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 1rem;
+        }
+        
+        .step {
+            flex: 1;
+            padding: 8px;
+            text-align: center;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            background: #e0e0e0;
+            color: #666;
+        }
+        
+        .step.active {
+            background: #667eea;
+            color: white;
+        }
+        
+        .step.completed {
+            background: #4caf50;
+            color: white;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 24px;
+            background: #e0e0e0;
+            border-radius: 12px;
+            overflow: hidden;
+            margin: 1rem 0;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+        
+        .status-text {
+            font-size: 0.9rem;
+            color: #666;
+            margin-bottom: 0.5rem;
+        }
+        
+        .error-message {
+            background: #ffebee;
+            color: #c62828;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+            font-size: 0.9rem;
+        }
+        
+        .success-message {
+            background: #e8f5e9;
+            color: #2e7d32;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+            font-size: 0.9rem;
+        }
+        
         .loading {
             text-align: center;
             padding: 20px;
@@ -139,20 +384,88 @@
         <p id="total-points">Betöltés...</p>
         <p id="avg-rqi">Betöltés...</p>
     </div>
+    
+    <!-- Floating Action Button -->
+    <div id="fab" onclick="toggleCollectModal()" title="Új pontok rögzítése">
+        ➕
+    </div>
+    
+    <!-- Collect Modal -->
+    <div id="collect-modal" onclick="closeModalOnBackdrop(event)">
+        <div id="collect-panel" onclick="event.stopPropagation()">
+            <div id="collect-header">
+                <h2>📍 Új pontok rögzítése</h2>
+                <button id="close-modal" onclick="closeCollectModal()">×</button>
+            </div>
+            <div id="collect-content">
+                <p style="color: #666; margin-bottom: 1rem; font-size: 0.9rem;">
+                    Kattints a térképre, hogy kiválaszd a kezdőpontot, majd a célpontot.
+                </p>
+                
+                <div class="control-group">
+                    <label>Kezdőpont:</label>
+                    <input type="text" id="origin-lat" placeholder="Lat" readonly>
+                    <input type="text" id="origin-lng" placeholder="Lng" readonly style="margin-top: 0.5rem;">
+                </div>
+                
+                <div class="control-group">
+                    <label>Célpont:</label>
+                    <input type="text" id="dest-lat" placeholder="Lat" readonly>
+                    <input type="text" id="dest-lng" placeholder="Lng" readonly style="margin-top: 0.5rem;">
+                </div>
+                
+                <div class="button-group">
+                    <button class="btn-secondary" onclick="clearCollectMarkers()">Törlés</button>
+                    <button class="btn-primary" id="start-btn" onclick="startProcessing()" disabled>Rögzítés indítása</button>
+                </div>
+                
+                <div id="status-panel">
+                    <div class="step-indicator">
+                        <div class="step" id="step-collect">Pontok</div>
+                        <div class="step" id="step-download">Letöltés</div>
+                        <div class="step" id="step-analyze">Elemzés</div>
+                    </div>
+                    <div class="status-text">
+                        <strong>Állapot:</strong> <span id="status-text">Várakozás...</span>
+                    </div>
+                    <div class="status-text">
+                        <strong>Üzenet:</strong> <span id="status-message">-</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progress-fill" style="width: 0%">0%</div>
+                    </div>
+                    <div id="error-container"></div>
+                    <div id="success-container"></div>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <script>
         let map;
         let polylines = [];
         let markers = [];
+        let infoWindow = null;
+        
+        // Collect functionality variables
+        let collectMode = false;
+        let originMarker = null;
+        let destinationMarker = null;
+        let originLatLng = null;
+        let destinationLatLng = null;
+        let routeLine = null;
+        let currentJobId = null;
+        let pollInterval = null;
+        let mapClickListener = null;
         
         // RQI színkódolás
         function getRqiColor(rqi) {
-            if (!rqi) return '#808080'; // Szürke, ha nincs RQI
-            if (rqi <= 1) return '#00ff00'; // Zöld - Kiváló
-            if (rqi <= 2) return '#90ee90'; // Világos zöld - Jó
-            if (rqi <= 3) return '#ffd700'; // Sárga - Közepes
-            if (rqi <= 4) return '#ff8c00'; // Narancs - Rossz
-            return '#ff0000'; // Piros - Nagyon rossz
+            if (!rqi) return '#808080';
+            if (rqi <= 1) return '#00ff00';
+            if (rqi <= 2) return '#90ee90';
+            if (rqi <= 3) return '#ffd700';
+            if (rqi <= 4) return '#ff8c00';
+            return '#ff0000';
         }
         
         function getRqiOpacity(rqi) {
@@ -160,10 +473,268 @@
             return 0.7;
         }
         
+        // Collect Modal Functions
+        function toggleCollectModal() {
+            const modal = document.getElementById('collect-modal');
+            const fab = document.getElementById('fab');
+            
+            if (modal.classList.contains('active')) {
+                closeCollectModal();
+            } else {
+                openCollectModal();
+            }
+        }
+        
+        function openCollectModal() {
+            document.getElementById('collect-modal').classList.add('active');
+            document.getElementById('fab').classList.add('active');
+            document.getElementById('fab').textContent = '✕';
+            enableCollectMode();
+        }
+        
+        function closeCollectModal() {
+            document.getElementById('collect-modal').classList.remove('active');
+            document.getElementById('fab').classList.remove('active');
+            document.getElementById('fab').textContent = '➕';
+            disableCollectMode();
+        }
+        
+        function closeModalOnBackdrop(event) {
+            if (event.target.id === 'collect-modal') {
+                closeCollectModal();
+            }
+        }
+        
+        function enableCollectMode() {
+            collectMode = true;
+            if (map) {
+                mapClickListener = map.addListener('click', handleMapClickForCollect);
+            }
+        }
+        
+        function disableCollectMode() {
+            collectMode = false;
+            if (mapClickListener) {
+                google.maps.event.removeListener(mapClickListener);
+                mapClickListener = null;
+            }
+        }
+        
+        function handleMapClickForCollect(event) {
+            if (!collectMode) return;
+            
+            const lat = event.latLng.lat();
+            const lng = event.latLng.lng();
+            
+            if (!originMarker) {
+                originLatLng = { lat, lng };
+                originMarker = new google.maps.Marker({
+                    position: { lat, lng },
+                    map: map,
+                    label: 'S',
+                    title: 'Kezdőpont',
+                    icon: {
+                        path: google.maps.SymbolPath.CIRCLE,
+                        scale: 10,
+                        fillColor: '#4caf50',
+                        fillOpacity: 1,
+                        strokeColor: '#fff',
+                        strokeWeight: 2
+                    }
+                });
+                
+                document.getElementById('origin-lat').value = lat.toFixed(6);
+                document.getElementById('origin-lng').value = lng.toFixed(6);
+            } else if (!destinationMarker) {
+                destinationLatLng = { lat, lng };
+                destinationMarker = new google.maps.Marker({
+                    position: { lat, lng },
+                    map: map,
+                    label: 'E',
+                    title: 'Célpont',
+                    icon: {
+                        path: google.maps.SymbolPath.CIRCLE,
+                        scale: 10,
+                        fillColor: '#f44336',
+                        fillOpacity: 1,
+                        strokeColor: '#fff',
+                        strokeWeight: 2
+                    }
+                });
+                
+                document.getElementById('dest-lat').value = lat.toFixed(6);
+                document.getElementById('dest-lng').value = lng.toFixed(6);
+                
+                document.getElementById('start-btn').disabled = false;
+                
+                if (routeLine) {
+                    routeLine.setMap(null);
+                }
+                routeLine = new google.maps.Polyline({
+                    path: [originLatLng, destinationLatLng],
+                    geodesic: true,
+                    strokeColor: '#667eea',
+                    strokeOpacity: 0.6,
+                    strokeWeight: 3,
+                    map: map
+                });
+            }
+        }
+        
+        function clearCollectMarkers() {
+            if (originMarker) {
+                originMarker.setMap(null);
+                originMarker = null;
+                originLatLng = null;
+            }
+            if (destinationMarker) {
+                destinationMarker.setMap(null);
+                destinationMarker = null;
+                destinationLatLng = null;
+            }
+            if (routeLine) {
+                routeLine.setMap(null);
+                routeLine = null;
+            }
+            
+            document.getElementById('origin-lat').value = '';
+            document.getElementById('origin-lng').value = '';
+            document.getElementById('dest-lat').value = '';
+            document.getElementById('dest-lng').value = '';
+            document.getElementById('start-btn').disabled = true;
+            
+            document.getElementById('status-panel').classList.remove('active');
+            if (pollInterval) {
+                clearInterval(pollInterval);
+                pollInterval = null;
+            }
+            currentJobId = null;
+        }
+        
+        async function startProcessing() {
+            if (!originLatLng || !destinationLatLng) {
+                alert('Kérlek válassz ki két pontot!');
+                return;
+            }
+            
+            document.getElementById('status-panel').classList.add('active');
+            document.getElementById('start-btn').disabled = true;
+            document.getElementById('error-container').innerHTML = '';
+            document.getElementById('success-container').innerHTML = '';
+            
+            ['step-collect', 'step-download', 'step-analyze'].forEach(id => {
+                document.getElementById(id).classList.remove('active', 'completed');
+            });
+            
+            try {
+                const response = await fetch('/api/v1/process-route', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        origin_lat: originLatLng.lat,
+                        origin_lng: originLatLng.lng,
+                        destination_lat: destinationLatLng.lat,
+                        destination_lng: destinationLatLng.lng
+                    })
+                });
+                
+                const data = await response.json();
+                currentJobId = data.job_id;
+                
+                pollJobStatus();
+                pollInterval = setInterval(pollJobStatus, 1000);
+                
+            } catch (error) {
+                showError('Hiba a folyamat indításakor: ' + error.message);
+                document.getElementById('start-btn').disabled = false;
+            }
+        }
+        
+        async function pollJobStatus() {
+            if (!currentJobId) return;
+            
+            try {
+                const response = await fetch(`/api/v1/job/${currentJobId}`);
+                const job = await response.json();
+                
+                if (job.error) {
+                    showError('Job nem található');
+                    stopPolling();
+                    return;
+                }
+                
+                const statusText = job.status === 'pending' ? 'Várakozás' :
+                                 job.status === 'running' ? 'Folyamatban' :
+                                 job.status === 'completed' ? 'Kész' :
+                                 job.status === 'failed' ? 'Hiba' : job.status;
+                document.getElementById('status-text').textContent = statusText;
+                document.getElementById('status-message').textContent = job.message || '-';
+                
+                if (job.total > 0) {
+                    const percent = Math.round((job.progress / job.total) * 100);
+                    document.getElementById('progress-fill').style.width = percent + '%';
+                    document.getElementById('progress-fill').textContent = percent + '%';
+                } else if (job.progress > 0) {
+                    document.getElementById('progress-fill').style.width = '50%';
+                    document.getElementById('progress-fill').textContent = 'Folyamatban...';
+                }
+                
+                if (job.current_step === 'collecting') {
+                    document.getElementById('step-collect').classList.add('active');
+                } else if (job.current_step === 'downloading') {
+                    document.getElementById('step-collect').classList.remove('active');
+                    document.getElementById('step-collect').classList.add('completed');
+                    document.getElementById('step-download').classList.add('active');
+                } else if (job.current_step === 'analyzing') {
+                    document.getElementById('step-download').classList.remove('active');
+                    document.getElementById('step-download').classList.add('completed');
+                    document.getElementById('step-analyze').classList.add('active');
+                }
+                
+                if (job.status === 'completed') {
+                    stopPolling();
+                    document.getElementById('step-analyze').classList.remove('active');
+                    document.getElementById('step-analyze').classList.add('completed');
+                    showSuccess('Folyamat sikeresen befejezve! ' + (job.result?.analyzed_points || 0) + ' pont elemzve.');
+                    document.getElementById('start-btn').disabled = false;
+                    // Reload points on map
+                    setTimeout(() => {
+                        clearMarkers();
+                        loadPoints();
+                    }, 2000);
+                } else if (job.status === 'failed') {
+                    stopPolling();
+                    showError('Hiba: ' + (job.error || 'Ismeretlen hiba'));
+                    document.getElementById('start-btn').disabled = false;
+                }
+                
+            } catch (error) {
+                showError('Hiba a státusz lekérdezésekor: ' + error.message);
+                stopPolling();
+            }
+        }
+        
+        function stopPolling() {
+            if (pollInterval) {
+                clearInterval(pollInterval);
+                pollInterval = null;
+            }
+        }
+        
+        function showError(message) {
+            document.getElementById('error-container').innerHTML = 
+                '<div class="error-message">' + message + '</div>';
+        }
+        
+        function showSuccess(message) {
+            document.getElementById('success-container').innerHTML = 
+                '<div class="success-message">' + message + '</div>';
+        }
+        
         // Google Maps inicializálás
         function initMap() {
             map = new google.maps.Map(document.getElementById('map'), {
-                center: { lat: 47.498, lng: 19.077 }, // Budapest középpont
+                center: { lat: 47.498, lng: 19.077 },
                 zoom: 14,
                 mapTypeId: 'roadmap'
             });
@@ -182,7 +753,6 @@
                     return;
                 }
                 
-                // Statisztikák számítása
                 const pointsWithRqi = points.filter(p => p.rqi_score !== null);
                 const avgRqi = pointsWithRqi.length > 0
                     ? (pointsWithRqi.reduce((sum, p) => sum + p.rqi_score, 0) / pointsWithRqi.length).toFixed(2)
@@ -191,13 +761,10 @@
                 document.getElementById('total-points').textContent = `Összes pont: ${points.length}`;
                 document.getElementById('avg-rqi').textContent = `Átlagos RQI: ${avgRqi}`;
                 
-                // Pont-pont alapú színezés: minden két szomszédos pont között egy vonal
-                // A szín a két pont közül a rosszabbik (magasabb) RQI-ját tükrözi
                 for (let i = 0; i < points.length - 1; i++) {
                     const point1 = points[i];
                     const point2 = points[i + 1];
                     
-                    // Számítsuk ki a távolságot
                     const distance = calculateDistance(
                         point1.latitude,
                         point1.longitude,
@@ -205,11 +772,9 @@
                         point2.longitude
                     );
                     
-                    // Csak akkor rajzolunk vonalat, ha a pontok közel vannak (< 50m)
                     if (distance > 50) continue;
                     
-                    // A rosszabbik (magasabb) RQI-t használjuk a színhez
-                    const rqi1 = point1.rqi_score || 3; // Default közepes, ha nincs RQI
+                    const rqi1 = point1.rqi_score || 3;
                     const rqi2 = point2.rqi_score || 3;
                     const worstRqi = Math.max(rqi1, rqi2);
                     
@@ -228,15 +793,12 @@
                         map: map
                     });
                     
-                    // Store point IDs for click handling
                     polyline.point1Id = point1.id;
                     polyline.point2Id = point2.id;
                     polyline.point1 = point1;
                     polyline.point2 = point2;
                     
-                    // Add click listener
                     polyline.addListener('click', function(event) {
-                        // Show info for the point closer to the click
                         const clickLat = event.latLng.lat();
                         const clickLng = event.latLng.lng();
                         
@@ -250,7 +812,6 @@
                     polylines.push(polyline);
                 }
                 
-                // Markerek hozzáadása (opcionális, csak első és utolsó pont)
                 if (points.length > 0) {
                     const firstPoint = points[0];
                     const lastPoint = points[points.length - 1];
@@ -275,7 +836,6 @@
                     });
                 }
                 
-                // Térkép középre igazítása az összes pontra
                 if (points.length > 0) {
                     const bounds = new google.maps.LatLngBounds();
                     points.forEach(point => {
@@ -290,20 +850,22 @@
             }
         }
         
-        let infoWindow = null;
+        function clearMarkers() {
+            polylines.forEach(p => p.setMap(null));
+            markers.forEach(m => m.setMap(null));
+            polylines = [];
+            markers = [];
+        }
         
         async function showPointInfo(point, position) {
             try {
-                // Close existing info window
                 if (infoWindow) {
                     infoWindow.close();
                 }
                 
-                // Fetch point details
                 const response = await fetch(`/api/v1/points/${point.id}`);
                 const details = await response.json();
                 
-                // Create info window content
                 const rqiColor = getRqiColor(details.rqi_score);
                 const rqiText = details.rqi_score ? details.rqi_score.toFixed(1) : 'N/A';
                 const rqiLabel = details.rqi_score ? 
@@ -332,49 +894,21 @@
                     damageHtml = `<div style="margin-top: 10px;"><strong>Károsodások száma:</strong> ${details.damage_count}</div>`;
                 }
                 
-                // RQI számítás részletei
                 let analysisDetailsHtml = '';
                 if (details.analysis_metadata) {
                     const meta = details.analysis_metadata;
-                    const isImproved = meta.method === 'improved_heuristic';
                     analysisDetailsHtml = `
                         <div style="margin-top: 15px; padding: 12px; background: #f8f9fa; border-radius: 6px; border-left: 4px solid ${rqiColor}; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
                             <div style="font-weight: bold; color: #333; margin-bottom: 10px; font-size: 1em; border-bottom: 1px solid #ddd; padding-bottom: 5px;">
-                                📊 RQI számítás részletei ${isImproved ? '<span style="color: #5cb85c; font-size: 0.85em;">(javított algoritmus)</span>' : ''}
+                                📊 RQI számítás részletei
                             </div>
                             <div style="font-size: 0.9em; color: #555;">
                                 <div style="margin-bottom: 6px;"><strong>Módszer:</strong> <span style="color: #666;">${meta.method || 'N/A'}</span></div>
-                                ${meta.edge_density !== undefined ? `<div style="margin-bottom: 6px;"><strong>Él sűrűség:</strong> <span style="color: #0066cc; font-family: monospace;">${meta.edge_density.toFixed(4)}</span> <span style="color: #999; font-size: 0.85em;">(erős élek, Canny)</span></div>` : ''}
-                                ${meta.texture_variance !== undefined ? `<div style="margin-bottom: 6px;"><strong>Szövet variancia:</strong> <span style="color: #0066cc; font-family: monospace;">${meta.texture_variance.toFixed(2)}</span> <span style="color: #999; font-size: 0.85em;">(blokkok mediánja)</span></div>` : ''}
-                                ${meta.variance !== undefined && !meta.texture_variance ? `<div style="margin-bottom: 6px;"><strong>Szövet variancia:</strong> <span style="color: #0066cc; font-family: monospace;">${meta.variance.toFixed(2)}</span> <span style="color: #999; font-size: 0.85em;">(régi módszer)</span></div>` : ''}
-                                ${meta.line_density !== undefined ? `<div style="margin-bottom: 6px;"><strong>Vonal sűrűség:</strong> <span style="color: #0066cc; font-family: monospace;">${meta.line_density.toFixed(2)}</span> <span style="color: #999; font-size: 0.85em;">(strukturális károsodás)</span></div>` : ''}
-                                ${meta.contrast_score !== undefined ? `<div style="margin-bottom: 6px;"><strong>Kontraszt pontszám:</strong> <span style="color: #0066cc; font-family: monospace;">${meta.contrast_score.toFixed(2)}</span> <span style="color: #999; font-size: 0.85em;">(lokális kontraszt)</span></div>` : ''}
-                                ${meta.mean_brightness !== undefined ? `<div style="margin-bottom: 6px;"><strong>Átlagos fényerő:</strong> <span style="color: #666;">${meta.mean_brightness.toFixed(0)}</span> <span style="color: #999; font-size: 0.85em;">(0-255)</span></div>` : ''}
-                                ${meta.brightness_factor !== undefined ? `<div style="margin-bottom: 6px;"><strong>Fényerő korrekció:</strong> <span style="color: #666;">${meta.brightness_factor.toFixed(2)}</span> <span style="color: #999; font-size: 0.85em;">(árnyék/overexposure kompenzáció)</span></div>` : ''}
-                                ${meta.damage_score !== undefined ? `<div style="margin-bottom: 6px; padding: 6px; background: #fff; border-radius: 3px; border: 1px solid #ddd;"><strong>Károsodás pontszám:</strong> <span style="color: #d9534f; font-weight: bold; font-family: monospace; font-size: 1.1em;">${meta.damage_score.toFixed(2)}</span> <span style="color: #999; font-size: 0.85em;">${isImproved ? '(több metrika kombinálva)' : '(edge_density × 100 + variance / 1000)'}</span></div>` : ''}
-                                ${meta.road_region_height_ratio !== undefined ? `<div style="margin-bottom: 6px;"><strong>Útburkolat régió:</strong> <span style="color: #666;">alsó ${(meta.road_region_height_ratio * 100).toFixed(0)}%</span> <span style="color: #999; font-size: 0.85em;">(kép magasságának)</span></div>` : ''}
-                                ${meta.canny_threshold_low !== undefined && meta.canny_threshold_high !== undefined ? `<div style="margin-bottom: 6px; font-size: 0.85em; color: #999;"><strong>Canny küszöbértékek:</strong> ${meta.canny_threshold_low} - ${meta.canny_threshold_high}</div>` : ''}
-                                ${meta.rqi_thresholds ? `
-                                    <div style="margin-top: 10px; padding: 8px; background: #fff; border-radius: 3px; border: 1px solid #ddd;">
-                                        <strong style="color: #333;">RQI küszöbértékek:</strong>
-                                        <div style="margin-top: 5px; font-size: 0.85em; line-height: 1.6;">
-                                            <span style="color: #5cb85c;">✓ Kiváló (1):</span> damage_score &lt; ${meta.rqi_thresholds.excellent}<br>
-                                            <span style="color: #5cb85c;">✓ Jó (2):</span> damage_score &lt; ${meta.rqi_thresholds.good}<br>
-                                            <span style="color: #f0ad4e;">○ Közepes (3):</span> damage_score &lt; ${meta.rqi_thresholds.fair}<br>
-                                            <span style="color: #d9534f;">✗ Rossz (4):</span> damage_score &lt; ${meta.rqi_thresholds.poor}<br>
-                                            <span style="color: #d9534f;">✗ Nagyon rossz (5):</span> damage_score ≥ ${meta.rqi_thresholds.poor}
-                                        </div>
-                                    </div>
-                                ` : ''}
-                            </div>
-                        </div>
-                    `;
-                } else if (details.rqi_score !== null && details.rqi_score !== undefined) {
-                    // Ha nincs analysis_metadata, de van RQI, mutassunk egy üzenetet
-                    analysisDetailsHtml = `
-                        <div style="margin-top: 15px; padding: 10px; background: #fff3cd; border-radius: 4px; border-left: 3px solid #ffc107;">
-                            <div style="font-size: 0.9em; color: #856404;">
-                                ⚠️ RQI részletes számítási adatok nem elérhetők (régi elemzés)
+                                ${meta.edge_density_fine !== undefined ? `<div style="margin-bottom: 6px;"><strong>Finom él sűrűség:</strong> <span style="color: #0066cc; font-family: monospace;">${meta.edge_density_fine.toFixed(4)}</span></div>` : ''}
+                                ${meta.texture_variance !== undefined ? `<div style="margin-bottom: 6px;"><strong>Textúra variancia:</strong> <span style="color: #0066cc; font-family: monospace;">${meta.texture_variance.toFixed(2)}</span></div>` : ''}
+                                ${meta.line_density !== undefined ? `<div style="margin-bottom: 6px;"><strong>Vonal sűrűség:</strong> <span style="color: #0066cc; font-family: monospace;">${meta.line_density.toFixed(2)}</span></div>` : ''}
+                                ${meta.damage_score !== undefined ? `<div style="margin-bottom: 6px; padding: 6px; background: #fff; border-radius: 3px; border: 1px solid #ddd;"><strong>Károsodás pontszám:</strong> <span style="color: #d9534f; font-weight: bold; font-family: monospace; font-size: 1.1em;">${meta.damage_score.toFixed(2)}</span></div>` : ''}
+                                ${meta.shadow_coverage !== undefined ? `<div style="margin-bottom: 6px;"><strong>Árnyék lefedettség:</strong> <span style="color: #666;">${(meta.shadow_coverage * 100).toFixed(1)}%</span></div>` : ''}
                             </div>
                         </div>
                     `;
@@ -414,9 +948,8 @@
             }
         }
         
-        // Távolság számítás (Haversine formula)
         function calculateDistance(lat1, lon1, lat2, lon2) {
-            const R = 6371000; // Föld sugara méterben
+            const R = 6371000;
             const dLat = (lat2 - lat1) * Math.PI / 180;
             const dLon = (lon2 - lon1) * Math.PI / 180;
             const a = 
@@ -428,9 +961,7 @@
         }
     </script>
     
-    <!-- Google Maps API - Load dynamically -->
     <script>
-        // Load Google Maps API key from backend
         async function loadGoogleMaps() {
             try {
                 const configResponse = await fetch('/api/v1/config');
@@ -443,7 +974,6 @@
                     return;
                 }
                 
-                // Load Google Maps script
                 const script = document.createElement('script');
                 script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&callback=initMap`;
                 script.async = true;
@@ -456,9 +986,7 @@
             }
         }
         
-        // Load Google Maps when page loads
         loadGoogleMaps();
     </script>
 </body>
 </html>
-
