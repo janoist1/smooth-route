@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kátyúőr - Útminőség Térkép</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        #header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1rem 2rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        #header h1 {
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        #header p {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+        
+        #map {
+            flex: 1;
+            width: 100%;
+        }
+        
+        #legend {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            z-index: 1000;
+        }
+        
+        #legend h3 {
+            margin-bottom: 10px;
+            font-size: 0.9rem;
+            color: #333;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 0.85rem;
+        }
+        
+        .legend-color {
+            width: 30px;
+            height: 4px;
+            margin-right: 10px;
+            border-radius: 2px;
+        }
+        
+        #info {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            z-index: 1000;
+            min-width: 200px;
+        }
+        
+        #info h3 {
+            margin-bottom: 10px;
+            font-size: 0.9rem;
+            color: #333;
+        }
+        
+        #info p {
+            font-size: 0.85rem;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div id="header">
+        <h1>🗺️ Kátyúőr - Útminőség Térkép</h1>
+        <p>Fejlesztői térkép: Út szakaszok színkódolása az RQI (Road Quality Index) alapján</p>
+    </div>
+    
+    <div id="map"></div>
+    
+    <div id="legend">
+        <h3>Útminőség (RQI)</h3>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #00ff00;"></div>
+            <span>1 - Kiváló</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #90ee90;"></div>
+            <span>2 - Jó</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #ffd700;"></div>
+            <span>3 - Közepes</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #ff8c00;"></div>
+            <span>4 - Rossz</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #ff0000;"></div>
+            <span>5 - Nagyon rossz</span>
+        </div>
+    </div>
+    
+    <div id="info">
+        <h3>Statisztikák</h3>
+        <p id="total-points">Betöltés...</p>
+        <p id="avg-rqi">Betöltés...</p>
+    </div>
+
+    <script>
+        let map;
+        let polylines = [];
+        let markers = [];
+        
+        // RQI színkódolás
+        function getRqiColor(rqi) {
+            if (!rqi) return '#808080'; // Szürke, ha nincs RQI
+            if (rqi <= 1) return '#00ff00'; // Zöld - Kiváló
+            if (rqi <= 2) return '#90ee90'; // Világos zöld - Jó
+            if (rqi <= 3) return '#ffd700'; // Sárga - Közepes
+            if (rqi <= 4) return '#ff8c00'; // Narancs - Rossz
+            return '#ff0000'; // Piros - Nagyon rossz
+        }
+        
+        function getRqiOpacity(rqi) {
+            if (!rqi) return 0.3;
+            return 0.7;
+        }
+        
+        // Google Maps inicializálás
+        function initMap() {
+            map = new google.maps.Map(document.getElementById('map'), {
+                center: { lat: 47.498, lng: 19.077 }, // Budapest középpont
+                zoom: 14,
+                mapTypeId: 'roadmap'
+            });
+            
+            loadPoints();
+        }
+        
+        // Pontok betöltése az API-ból
+        async function loadPoints() {
+            try {
+                const response = await fetch('/api/v1/points');
+                const points = await response.json();
+                
+                if (points.length === 0) {
+                    document.getElementById('total-points').textContent = 'Nincsenek pontok az adatbázisban';
+                    return;
+                }
+                
+                // Statisztikák számítása
+                const pointsWithRqi = points.filter(p => p.rqi_score !== null);
+                const avgRqi = pointsWithRqi.length > 0
+                    ? (pointsWithRqi.reduce((sum, p) => sum + p.rqi_score, 0) / pointsWithRqi.length).toFixed(2)
+                    : 'N/A';
+                
+                document.getElementById('total-points').textContent = `Összes pont: ${points.length}`;
+                document.getElementById('avg-rqi').textContent = `Átlagos RQI: ${avgRqi}`;
+                
+                // Pontok csoportosítása szomszédos pontok szerint (út szakaszok)
+                const segments = createSegments(points);
+                
+                // Út szakaszok rajzolása
+                segments.forEach(segment => {
+                    if (segment.points.length < 2) return;
+                    
+                    const path = segment.points.map(p => ({
+                        lat: p.latitude,
+                        lng: p.longitude
+                    }));
+                    
+                    const avgRqi = segment.avgRqi;
+                    const color = getRqiColor(avgRqi);
+                    const opacity = getRqiOpacity(avgRqi);
+                    
+                    const polyline = new google.maps.Polyline({
+                        path: path,
+                        geodesic: true,
+                        strokeColor: color,
+                        strokeOpacity: opacity,
+                        strokeWeight: 6,
+                        map: map
+                    });
+                    
+                    polylines.push(polyline);
+                });
+                
+                // Markerek hozzáadása (opcionális, csak első és utolsó pont)
+                if (points.length > 0) {
+                    const firstPoint = points[0];
+                    const lastPoint = points[points.length - 1];
+                    
+                    [firstPoint, lastPoint].forEach((point, index) => {
+                        const marker = new google.maps.Marker({
+                            position: { lat: point.latitude, lng: point.longitude },
+                            map: map,
+                            title: `RQI: ${point.rqi_score || 'N/A'}`,
+                            label: index === 0 ? 'S' : 'E',
+                            icon: {
+                                path: google.maps.SymbolPath.CIRCLE,
+                                scale: 8,
+                                fillColor: getRqiColor(point.rqi_score),
+                                fillOpacity: 0.8,
+                                strokeColor: '#fff',
+                                strokeWeight: 2
+                            }
+                        });
+                        
+                        markers.push(marker);
+                    });
+                }
+                
+                // Térkép középre igazítása az összes pontra
+                if (points.length > 0) {
+                    const bounds = new google.maps.LatLngBounds();
+                    points.forEach(point => {
+                        bounds.extend({ lat: point.latitude, lng: point.longitude });
+                    });
+                    map.fitBounds(bounds);
+                }
+                
+            } catch (error) {
+                console.error('Hiba a pontok betöltésekor:', error);
+                document.getElementById('total-points').textContent = 'Hiba a betöltés során';
+            }
+        }
+        
+        // Pontok csoportosítása út szakaszokká
+        function createSegments(points) {
+            if (points.length === 0) return [];
+            
+            const segments = [];
+            let currentSegment = {
+                points: [points[0]],
+                avgRqi: points[0].rqi_score || null
+            };
+            
+            for (let i = 1; i < points.length; i++) {
+                const prevPoint = points[i - 1];
+                const currentPoint = points[i];
+                
+                // Számítsuk ki a távolságot
+                const distance = calculateDistance(
+                    prevPoint.latitude,
+                    prevPoint.longitude,
+                    currentPoint.latitude,
+                    currentPoint.longitude
+                );
+                
+                // Ha a pontok közel vannak egymáshoz (< 50m), ugyanahhoz a szegmenshez tartoznak
+                if (distance < 50) {
+                    currentSegment.points.push(currentPoint);
+                    // Frissítsük az átlagos RQI-t
+                    const rqiScores = currentSegment.points
+                        .map(p => p.rqi_score)
+                        .filter(rqi => rqi !== null);
+                    if (rqiScores.length > 0) {
+                        currentSegment.avgRqi = rqiScores.reduce((sum, rqi) => sum + rqi, 0) / rqiScores.length;
+                    }
+                } else {
+                    // Új szegmens kezdése
+                    segments.push(currentSegment);
+                    currentSegment = {
+                        points: [currentPoint],
+                        avgRqi: currentPoint.rqi_score || null
+                    };
+                }
+            }
+            
+            // Utolsó szegmens hozzáadása
+            if (currentSegment.points.length > 0) {
+                segments.push(currentSegment);
+            }
+            
+            return segments;
+        }
+        
+        // Távolság számítás (Haversine formula)
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371000; // Föld sugara méterben
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = 
+                Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * c;
+        }
+    </script>
+    
+    <!-- Google Maps API - Load dynamically -->
+    <script>
+        // Load Google Maps API key from backend
+        async function loadGoogleMaps() {
+            try {
+                const configResponse = await fetch('/api/v1/config');
+                const config = await configResponse.json();
+                const apiKey = config.google_maps_api_key;
+                
+                if (!apiKey) {
+                    document.getElementById('map').innerHTML = 
+                        '<div class="loading">Google Maps API kulcs hiányzik. Kérlek add hozzá a .env fájlhoz!</div>';
+                    return;
+                }
+                
+                // Load Google Maps script
+                const script = document.createElement('script');
+                script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&callback=initMap`;
+                script.async = true;
+                script.defer = true;
+                document.head.appendChild(script);
+            } catch (error) {
+                console.error('Hiba a konfiguráció betöltésekor:', error);
+                document.getElementById('map').innerHTML = 
+                    '<div class="loading">Hiba a térkép betöltésekor</div>';
+            }
+        }
+        
+        // Load Google Maps when page loads
+        loadGoogleMaps();
+    </script>
+</body>
+</html>
+
