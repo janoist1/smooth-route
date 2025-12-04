@@ -9,6 +9,13 @@ class Settings(BaseSettings):
     # Quota limits
     DAILY_IMAGE_QUOTA: int = 1000  # Conservative default
 
+    # Deduplication settings
+    DEDUPLICATION_RADIUS_METERS: float = 10.0
+    DEDUPLICATION_HEADING_TOLERANCE: float = 30.0
+    
+    # Data directory for storing images
+    DATA_DIR: str = "data"  # Relative to project root or absolute path
+
     class Config:
         env_file = ".env"
         case_sensitive = True

@@ -1,42 +1,32 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey
-from sqlalchemy.orm import relationship
+
+from sqlalchemy import Column, Integer, String, Float, DateTime, JSON
 from sqlalchemy.ext.declarative import declarative_base
 from geoalchemy2 import Geometry
 from datetime import datetime
 
 Base = declarative_base()
 
-class Route(Base):
-    __tablename__ = "routes"
-
-    id = Column(Integer, primary_key=True, index=True)
-    origin = Column(String, nullable=False)
-    destination = Column(String, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    
-    # Geometry: LineString representing the route
-    path = Column(Geometry('LINESTRING', srid=4326))
-    
-    images = relationship("StreetViewImage", back_populates="route")
-
 class StreetViewImage(Base):
+    """
+    Point-based storage: Each image represents a unique road point.
+    Defined by location (lat, lng) + heading (direction).
+    
+    Routes are NOT stored - they are only tools to collect points.
+    When planning a route later, we query existing points.
+    """
     __tablename__ = "street_view_images"
 
     id = Column(Integer, primary_key=True, index=True)
-    route_id = Column(Integer, ForeignKey("routes.id"))
+    latitude = Column(Float, index=True)
+    longitude = Column(Float, index=True)
+    heading = Column(Float, index=True)
+    pitch = Column(Float)
+    image_url = Column(String) # Can be URL or local path
+    location = Column(Geometry("POINT", srid=4326), index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
     
-    latitude = Column(Float, nullable=False)
-    longitude = Column(Float, nullable=False)
-    heading = Column(Float, nullable=False)
-    pitch = Column(Float, default=0.0)
-    
-    image_url = Column(String) # URL or path to stored image
-    captured_at = Column(DateTime, default=datetime.utcnow)
-    
-    # Metadata for Phase 2 (Road Quality)
-    rqi_score = Column(Float, nullable=True) # 1-5 scale
-    
-    # Geometry: Point
-    location = Column(Geometry('POINT', srid=4326))
-    
-    route = relationship("Route", back_populates="images")
+    # AI Analysis results
+    rqi_score = Column(Float, nullable=True, index=True)
+    damage_count = Column(Integer, default=0)
+    damage_types = Column(JSON, nullable=True)
+

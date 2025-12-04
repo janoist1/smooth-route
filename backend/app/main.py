@@ -3,21 +3,22 @@ from app.core.config import settings
 
 app = FastAPI(
     title="Kátyúőr API",
-    description="Backend for Smooth Route application",
+    description="Backend for Smooth Route application (CLI-only for now)",
     version="0.1.0"
 )
 
-from app.api.routes import router as api_router
 from app.core.database import engine, Base
 
 # Create tables on startup
 Base.metadata.create_all(bind=engine)
 
-app.include_router(api_router, prefix="/api/v1")
-
 @app.get("/")
 async def root():
-    return {"message": "Welcome to Kátyúőr API", "version": "0.1.0"}
+    return {
+        "message": "Welcome to Kátyúőr API",
+        "version": "0.1.0",
+        "note": "Currently CLI-only. Use 'smooth-route --help' for commands."
+    }
 
 @app.get("/health")
 async def health_check():

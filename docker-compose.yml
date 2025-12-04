@@ -21,11 +21,13 @@ services:
     build: ./backend
     volumes:
       - ./backend:/app
+      - ./data:/app/data  # Mount data directory for persistent storage
     ports:
       - "8000:8000"
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/smooth_route
       - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
+      - DATA_DIR=/app/data  # Data directory path (inside container)
     depends_on:
       db:
         condition: service_healthy
