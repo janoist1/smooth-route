@@ -233,8 +233,9 @@ class RoadQualityService:
         road_without_markings = cv2.bitwise_and(gray, gray, mask=road_mask)
         
         # Use road without markings for analysis, but fallback to full road if too much excluded
+        # Less aggressive filtering - only exclude markings if they're significant but not dominant
         markings_coverage = np.sum(markings_mask > 0) / markings_mask.size
-        if markings_coverage < 0.3:  # If less than 30% is markings, use filtered version
+        if markings_coverage < 0.15:  # If less than 15% is markings, use filtered version (was 30%)
             analysis_gray = road_without_markings
         else:
             analysis_gray = gray  # Too many markings, use full image
@@ -272,8 +273,8 @@ class RoadQualityService:
         for y in range(0, gray.shape[0] - block_size, block_size):
             for x in range(0, gray.shape[1] - block_size, block_size):
                 block = gray[y:y+block_size, x:x+block_size]
-                # Skip blocks that are mostly markings
-                if markings_coverage < 0.3:
+                # Skip blocks that are mostly markings (less aggressive filtering)
+                if markings_coverage < 0.15:  # Only filter if markings coverage is low (was 0.3)
                     block_mask = road_mask[y:y+block_size, x:x+block_size]
                     if np.sum(block_mask > 0) > block_size * block_size * 0.5:  # At least 50% road
                         variances.append(np.var(block))
@@ -328,14 +329,14 @@ class RoadQualityService:
         # Combined damage score with balanced weighting
         # Balanced between avoiding false positives and detecting real damage
         # Focus on actual structural damage indicators while filtering normal texture
-        # Higher weights to better distinguish between good and bad roads
+        # Higher weights closer to original to better distinguish between good and bad roads
         damage_score = (
-            edge_density * 32 +              # Higher weight - edges are key damage indicators
-            edge_density_fine * 25 +         # Fine cracks are important indicators
-            texture_variance / 450 +         # Higher sensitivity - distinguish damage from normal texture
-            line_density * 0.6 +             # Higher weight - structural cracks are key indicators
-            contrast_score / 12000 +         # Higher sensitivity - damaged areas have higher contrast
-            patch_density * 16               # Higher weight - patches can indicate repairs or damage
+            edge_density * 35 +              # Higher weight - edges are key damage indicators
+            edge_density_fine * 28 +         # Fine cracks are important indicators
+            texture_variance / 400 +         # Higher sensitivity - distinguish damage from normal texture
+            line_density * 0.7 +             # Higher weight - structural cracks are key indicators
+            contrast_score / 10000 +         # Higher sensitivity - damaged areas have higher contrast
+            patch_density * 18               # Higher weight - patches can indicate repairs or damage
         )
         
         # Shadow detection and compensation
@@ -388,13 +389,13 @@ class RoadQualityService:
         # - Fair roads (visible wear, minor cracks): RQI 3
         # - Poor roads (significant damage, cracks): RQI 4
         # - Very Poor roads (severe damage, potholes): RQI 5
-        if damage_score < 16:  # Low score - excellent road (smooth, well-maintained)
+        if damage_score < 18:  # Low score - excellent road (smooth, well-maintained)
             rqi = 1.0  # Excellent
-        elif damage_score < 22:  # Low-moderate score - good road (minor wear acceptable)
+        elif damage_score < 24:  # Low-moderate score - good road (minor wear acceptable)
             rqi = 2.0  # Good
-        elif damage_score < 30:  # Moderate score - fair condition (visible wear, minor cracks)
+        elif damage_score < 32:  # Moderate score - fair condition (visible wear, minor cracks)
             rqi = 3.0  # Fair
-        elif damage_score < 42:  # High score - poor condition (significant damage, cracks)
+        elif damage_score < 45:  # High score - poor condition (significant damage, cracks)
             rqi = 4.0  # Poor
         else:
             rqi = 5.0  # Very Poor - severe damage (potholes, extensive cracks)
@@ -421,10 +422,10 @@ class RoadQualityService:
             "canny_threshold_coarse_low": 80,
             "canny_threshold_coarse_high": 200,
             "rqi_thresholds": {
-                "excellent": 16,   # Balanced threshold - smooth roads
-                "good": 22,       # Balanced threshold - minor wear acceptable
-                "fair": 30,       # Moderate threshold - visible wear
-                "poor": 42        # High threshold - significant damage
+                "excellent": 18,   # Balanced threshold - smooth roads
+                "good": 24,       # Balanced threshold - minor wear acceptable
+                "fair": 32,       # Moderate threshold - visible wear
+                "poor": 45        # High threshold - significant damage
             },
             "markings_coverage": float(markings_coverage),
             "method_note": "quantile_based_normalization"
