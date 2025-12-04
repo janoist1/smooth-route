@@ -428,14 +428,25 @@
                 }
                 
                 // Update status
-                document.getElementById('status-text').textContent = job.status;
+                const statusText = job.status === 'pending' ? 'Várakozás' :
+                                 job.status === 'running' ? 'Folyamatban' :
+                                 job.status === 'completed' ? 'Kész' :
+                                 job.status === 'failed' ? 'Hiba' : job.status;
+                document.getElementById('status-text').textContent = statusText;
                 document.getElementById('status-message').textContent = job.message || '-';
+                
+                // Debug log
+                console.log('Job status:', job.status, 'Step:', job.current_step, 'Progress:', job.progress, '/', job.total);
                 
                 // Update progress
                 if (job.total > 0) {
                     const percent = Math.round((job.progress / job.total) * 100);
                     document.getElementById('progress-fill').style.width = percent + '%';
                     document.getElementById('progress-fill').textContent = percent + '%';
+                } else if (job.progress > 0) {
+                    // Show progress even if total is not set yet
+                    document.getElementById('progress-fill').style.width = '50%';
+                    document.getElementById('progress-fill').textContent = 'Folyamatban...';
                 }
                 
                 // Update steps
