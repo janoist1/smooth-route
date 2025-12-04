@@ -235,6 +235,18 @@
         async function loadSettings() {
             try {
                 const response = await fetch('/api/v1/settings');
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${errorText.substring(0, 100)}`);
+                }
+                
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    const text = await response.text();
+                    throw new Error(`Expected JSON but got: ${contentType}. Response: ${text.substring(0, 200)}`);
+                }
+                
                 const data = await response.json();
                 
                 // Group by category
@@ -377,13 +389,28 @@
             }, 5000);
         }
         
-        // Initialize settings on page load
-        loadSettings();
+        // Initialize default settings first, then load
+        async function initializeAndLoad() {
+            try {
+                // First, try to initialize settings
+                const initResponse = await fetch('/api/v1/settings/initialize', { method: 'POST' });
+                if (!initResponse.ok) {
+                    const errorText = await initResponse.text();
+                    console.warn('Settings initialization warning:', errorText);
+                } else {
+                    const initData = await initResponse.json();
+                    console.log('Settings initialized:', initData);
+                }
+            } catch (error) {
+                console.warn('Settings initialization error:', error);
+            }
+            
+            // Then load settings
+            await loadSettings();
+        }
         
-        // Initialize default settings if needed
-        fetch('/api/v1/settings/initialize', { method: 'POST' })
-            .then(() => loadSettings())
-            .catch(() => loadSettings());
+        // Initialize and load on page load
+        initializeAndLoad();
     </script>
 </body>
 </html>

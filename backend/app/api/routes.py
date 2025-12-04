@@ -240,10 +240,10 @@ def run_route_processing(job_id: str, origin: str, destination: str):
         db = SessionLocal()
         try:
             polyline = google_maps_service.get_route(origin, destination)
-            if not polyline:
+        if not polyline:
                 raise ValueError("Route not found")
-
-            points = google_maps_service.decode_polyline(polyline)
+            
+        points = google_maps_service.decode_polyline(polyline)
             dense_points = google_maps_service.interpolate_points(
                 points, interval_meters=10.0
             )
@@ -376,7 +376,7 @@ def run_route_processing(job_id: str, origin: str, destination: str):
                         message=f"Képek letöltése: {downloaded} letöltve, {skipped} kihagyva",
                     )
 
-            db.commit()
+        db.commit()
             update_job(
                 job_id,
                 message=f"Képek letöltve: {downloaded} új, {skipped} már létezett",
@@ -493,6 +493,14 @@ class SettingUpdateRequest(PydanticBaseModel):
 async def get_settings(db: Session = Depends(get_db)):
     """Get all analysis settings."""
     settings = db.query(AnalysisSettings).order_by(AnalysisSettings.category, AnalysisSettings.key).all()
+    
+    # If no settings exist, initialize them
+    if not settings:
+        # Initialize settings
+        await initialize_settings(db)
+        # Query again
+        settings = db.query(AnalysisSettings).order_by(AnalysisSettings.category, AnalysisSettings.key).all()
+    
     return settings
 
 
@@ -581,3 +589,9 @@ async def initialize_settings(db: Session = Depends(get_db)):
     db.commit()
     
     return {"message": "Settings initialized", "created": created, "updated": updated}
+
+
+@router.post("/api/v1/settings/initialize", response_model=dict)
+async def initialize_settings_endpoint(db: Session = Depends(get_db)):
+    """Initialize default settings if they don't exist."""
+    return await initialize_settings(db)
