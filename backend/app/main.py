@@ -46,6 +46,14 @@ async def map_page():
         return FileResponse(map_file)
     return {"error": "Map page not found"}
 
+@app.get("/settings.html")
+async def settings_page():
+    """Serve the settings page."""
+    settings_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "settings.html")
+    if os.path.exists(settings_file):
+        return FileResponse(settings_file)
+    return {"error": "Settings page not found"}
+
 
 @app.get("/health")
 async def health_check():

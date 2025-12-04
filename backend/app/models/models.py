@@ -31,3 +31,19 @@ class StreetViewImage(Base):
     damage_types = Column(JSON, nullable=True)
     analysis_metadata = Column(JSON, nullable=True)  # Detailed analysis info (edge_density, variance, damage_score, etc.)
 
+
+class AnalysisSettings(Base):
+    """
+    Settings for road quality analysis algorithm.
+    Stores configurable parameters for fine-tuning the RQI calculation.
+    """
+    __tablename__ = "analysis_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    key = Column(String, unique=True, index=True, nullable=False)  # Setting key (e.g., "edge_density_weight")
+    value = Column(Float, nullable=False)  # Setting value
+    description = Column(String, nullable=True)  # Hungarian description
+    example = Column(String, nullable=True)  # Example value or explanation
+    category = Column(String, nullable=True)  # Category: "weights", "thresholds", "filters", etc.
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+

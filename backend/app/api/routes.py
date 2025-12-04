@@ -467,3 +467,114 @@ def run_route_processing(job_id: str, origin: str, destination: str):
             completed_at=datetime.utcnow(),
             message=f"Hiba: {error_msg}",
         )
+
+
+# Settings API endpoints
+
+class SettingResponse(PydanticBaseModel):
+    key: str
+    value: float
+    description: Optional[str]
+    example: Optional[str]
+    category: Optional[str]
+
+    class Config:
+        from_attributes = True
+
+
+class SettingUpdateRequest(PydanticBaseModel):
+    value: float
+
+
+@router.get("/api/v1/settings", response_model=List[SettingResponse])
+async def get_settings(db: Session = Depends(get_db)):
+    """Get all analysis settings."""
+    settings = db.query(AnalysisSettings).order_by(AnalysisSettings.category, AnalysisSettings.key).all()
+    return settings
+
+
+@router.get("/api/v1/settings/{key}", response_model=SettingResponse)
+async def get_setting(key: str, db: Session = Depends(get_db)):
+    """Get a specific setting by key."""
+    setting = db.query(AnalysisSettings).filter(AnalysisSettings.key == key).first()
+    if not setting:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail=f"Setting '{key}' not found")
+    return setting
+
+
+@router.put("/api/v1/settings/{key}", response_model=SettingResponse)
+async def update_setting(key: str, request: SettingUpdateRequest, db: Session = Depends(get_db)):
+    """Update a setting value."""
+    setting = db.query(AnalysisSettings).filter(AnalysisSettings.key == key).first()
+    if not setting:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail=f"Setting '{key}' not found")
+    
+    setting.value = request.value
+    setting.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(setting)
+    return setting
+
+
+@router.post("/api/v1/settings/initialize", response_model=dict)
+async def initialize_settings(db: Session = Depends(get_db)):
+    """Initialize default settings if they don't exist."""
+    from datetime import datetime
+    
+    default_settings = [
+        # Damage Score Weights
+        {"key": "edge_density_weight", "value": 35.0, "description": "Élsűrűség súlya - az élek sűrűsége fontos károsodásjelző", "example": "35 = közepes súly, 50 = erős súly", "category": "Súlyok"},
+        {"key": "edge_density_fine_weight", "value": 28.0, "description": "Finom repedések súlya - a finom repedések sűrűsége", "example": "28 = közepes súly, 40 = erős súly", "category": "Súlyok"},
+        {"key": "texture_variance_divisor", "value": 400.0, "description": "Textúra variancia osztó - alacsonyabb érték = érzékenyebb", "example": "400 = közepes, 300 = érzékenyebb, 500 = kevésbé érzékeny", "category": "Súlyok"},
+        {"key": "line_density_weight", "value": 0.7, "description": "Vonal sűrűség súlya - strukturális repedések súlya", "example": "0.7 = közepes, 1.0 = erős", "category": "Súlyok"},
+        {"key": "contrast_score_divisor", "value": 10000.0, "description": "Kontraszt osztó - alacsonyabb érték = érzékenyebb", "example": "10000 = közepes, 8000 = érzékenyebb", "category": "Súlyok"},
+        {"key": "patch_density_weight", "value": 18.0, "description": "Foltsűrűség súlya - javítások/károsodások súlya", "example": "18 = közepes, 25 = erős", "category": "Súlyok"},
+        
+        # RQI Thresholds
+        {"key": "rqi_threshold_excellent", "value": 18.0, "description": "RQI 1 (Kiváló) küszöb - ennél alacsonyabb damage_score = kiváló út", "example": "18 = konzervatív, 15 = kevésbé konzervatív", "category": "Küszöbértékek"},
+        {"key": "rqi_threshold_good", "value": 24.0, "description": "RQI 2 (Jó) küszöb - excellent és good között", "example": "24 = konzervatív, 20 = kevésbé konzervatív", "category": "Küszöbértékek"},
+        {"key": "rqi_threshold_fair", "value": 32.0, "description": "RQI 3 (Közepes) küszöb - good és fair között", "example": "32 = konzervatív, 28 = kevésbé konzervatív", "category": "Küszöbértékek"},
+        {"key": "rqi_threshold_poor", "value": 45.0, "description": "RQI 4 (Rossz) küszöb - fair és poor között", "example": "45 = konzervatív, 40 = kevésbé konzervatív", "category": "Küszöbértékek"},
+        
+        # Filters
+        {"key": "markings_filter_threshold", "value": 0.15, "description": "Útvonaljelölés szűrés küszöb - ha ennél kevesebb jelölés van, kizárjuk", "example": "0.15 = 15%, 0.3 = 30%", "category": "Szűrők"},
+        {"key": "shadow_compensation_dark", "value": 0.75, "description": "Árnyék kompenzáció sötét képeknél - alacsonyabb = erősebb kompenzáció", "example": "0.75 = közepes, 0.65 = erős", "category": "Szűrők"},
+        {"key": "shadow_compensation_moderate", "value": 0.85, "description": "Árnyék kompenzáció közepesen sötét képeknél", "example": "0.85 = közepes, 0.75 = erős", "category": "Szűrők"},
+        
+        # Edge Detection
+        {"key": "canny_threshold_fine_low", "value": 30.0, "description": "Canny él detektálás finom - alsó küszöb", "example": "30 = közepes, 20 = érzékenyebb", "category": "Él detektálás"},
+        {"key": "canny_threshold_fine_high", "value": 80.0, "description": "Canny él detektálás finom - felső küszöb", "example": "80 = közepes, 100 = kevésbé érzékeny", "category": "Él detektálás"},
+        {"key": "canny_threshold_coarse_low", "value": 80.0, "description": "Canny él detektálás durva - alsó küszöb", "example": "80 = közepes, 60 = érzékenyebb", "category": "Él detektálás"},
+        {"key": "canny_threshold_coarse_high", "value": 200.0, "description": "Canny él detektálás durva - felső küszöb", "example": "200 = közepes, 250 = kevésbé érzékeny", "category": "Él detektálás"},
+        
+        # Structural Analysis
+        {"key": "hough_lines_threshold", "value": 80.0, "description": "HoughLinesP küszöb - magasabb = kevesebb false positive", "example": "80 = közepes, 50 = érzékenyebb", "category": "Strukturális elemzés"},
+        {"key": "hough_lines_min_length", "value": 50.0, "description": "HoughLinesP minimális vonalhossz - csak hosszú vonalak számítanak", "example": "50 = közepes, 30 = érzékenyebb", "category": "Strukturális elemzés"},
+        
+        # Texture Analysis
+        {"key": "block_size", "value": 32.0, "description": "Blokk méret textúra analízishez - pixelben", "example": "32 = közepes, 16 = finomabb, 64 = durvább", "category": "Textúra analízis"},
+        {"key": "road_region_height_ratio", "value": 0.4, "description": "Út régió magasság aránya - az alsó hányad része az útnak", "example": "0.4 = alsó 40%, 0.5 = alsó 50%", "category": "Textúra analízis"},
+    ]
+    
+    created = 0
+    updated = 0
+    
+    for setting_data in default_settings:
+        existing = db.query(AnalysisSettings).filter(AnalysisSettings.key == setting_data["key"]).first()
+        if existing:
+            # Update description/example if changed
+            if existing.description != setting_data.get("description") or existing.example != setting_data.get("example"):
+                existing.description = setting_data.get("description")
+                existing.example = setting_data.get("example")
+                existing.category = setting_data.get("category")
+                updated += 1
+        else:
+            setting = AnalysisSettings(**setting_data)
+            db.add(setting)
+            created += 1
+    
+    db.commit()
+    
+    return {"message": "Settings initialized", "created": created, "updated": updated}

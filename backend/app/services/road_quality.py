@@ -60,6 +60,34 @@ class RoadQualityService:
         self.model = None
         self.model_path = model_path
         self._loaded = False
+        self._settings_cache = None
+        self._settings_cache_time = None
+    
+    def _get_setting(self, key: str, default: float) -> float:
+        """Get a setting value from database, with caching."""
+        from datetime import datetime, timedelta
+        
+        # Cache settings for 60 seconds
+        if self._settings_cache is None or (
+            self._settings_cache_time and 
+            datetime.utcnow() - self._settings_cache_time > timedelta(seconds=60)
+        ):
+            try:
+                from app.core.database import SessionLocal
+                from app.models.models import AnalysisSettings
+                
+                db = SessionLocal()
+                try:
+                    settings = db.query(AnalysisSettings).all()
+                    self._settings_cache = {s.key: s.value for s in settings}
+                    self._settings_cache_time = datetime.utcnow()
+                finally:
+                    db.close()
+            except Exception:
+                # If database query fails, use defaults
+                self._settings_cache = {}
+        
+        return self._settings_cache.get(key, default) if self._settings_cache else default
         
     def _load_model(self):
         """Lazy load the YOLO model."""
@@ -389,16 +417,22 @@ class RoadQualityService:
         # - Fair roads (visible wear, minor cracks): RQI 3
         # - Poor roads (significant damage, cracks): RQI 4
         # - Very Poor roads (severe damage, potholes): RQI 5
-        if damage_score < 18:  # Low score - excellent road (smooth, well-maintained)
+        # Use configurable thresholds from database settings
+        threshold_excellent = self._get_setting("rqi_threshold_excellent", 18.0)
+        threshold_good = self._get_setting("rqi_threshold_good", 24.0)
+        threshold_fair = self._get_setting("rqi_threshold_fair", 32.0)
+        threshold_poor = self._get_setting("rqi_threshold_poor", 45.0)
+        
+        if damage_score < threshold_excellent:
             rqi = 1.0  # Excellent
-        elif damage_score < 24:  # Low-moderate score - good road (minor wear acceptable)
+        elif damage_score < threshold_good:
             rqi = 2.0  # Good
-        elif damage_score < 32:  # Moderate score - fair condition (visible wear, minor cracks)
+        elif damage_score < threshold_fair:
             rqi = 3.0  # Fair
-        elif damage_score < 45:  # High score - poor condition (significant damage, cracks)
+        elif damage_score < threshold_poor:
             rqi = 4.0  # Poor
         else:
-            rqi = 5.0  # Very Poor - severe damage (potholes, extensive cracks)
+            rqi = 5.0  # Very Poor
         
         # Store detailed analysis metadata
         analysis_metadata = {
