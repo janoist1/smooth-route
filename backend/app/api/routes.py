@@ -376,7 +376,7 @@ def run_route_processing(job_id: str, origin: str, destination: str):
                         message=f"Képek letöltése: {downloaded} letöltve, {skipped} kihagyva",
                     )
 
-        db.commit()
+            db.commit()
             update_job(
                 job_id,
                 message=f"Képek letöltve: {downloaded} új, {skipped} már létezett",
