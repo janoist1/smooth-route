@@ -501,8 +501,8 @@ async def get_settings(db: Session = Depends(get_db)):
 
     # If no settings exist, initialize them
     if not settings:
-        # Initialize settings
-        await initialize_settings(db)
+        # Initialize settings (synchronous helper function)
+        _initialize_settings_sync(db)
         # Query again
         settings = (
             db.query(AnalysisSettings)
@@ -542,9 +542,8 @@ async def update_setting(
     return setting
 
 
-@router.post("/api/v1/settings/initialize", response_model=dict)
-async def initialize_settings(db: Session = Depends(get_db)):
-    """Initialize default settings if they don't exist."""
+def _initialize_settings_sync(db: Session) -> dict:
+    """Synchronous helper function to initialize default settings."""
     from datetime import datetime
 
     default_settings = [
@@ -734,4 +733,4 @@ async def initialize_settings(db: Session = Depends(get_db)):
 @router.post("/api/v1/settings/initialize", response_model=dict)
 async def initialize_settings_endpoint(db: Session = Depends(get_db)):
     """Initialize default settings if they don't exist."""
-    return await initialize_settings(db)
+    return _initialize_settings_sync(db)
