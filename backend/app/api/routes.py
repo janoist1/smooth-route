@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from app.core.database import SessionLocal
-from app.models.models import StreetViewImage
+from app.models.models import StreetViewImage, AnalysisSettings
 from app.core.config import settings
 from app.services.job_service import create_job, get_job, update_job, JobStatus, JobStep
 from sqlalchemy import func
@@ -240,10 +240,10 @@ def run_route_processing(job_id: str, origin: str, destination: str):
         db = SessionLocal()
         try:
             polyline = google_maps_service.get_route(origin, destination)
-            if not polyline:
+        if not polyline:
                 raise ValueError("Route not found")
-
-            points = google_maps_service.decode_polyline(polyline)
+            
+        points = google_maps_service.decode_polyline(polyline)
             dense_points = google_maps_service.interpolate_points(
                 points, interval_meters=10.0
             )
@@ -376,7 +376,7 @@ def run_route_processing(job_id: str, origin: str, destination: str):
                         message=f"Képek letöltése: {downloaded} letöltve, {skipped} kihagyva",
                     )
 
-            db.commit()
+        db.commit()
             update_job(
                 job_id,
                 message=f"Képek letöltve: {downloaded} új, {skipped} már létezett",
@@ -442,7 +442,7 @@ def run_route_processing(job_id: str, origin: str, destination: str):
                         message=f"Képek elemzése: {analyzed}/{total_images}",
                     )
 
-            db.commit()
+        db.commit()
             update_job(job_id, message=f"Elemzés kész: {analyzed} pont elemzve")
         finally:
             db.close()
