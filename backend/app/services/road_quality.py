@@ -239,8 +239,9 @@ class RoadQualityService:
         
         h, w = img.shape[:2]
         
-        # Focus on bottom 40% (road area) - more conservative than before
-        road_start = int(h * 0.6)
+        # Focus on bottom portion (road area) - configurable ratio
+        road_region_ratio = self._get_setting("road_region_height_ratio", 0.4)
+        road_start = int(h * (1 - road_region_ratio))
         road_region = img[road_start:, :]
         
         # Convert to grayscale
@@ -261,9 +262,10 @@ class RoadQualityService:
         road_without_markings = cv2.bitwise_and(gray, gray, mask=road_mask)
         
         # Use road without markings for analysis, but fallback to full road if too much excluded
-        # Less aggressive filtering - only exclude markings if they're significant but not dominant
+        # Use configurable threshold from database settings
         markings_coverage = np.sum(markings_mask > 0) / markings_mask.size
-        if markings_coverage < 0.15:  # If less than 15% is markings, use filtered version (was 30%)
+        markings_threshold = self._get_setting("markings_filter_threshold", 0.15)
+        if markings_coverage < markings_threshold:
             analysis_gray = road_without_markings
         else:
             analysis_gray = gray  # Too many markings, use full image
@@ -283,9 +285,14 @@ class RoadQualityService:
         cleaned = cv2.morphologyEx(cleaned, cv2.MORPH_OPEN, kernel)
         
         # Multi-scale edge detection - detect both fine cracks and large damage
-        # Lower thresholds to catch fine cracks, but filter noise
-        edges_fine = cv2.Canny(blurred, 30, 80)   # Fine cracks
-        edges_coarse = cv2.Canny(blurred, 80, 200)  # Large damage
+        # Use configurable thresholds from database settings
+        canny_fine_low = int(self._get_setting("canny_threshold_fine_low", 30.0))
+        canny_fine_high = int(self._get_setting("canny_threshold_fine_high", 80.0))
+        canny_coarse_low = int(self._get_setting("canny_threshold_coarse_low", 80.0))
+        canny_coarse_high = int(self._get_setting("canny_threshold_coarse_high", 200.0))
+        
+        edges_fine = cv2.Canny(blurred, canny_fine_low, canny_fine_high)   # Fine cracks
+        edges_coarse = cv2.Canny(blurred, canny_coarse_low, canny_coarse_high)  # Large damage
         
         # Calculate edge densities
         edge_density_fine = np.sum(edges_fine > 0) / edges_fine.size
@@ -296,13 +303,13 @@ class RoadQualityService:
         
         # Texture analysis - calculate variance in smaller blocks to detect localized damage
         # Key insight: Normal road texture has uniform variance, damage has localized high variance
-        block_size = 32
+        block_size = int(self._get_setting("block_size", 32.0))
         variances = []
         for y in range(0, gray.shape[0] - block_size, block_size):
             for x in range(0, gray.shape[1] - block_size, block_size):
                 block = gray[y:y+block_size, x:x+block_size]
-                # Skip blocks that are mostly markings (less aggressive filtering)
-                if markings_coverage < 0.15:  # Only filter if markings coverage is low (was 0.3)
+                # Skip blocks that are mostly markings (use configurable threshold)
+                if markings_coverage < markings_threshold:
                     block_mask = road_mask[y:y+block_size, x:x+block_size]
                     if np.sum(block_mask > 0) > block_size * block_size * 0.5:  # At least 50% road
                         variances.append(np.var(block))
@@ -328,8 +335,12 @@ class RoadQualityService:
         
         # Structural analysis - detect linear patterns (cracks)
         # Only count long, straight lines (actual cracks), not random texture
-        # Use higher thresholds and longer minimum line length to reduce false positives
-        lines = cv2.HoughLinesP(edges_fine, 1, np.pi/180, threshold=80, minLineLength=50, maxLineGap=5)
+        # Use configurable thresholds from database settings
+        hough_threshold = int(self._get_setting("hough_lines_threshold", 80.0))
+        hough_min_length = int(self._get_setting("hough_lines_min_length", 50.0))
+        
+        lines = cv2.HoughLinesP(edges_fine, 1, np.pi/180, threshold=hough_threshold, 
+                                minLineLength=hough_min_length, maxLineGap=5)
         line_count = len(lines) if lines is not None else 0
         
         # Filter lines: only count lines that are reasonably straight (not curved)
@@ -339,7 +350,7 @@ class RoadQualityService:
             for line in lines:
                 x1, y1, x2, y2 = line[0]
                 length = np.sqrt((x2-x1)**2 + (y2-y1)**2)
-                if length > 50:  # Only count longer lines
+                if length > hough_min_length:  # Only count longer lines
                     filtered_line_count += 1
         
         line_density = filtered_line_count / (gray.shape[0] * gray.shape[1]) * 10000
@@ -392,12 +403,16 @@ class RoadQualityService:
             shadow_edge_factor = 1.0
         
         # Brightness-based compensation (moderate for shadows)
+        # Use configurable compensation factors from database settings
+        shadow_comp_dark = self._get_setting("shadow_compensation_dark", 0.75)
+        shadow_comp_moderate = self._get_setting("shadow_compensation_moderate", 0.85)
+        
         brightness_factor = 1.0
         if mean_brightness < 60:  # Dark/very shadowy
             # Moderate compensation: shadows create some false edges but not too aggressive
-            brightness_factor = 0.75 - (shadow_coverage * 0.15)  # Less aggressive compensation
+            brightness_factor = shadow_comp_dark - (shadow_coverage * 0.15)
         elif mean_brightness < 100:  # Moderately shadowy
-            brightness_factor = 0.85 - (shadow_coverage * 0.1)  # Less aggressive
+            brightness_factor = shadow_comp_moderate - (shadow_coverage * 0.1)
         elif mean_brightness > 200:  # Very bright (overexposed)
             brightness_factor = 0.95  # Less aggressive
         
