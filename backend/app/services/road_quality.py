@@ -325,16 +325,17 @@ class RoadQualityService:
                                          cv2.THRESH_BINARY_INV, 11, 2)
         patch_density = np.sum(adaptive > 0) / adaptive.size
         
-        # Combined damage score with conservative weighting
-        # Further reduced weights to avoid false positives from normal road texture
-        # Focus on actual structural damage indicators
+        # Combined damage score with balanced weighting
+        # Balanced between avoiding false positives and detecting real damage
+        # Focus on actual structural damage indicators while filtering normal texture
+        # Higher weights to better distinguish between good and bad roads
         damage_score = (
-            edge_density * 20 +              # Further reduced - normal texture has edges too
-            edge_density_fine * 15 +         # Fine cracks are important, but reduce weight
-            texture_variance / 800 +         # Much reduced sensitivity - normal texture varies
-            line_density * 0.3 +             # Further reduced - only long structural lines count
-            contrast_score / 20000 +         # Further reduced - normal roads have contrast
-            patch_density * 10               # Reduced - patches might be normal repairs
+            edge_density * 32 +              # Higher weight - edges are key damage indicators
+            edge_density_fine * 25 +         # Fine cracks are important indicators
+            texture_variance / 450 +         # Higher sensitivity - distinguish damage from normal texture
+            line_density * 0.6 +             # Higher weight - structural cracks are key indicators
+            contrast_score / 12000 +         # Higher sensitivity - damaged areas have higher contrast
+            patch_density * 16               # Higher weight - patches can indicate repairs or damage
         )
         
         # Shadow detection and compensation
@@ -361,43 +362,46 @@ class RoadQualityService:
         else:
             shadow_edge_factor = 1.0
         
-        # Brightness-based compensation (more aggressive for shadows)
+        # Brightness-based compensation (moderate for shadows)
         brightness_factor = 1.0
         if mean_brightness < 60:  # Dark/very shadowy
-            # Strong compensation: shadows create many false edges
-            brightness_factor = 0.65 - (shadow_coverage * 0.2)  # More shadows = more compensation
+            # Moderate compensation: shadows create some false edges but not too aggressive
+            brightness_factor = 0.75 - (shadow_coverage * 0.15)  # Less aggressive compensation
         elif mean_brightness < 100:  # Moderately shadowy
-            brightness_factor = 0.75 - (shadow_coverage * 0.15)
+            brightness_factor = 0.85 - (shadow_coverage * 0.1)  # Less aggressive
         elif mean_brightness > 200:  # Very bright (overexposed)
-            brightness_factor = 0.9
+            brightness_factor = 0.95  # Less aggressive
         
-        # Additional compensation if shadows have sharp edges
-        if shadow_coverage > 0.15 and shadow_edge_factor > 1.5:
-            brightness_factor *= 0.85  # Extra reduction for sharp shadow edges
+        # Additional compensation if shadows have sharp edges (less aggressive)
+        if shadow_coverage > 0.2 and shadow_edge_factor > 2.0:  # Higher thresholds
+            brightness_factor *= 0.9  # Less aggressive reduction
         
         damage_score *= brightness_factor
         
-        # Conservative RQI mapping with higher thresholds
-        # Goal: Only mark roads as "poor" if there's clear evidence of damage
-        # Normal road texture should get RQI 1-2, not 3-4
+        # Balanced RQI mapping - distinguish between good and bad roads
+        # Goal: Accurately classify roads while avoiding false positives from normal texture
+        # Thresholds calibrated to balance sensitivity and specificity
         
-        # Updated thresholds based on improved algorithm:
-        # - Much more conservative: normal roads should score low
-        # - Only clear damage indicators push score higher
-        if damage_score < 8:  # Very low score - excellent road
+        # Updated thresholds - balanced approach with better separation:
+        # - Excellent roads (smooth, well-maintained): RQI 1
+        # - Good roads (minor wear acceptable): RQI 2
+        # - Fair roads (visible wear, minor cracks): RQI 3
+        # - Poor roads (significant damage, cracks): RQI 4
+        # - Very Poor roads (severe damage, potholes): RQI 5
+        if damage_score < 16:  # Low score - excellent road (smooth, well-maintained)
             rqi = 1.0  # Excellent
-        elif damage_score < 15:  # Low score - good road
+        elif damage_score < 22:  # Low-moderate score - good road (minor wear acceptable)
             rqi = 2.0  # Good
-        elif damage_score < 25:  # Moderate score - fair condition
+        elif damage_score < 30:  # Moderate score - fair condition (visible wear, minor cracks)
             rqi = 3.0  # Fair
-        elif damage_score < 35:  # High score - poor condition
+        elif damage_score < 42:  # High score - poor condition (significant damage, cracks)
             rqi = 4.0  # Poor
         else:
-            rqi = 5.0  # Very Poor - severe damage
+            rqi = 5.0  # Very Poor - severe damage (potholes, extensive cracks)
         
         # Store detailed analysis metadata
         analysis_metadata = {
-            "method": "improved_heuristic_v2",
+            "method": "improved_heuristic_v3_balanced",
             "edge_density": float(edge_density),
             "edge_density_fine": float(edge_density_fine),
             "edge_density_coarse": float(edge_density_coarse),
@@ -417,10 +421,10 @@ class RoadQualityService:
             "canny_threshold_coarse_low": 80,
             "canny_threshold_coarse_high": 200,
             "rqi_thresholds": {
-                "excellent": 8,    # Conservative threshold
-                "good": 15,        # Low threshold for good roads
-                "fair": 25,        # Moderate threshold
-                "poor": 35         # High threshold - only clear damage
+                "excellent": 16,   # Balanced threshold - smooth roads
+                "good": 22,       # Balanced threshold - minor wear acceptable
+                "fair": 30,       # Moderate threshold - visible wear
+                "poor": 42        # High threshold - significant damage
             },
             "markings_coverage": float(markings_coverage),
             "method_note": "quantile_based_normalization"
