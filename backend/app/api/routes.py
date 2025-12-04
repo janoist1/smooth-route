@@ -240,10 +240,10 @@ def run_route_processing(job_id: str, origin: str, destination: str):
         db = SessionLocal()
         try:
             polyline = google_maps_service.get_route(origin, destination)
-            if not polyline:
+        if not polyline:
                 raise ValueError("Route not found")
             
-            points = google_maps_service.decode_polyline(polyline)
+        points = google_maps_service.decode_polyline(polyline)
             dense_points = google_maps_service.interpolate_points(
                 points, interval_meters=10.0
             )
@@ -376,7 +376,7 @@ def run_route_processing(job_id: str, origin: str, destination: str):
                         message=f"Képek letöltése: {downloaded} letöltve, {skipped} kihagyva",
                     )
 
-            db.commit()
+        db.commit()
             update_job(
                 job_id,
                 message=f"Képek letöltve: {downloaded} új, {skipped} már létezett",
