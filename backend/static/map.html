@@ -427,15 +427,39 @@
         
         function updatePointCount() {
             const count = (originMarker ? 1 : 0) + (destinationMarker ? 1 : 0);
-            document.getElementById('point-count').textContent = `${count}/2 pont`;
-            document.getElementById('confirm-btn').disabled = count < 2;
+            const pointCountEl = document.getElementById('point-count');
+            const confirmBtn = document.getElementById('confirm-btn');
+            
+            if (pointCountEl) {
+                pointCountEl.textContent = `${count}/2 pont`;
+            }
+            if (confirmBtn) {
+                confirmBtn.disabled = count < 2;
+            }
         }
         
         function confirmAndStart() {
-            if (originLatLng && destinationLatLng) {
-                exitCollectMode();
-                startProcessing();
+            if (!originLatLng || !destinationLatLng) {
+                return;
             }
+            
+            // Save coordinates before clearing
+            const origin = { lat: originLatLng.lat, lng: originLatLng.lng };
+            const destination = { lat: destinationLatLng.lat, lng: destinationLatLng.lng };
+            
+            // Exit collect mode (but don't clear markers yet - they'll be cleared after processing starts)
+            collectMode = false;
+            document.getElementById('fab').classList.remove('active');
+            document.getElementById('fab').textContent = '➕';
+            document.getElementById('collect-indicator').classList.remove('active');
+            
+            if (mapClickListener) {
+                google.maps.event.removeListener(mapClickListener);
+                mapClickListener = null;
+            }
+            
+            // Start processing with saved coordinates
+            startProcessingWithCoords(origin, destination);
         }
         
         function handleMapClickForCollect(event) {
@@ -512,12 +536,7 @@
             updatePointCount();
         }
         
-        async function startProcessing() {
-            if (!originLatLng || !destinationLatLng) {
-                alert('Kérlek válassz ki két pontot!');
-                return;
-            }
-            
+        async function startProcessingWithCoords(origin, destination) {
             document.getElementById('status-panel').classList.add('active');
             document.getElementById('error-container').innerHTML = '';
             document.getElementById('success-container').innerHTML = '';
@@ -526,15 +545,18 @@
                 document.getElementById(id).classList.remove('active', 'completed');
             });
             
+            // Clear markers now that we have the coordinates
+            clearCollectMarkers();
+            
             try {
                 const response = await fetch('/api/v1/process-route', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        origin_lat: originLatLng.lat,
-                        origin_lng: originLatLng.lng,
-                        destination_lat: destinationLatLng.lat,
-                        destination_lng: destinationLatLng.lng
+                        origin_lat: origin.lat,
+                        origin_lng: origin.lng,
+                        destination_lat: destination.lat,
+                        destination_lng: destination.lng
                     })
                 });
                 
