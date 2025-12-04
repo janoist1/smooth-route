@@ -344,7 +344,13 @@ def analyze_points(
             data_dir = os.path.join(project_root, data_dir)
         
         images_dir = os.path.join(data_dir, "images")
-        data_pattern = f"{images_dir}%"
+        
+        # Match both host paths and container paths
+        from sqlalchemy import or_
+        data_patterns = [
+            f"%/data/images/%",  # Any path containing /data/images/
+            f"{images_dir}%",    # Container path
+        ]
         
         if lat is not None and lng is not None:
             # Area-based: points within radius
@@ -354,13 +360,13 @@ def analyze_points(
                     StreetViewImage.location,
                     func.ST_GeomFromText(center_point, 4326)
                 ) < radius,
-                StreetViewImage.image_url.like(data_pattern)  # Only local files
+                or_(*[StreetViewImage.image_url.like(pattern) for pattern in data_patterns])
             ).order_by(StreetViewImage.id)
             console.print(f"[dim]Analyzing points within {radius}m of ({lat}, {lng})[/dim]")
         else:
-            # All points with downloaded images
+            # All points with downloaded images (local files, not URLs)
             query = db.query(StreetViewImage).filter(
-                StreetViewImage.image_url.like(data_pattern)  # Only local files
+                or_(*[StreetViewImage.image_url.like(pattern) for pattern in data_patterns])
             ).order_by(StreetViewImage.id)
             console.print(f"[dim]Analyzing all points with downloaded images[/dim]")
         
@@ -377,13 +383,22 @@ def analyze_points(
         
         results = []
         for img in track(images, description="Analyzing..."):
-            if not os.path.exists(img.image_url):
+            # Convert host path to container path if needed
+            image_path = img.image_url
+            if image_path.startswith('/Users/') or image_path.startswith('/home/'):
+                # Host path detected, convert to container path
+                # Extract relative path from host absolute path
+                if '/data/images/' in image_path:
+                    rel_path = image_path.split('/data/images/')[-1]
+                    image_path = os.path.join(images_dir, rel_path)
+            
+            if not os.path.exists(image_path):
                 continue
                 
             if simple:
-                result = road_quality_service.analyze_image_simple(img.image_url)
+                result = road_quality_service.analyze_image_simple(image_path)
             else:
-                result = road_quality_service.analyze_image(img.image_url)
+                result = road_quality_service.analyze_image(image_path)
             
             results.append((img, result))
             
