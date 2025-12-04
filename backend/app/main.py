@@ -32,7 +32,8 @@ async def root():
         "version": "0.1.0",
         "endpoints": {
             "api": "/api/v1/points",
-            "web": "/map.html",
+            "web_map": "/map.html",
+            "web_collect": "/collect.html",
             "docs": "/docs"
         }
     }
@@ -44,6 +45,14 @@ async def map_page():
     if os.path.exists(map_file):
         return FileResponse(map_file)
     return {"error": "Map page not found"}
+
+@app.get("/collect.html")
+async def collect_page():
+    """Serve the route collection page."""
+    collect_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "collect.html")
+    if os.path.exists(collect_file):
+        return FileResponse(collect_file)
+    return {"error": "Collect page not found"}
 
 @app.get("/health")
 async def health_check():

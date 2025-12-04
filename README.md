@@ -83,6 +83,21 @@ Kátyúőr is an innovative route planning application that considers road quali
     - **Important**: No `route_X/` subdirectories - all images directly in `data/images/`
 
 6.  **Access**:
-    - CLI: `smooth-route --help` or `./cli.sh --help`
-    - API: Currently CLI-only. API server runs but endpoints removed.
-    - Health check: http://localhost:8000/health
+    - **CLI**: `smooth-route --help` or `./cli.sh --help`
+    - **Web Interfaces**:
+      - **Map Visualization**: `http://localhost:8000/map.html`
+        - Visualizes road points on Google Maps
+        - Color-coded road segments by RQI (green/yellow/orange/red)
+        - Shows statistics and legend
+      - **Route Collection**: `http://localhost:8000/collect.html`
+        - Click two points on the map to select origin and destination
+        - Start processing: collect points → download images → analyze
+        - Real-time progress tracking with step indicators
+        - Error handling and status messages
+    - **API**:
+      - API Docs: `http://localhost:8000/docs` (Swagger UI)
+      - Points API: `http://localhost:8000/api/v1/points`
+      - Process Route: `POST /api/v1/process-route`
+      - Job Status: `GET /api/v1/job/{job_id}`
+      - Config API: `http://localhost:8000/api/v1/config`
+    - **Health check**: `http://localhost:8000/health`
