@@ -45,6 +45,7 @@ class PointDetailResponse(BaseModel):
     rqi_score: Optional[float]
     damage_count: int
     damage_types: Optional[dict]
+    analysis_metadata: Optional[dict]  # Detailed analysis info
     image_url: Optional[str]
     image_path: Optional[str]  # Relative path for serving
     created_at: str
@@ -107,6 +108,7 @@ async def get_point_detail(point_id: int, db: Session = Depends(get_db)):
         rqi_score=point.rqi_score,
         damage_count=point.damage_count or 0,
         damage_types=point.damage_types,
+        analysis_metadata=point.analysis_metadata,
         image_url=point.image_url,
         image_path=image_path,
         created_at=point.created_at.isoformat() if point.created_at else "",
@@ -420,6 +422,9 @@ def run_route_processing(job_id: str, origin: str, destination: str):
                 try:
                     result = road_quality_service.analyze_image_simple(image_path)
                     img.rqi_score = result.rqi_score
+                    img.damage_count = result.damage_count
+                    img.damage_types = result.damage_types
+                    img.analysis_metadata = result.analysis_metadata
                     analyzed += 1
                 except Exception as e:
                     pass  # Continue on error

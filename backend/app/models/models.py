@@ -29,4 +29,5 @@ class StreetViewImage(Base):
     rqi_score = Column(Float, nullable=True, index=True)
     damage_count = Column(Integer, default=0)
     damage_types = Column(JSON, nullable=True)
+    analysis_metadata = Column(JSON, nullable=True)  # Detailed analysis info (edge_density, variance, damage_score, etc.)
 
