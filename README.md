@@ -89,7 +89,7 @@ Kátyúőr is an innovative route planning application that considers road quali
         - Visualizes road points on Google Maps
         - Color-coded road segments by RQI (green/yellow/orange/red)
         - Shows statistics and legend
-      - **Route Collection**: `http://localhost:8000/collect.html`
+      - **Route Collection**: Kattints a jobb alsó sarokban lévő ➕ gombra a térképen
         - Click two points on the map to select origin and destination
         - Start processing: collect points → download images → analyze
         - Real-time progress tracking with step indicators

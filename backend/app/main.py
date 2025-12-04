@@ -34,7 +34,6 @@ async def root():
         "endpoints": {
             "api": "/api/v1/points",
             "web_map": "/map.html",
-            "web_collect": "/collect.html",
             "docs": "/docs"
         }
     }
