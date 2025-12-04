@@ -240,10 +240,10 @@ def run_route_processing(job_id: str, origin: str, destination: str):
         db = SessionLocal()
         try:
             polyline = google_maps_service.get_route(origin, destination)
-        if not polyline:
+            if not polyline:
                 raise ValueError("Route not found")
             
-        points = google_maps_service.decode_polyline(polyline)
+            points = google_maps_service.decode_polyline(polyline)
             dense_points = google_maps_service.interpolate_points(
                 points, interval_meters=10.0
             )
