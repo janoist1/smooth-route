@@ -124,145 +124,85 @@
             background: #f44336;
         }
         
-        /* Collect Modal */
-        #collect-modal {
+        /* Collect Mode Indicator */
+        #collect-indicator {
             position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0,0,0,0.5);
-            z-index: 3000;
-            display: none;
-            align-items: center;
-            justify-content: center;
-        }
-        
-        #collect-modal.active {
-            display: flex;
-        }
-        
-        #collect-panel {
-            background: white;
-            border-radius: 12px;
-            width: 90%;
-            max-width: 600px;
-            max-height: 90vh;
-            overflow-y: auto;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
-            display: flex;
-            flex-direction: column;
-        }
-        
-        #collect-header {
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
-            padding: 1.5rem;
-            border-radius: 12px 12px 0 0;
-            display: flex;
-            justify-content: space-between;
+            padding: 12px 24px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            z-index: 2000;
+            display: none;
             align-items: center;
+            gap: 15px;
+            font-size: 0.95rem;
         }
         
-        #collect-header h2 {
-            font-size: 1.3rem;
-            margin: 0;
+        #collect-indicator.active {
+            display: flex;
         }
         
-        #close-modal {
+        #collect-indicator .status-text {
+            font-weight: 600;
+        }
+        
+        #collect-indicator .point-count {
+            background: rgba(255,255,255,0.2);
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-weight: 600;
+        }
+        
+        #collect-indicator button {
             background: rgba(255,255,255,0.2);
             border: none;
             color: white;
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
+            padding: 6px 16px;
+            border-radius: 6px;
             cursor: pointer;
-            font-size: 1.2rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            font-size: 0.9rem;
+            font-weight: 600;
             transition: background 0.3s;
         }
         
-        #close-modal:hover {
+        #collect-indicator button:hover {
             background: rgba(255,255,255,0.3);
         }
         
-        #collect-content {
-            padding: 1.5rem;
+        #collect-indicator .btn-confirm {
+            background: #4caf50;
         }
         
-        .control-group {
-            margin-bottom: 1rem;
+        #collect-indicator .btn-confirm:hover {
+            background: #45a049;
         }
         
-        .control-group label {
-            display: block;
-            font-weight: 600;
-            color: #333;
-            margin-bottom: 0.5rem;
-            font-size: 0.9rem;
+        #collect-indicator .btn-cancel {
+            background: #f44336;
         }
         
-        .control-group input {
-            width: 100%;
-            padding: 0.75rem;
-            border: 1px solid #ddd;
-            border-radius: 6px;
-            font-size: 0.9rem;
+        #collect-indicator .btn-cancel:hover {
+            background: #da190b;
         }
         
-        .control-group input:read-only {
-            background: #f5f5f5;
-            cursor: not-allowed;
-        }
-        
-        .button-group {
-            display: flex;
-            gap: 1rem;
-            margin-top: 1.5rem;
-        }
-        
-        button {
-            padding: 0.75rem 1.5rem;
-            border: none;
-            border-radius: 6px;
-            font-size: 1rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-        
-        .btn-primary {
-            background: #667eea;
-            color: white;
-            flex: 1;
-        }
-        
-        .btn-primary:hover:not(:disabled) {
-            background: #5568d3;
-        }
-        
-        .btn-secondary {
-            background: #e0e0e0;
-            color: #333;
-        }
-        
-        .btn-secondary:hover {
-            background: #d0d0d0;
-        }
-        
-        button:disabled {
-            background: #ccc;
-            cursor: not-allowed;
-        }
-        
+        /* Status Panel (for processing) */
         #status-panel {
-            margin-top: 1.5rem;
-            padding: 1rem;
-            background: #f8f9fa;
+            position: fixed;
+            top: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: white;
+            padding: 1rem 1.5rem;
             border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            z-index: 2000;
             display: none;
+            min-width: 300px;
+            max-width: 500px;
         }
         
         #status-panel.active {
@@ -386,59 +326,36 @@
     </div>
     
     <!-- Floating Action Button -->
-    <div id="fab" onclick="toggleCollectModal()" title="Új pontok rögzítése">
+    <div id="fab" onclick="toggleCollectMode()" title="Új pontok rögzítése">
         ➕
     </div>
     
-    <!-- Collect Modal -->
-    <div id="collect-modal" onclick="closeModalOnBackdrop(event)">
-        <div id="collect-panel" onclick="event.stopPropagation()">
-            <div id="collect-header">
-                <h2>📍 Új pontok rögzítése</h2>
-                <button id="close-modal" onclick="closeCollectModal()">×</button>
-            </div>
-            <div id="collect-content">
-                <p style="color: #666; margin-bottom: 1rem; font-size: 0.9rem;">
-                    Kattints a térképre, hogy kiválaszd a kezdőpontot, majd a célpontot.
-                </p>
-                
-                <div class="control-group">
-                    <label>Kezdőpont:</label>
-                    <input type="text" id="origin-lat" placeholder="Lat" readonly>
-                    <input type="text" id="origin-lng" placeholder="Lng" readonly style="margin-top: 0.5rem;">
-                </div>
-                
-                <div class="control-group">
-                    <label>Célpont:</label>
-                    <input type="text" id="dest-lat" placeholder="Lat" readonly>
-                    <input type="text" id="dest-lng" placeholder="Lng" readonly style="margin-top: 0.5rem;">
-                </div>
-                
-                <div class="button-group">
-                    <button class="btn-secondary" onclick="clearCollectMarkers()">Törlés</button>
-                    <button class="btn-primary" id="start-btn" onclick="startProcessing()" disabled>Rögzítés indítása</button>
-                </div>
-                
-                <div id="status-panel">
-                    <div class="step-indicator">
-                        <div class="step" id="step-collect">Pontok</div>
-                        <div class="step" id="step-download">Letöltés</div>
-                        <div class="step" id="step-analyze">Elemzés</div>
-                    </div>
-                    <div class="status-text">
-                        <strong>Állapot:</strong> <span id="status-text">Várakozás...</span>
-                    </div>
-                    <div class="status-text">
-                        <strong>Üzenet:</strong> <span id="status-message">-</span>
-                    </div>
-                    <div class="progress-bar">
-                        <div class="progress-fill" id="progress-fill" style="width: 0%">0%</div>
-                    </div>
-                    <div id="error-container"></div>
-                    <div id="success-container"></div>
-                </div>
-            </div>
+    <!-- Collect Mode Indicator -->
+    <div id="collect-indicator">
+        <span class="status-text">Hozzáadás mód aktív</span>
+        <span class="point-count" id="point-count">0/2 pont</span>
+        <button class="btn-confirm" id="confirm-btn" onclick="confirmAndStart()" disabled>Megerősítés</button>
+        <button class="btn-cancel" onclick="exitCollectMode()">Mégse</button>
+    </div>
+    
+    <!-- Status Panel (for processing) -->
+    <div id="status-panel">
+        <div class="step-indicator">
+            <div class="step" id="step-collect">Pontok</div>
+            <div class="step" id="step-download">Letöltés</div>
+            <div class="step" id="step-analyze">Elemzés</div>
         </div>
+        <div class="status-text">
+            <strong>Állapot:</strong> <span id="status-text">Várakozás...</span>
+        </div>
+        <div class="status-text">
+            <strong>Üzenet:</strong> <span id="status-message">-</span>
+        </div>
+        <div class="progress-bar">
+            <div class="progress-fill" id="progress-fill" style="width: 0%">0%</div>
+        </div>
+        <div id="error-container"></div>
+        <div id="success-container"></div>
     </div>
 
     <script>
@@ -473,50 +390,51 @@
             return 0.7;
         }
         
-        // Collect Modal Functions
-        function toggleCollectModal() {
-            const modal = document.getElementById('collect-modal');
-            const fab = document.getElementById('fab');
-            
-            if (modal.classList.contains('active')) {
-                closeCollectModal();
+        // Collect Mode Functions
+        function toggleCollectMode() {
+            if (collectMode) {
+                exitCollectMode();
             } else {
-                openCollectModal();
+                enterCollectMode();
             }
         }
         
-        function openCollectModal() {
-            document.getElementById('collect-modal').classList.add('active');
+        function enterCollectMode() {
+            collectMode = true;
             document.getElementById('fab').classList.add('active');
             document.getElementById('fab').textContent = '✕';
-            enableCollectMode();
-        }
-        
-        function closeCollectModal() {
-            document.getElementById('collect-modal').classList.remove('active');
-            document.getElementById('fab').classList.remove('active');
-            document.getElementById('fab').textContent = '➕';
-            disableCollectMode();
-        }
-        
-        function closeModalOnBackdrop(event) {
-            if (event.target.id === 'collect-modal') {
-                closeCollectModal();
-            }
-        }
-        
-        function enableCollectMode() {
-            collectMode = true;
+            document.getElementById('collect-indicator').classList.add('active');
+            updatePointCount();
+            
             if (map) {
                 mapClickListener = map.addListener('click', handleMapClickForCollect);
             }
         }
         
-        function disableCollectMode() {
+        function exitCollectMode() {
             collectMode = false;
+            document.getElementById('fab').classList.remove('active');
+            document.getElementById('fab').textContent = '➕';
+            document.getElementById('collect-indicator').classList.remove('active');
+            
             if (mapClickListener) {
                 google.maps.event.removeListener(mapClickListener);
                 mapClickListener = null;
+            }
+            
+            clearCollectMarkers();
+        }
+        
+        function updatePointCount() {
+            const count = (originMarker ? 1 : 0) + (destinationMarker ? 1 : 0);
+            document.getElementById('point-count').textContent = `${count}/2 pont`;
+            document.getElementById('confirm-btn').disabled = count < 2;
+        }
+        
+        function confirmAndStart() {
+            if (originLatLng && destinationLatLng) {
+                exitCollectMode();
+                startProcessing();
             }
         }
         
@@ -542,9 +460,6 @@
                         strokeWeight: 2
                     }
                 });
-                
-                document.getElementById('origin-lat').value = lat.toFixed(6);
-                document.getElementById('origin-lng').value = lng.toFixed(6);
             } else if (!destinationMarker) {
                 destinationLatLng = { lat, lng };
                 destinationMarker = new google.maps.Marker({
@@ -562,11 +477,6 @@
                     }
                 });
                 
-                document.getElementById('dest-lat').value = lat.toFixed(6);
-                document.getElementById('dest-lng').value = lng.toFixed(6);
-                
-                document.getElementById('start-btn').disabled = false;
-                
                 if (routeLine) {
                     routeLine.setMap(null);
                 }
@@ -579,6 +489,8 @@
                     map: map
                 });
             }
+            
+            updatePointCount();
         }
         
         function clearCollectMarkers() {
@@ -597,18 +509,7 @@
                 routeLine = null;
             }
             
-            document.getElementById('origin-lat').value = '';
-            document.getElementById('origin-lng').value = '';
-            document.getElementById('dest-lat').value = '';
-            document.getElementById('dest-lng').value = '';
-            document.getElementById('start-btn').disabled = true;
-            
-            document.getElementById('status-panel').classList.remove('active');
-            if (pollInterval) {
-                clearInterval(pollInterval);
-                pollInterval = null;
-            }
-            currentJobId = null;
+            updatePointCount();
         }
         
         async function startProcessing() {
@@ -618,7 +519,6 @@
             }
             
             document.getElementById('status-panel').classList.add('active');
-            document.getElementById('start-btn').disabled = true;
             document.getElementById('error-container').innerHTML = '';
             document.getElementById('success-container').innerHTML = '';
             
@@ -696,16 +596,15 @@
                     document.getElementById('step-analyze').classList.remove('active');
                     document.getElementById('step-analyze').classList.add('completed');
                     showSuccess('Folyamat sikeresen befejezve! ' + (job.result?.analyzed_points || 0) + ' pont elemzve.');
-                    document.getElementById('start-btn').disabled = false;
                     // Reload points on map
                     setTimeout(() => {
                         clearMarkers();
                         loadPoints();
-                    }, 2000);
+                        document.getElementById('status-panel').classList.remove('active');
+                    }, 3000);
                 } else if (job.status === 'failed') {
                     stopPolling();
                     showError('Hiba: ' + (job.error || 'Ismeretlen hiba'));
-                    document.getElementById('start-btn').disabled = false;
                 }
                 
             } catch (error) {
