@@ -212,7 +212,7 @@ class RouteProcessingService:
             db.close()
 
     def analyze_points(self, lat: Optional[float] = None, lng: Optional[float] = None, radius: float = 1000.0, 
-                      limit: int = 0, simple: bool = False, job_id: Optional[str] = None) -> Dict[str, int]:
+                      limit: int = 0, simple: bool = False, job_id: Optional[str] = None, reanalyze: bool = False) -> Dict[str, int]:
         """
         Analyze road points for quality.
         
@@ -222,6 +222,7 @@ class RouteProcessingService:
             limit: Max points to analyze
             simple: Use simple heuristic instead of full model
             job_id: Optional Job ID
+            reanalyze: If True, re-analyze points that already have RQI scores. Default False.
             
         Returns:
             Dict with 'analyzed', 'errors' counts.
@@ -238,6 +239,10 @@ class RouteProcessingService:
             local_file_filter = not_(StreetViewImage.image_url.like("http%"))
             
             filters = [local_file_filter]
+            
+            # Filter out already analyzed images unless reanalyze is True
+            if not reanalyze:
+                filters.append(StreetViewImage.rqi_score.is_(None))
             
             if lat is not None and lng is not None:
                 center_point = f"POINT({lng} {lat})"
