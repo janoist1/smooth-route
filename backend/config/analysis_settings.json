@@ -1,0 +1,134 @@
+[
+    {
+        "key": "edge_density_weight",
+        "value": 15.0,
+        "description": "Élsűrűség súlya",
+        "category": "Súlyok"
+    },
+    {
+        "key": "edge_density_fine_weight",
+        "value": 10.0,
+        "description": "Finom repedések súlya",
+        "category": "Súlyok"
+    },
+    {
+        "key": "texture_variance_divisor",
+        "value": 500.0,
+        "description": "Textúra variancia osztó",
+        "category": "Súlyok"
+    },
+    {
+        "key": "line_density_weight",
+        "value": 0.8,
+        "description": "Vonal sűrűség súlya",
+        "category": "Súlyok"
+    },
+    {
+        "key": "contrast_score_divisor",
+        "value": 8000.0,
+        "description": "Kontraszt osztó",
+        "category": "Súlyok"
+    },
+    {
+        "key": "patch_density_weight",
+        "value": 10.0,
+        "description": "Foltsűrűség súlya",
+        "category": "Súlyok"
+    },
+    {
+        "key": "repair_score_weight",
+        "value": 150.0,
+        "description": "Foltozás/javítás detektálás súlya",
+        "category": "Súlyok"
+    },
+    {
+        "key": "rqi_threshold_excellent",
+        "value": 15.0,
+        "description": "RQI 1 (Kiváló) küszöb",
+        "category": "Küszöbértékek"
+    },
+    {
+        "key": "rqi_threshold_good",
+        "value": 25.0,
+        "description": "RQI 2 (Jó) küszöb",
+        "category": "Küszöbértékek"
+    },
+    {
+        "key": "rqi_threshold_fair",
+        "value": 40.0,
+        "description": "RQI 3 (Közepes) küszöb",
+        "category": "Küszöbértékek"
+    },
+    {
+        "key": "rqi_threshold_poor",
+        "value": 55.0,
+        "description": "RQI 4 (Rossz) küszöb",
+        "category": "Küszöbértékek"
+    },
+    {
+        "key": "markings_filter_threshold",
+        "value": 0.15,
+        "description": "Útvonaljelölés szűrés küszöb",
+        "category": "Szűrők"
+    },
+    {
+        "key": "shadow_compensation_dark",
+        "value": 0.7,
+        "description": "Árnyék kompenzáció sötét képeknél",
+        "category": "Szűrők"
+    },
+    {
+        "key": "shadow_compensation_moderate",
+        "value": 0.85,
+        "description": "Árnyék kompenzáció közepesen sötét képeknél",
+        "category": "Szűrők"
+    },
+    {
+        "key": "canny_threshold_fine_low",
+        "value": 30.0,
+        "description": "Canny alsó küszöb",
+        "category": "Él detektálás"
+    },
+    {
+        "key": "canny_threshold_fine_high",
+        "value": 80.0,
+        "description": "Canny felső küszöb",
+        "category": "Él detektálás"
+    },
+    {
+        "key": "canny_threshold_coarse_low",
+        "value": 80.0,
+        "description": "Canny durva alsó",
+        "category": "Él detektálás"
+    },
+    {
+        "key": "canny_threshold_coarse_high",
+        "value": 200.0,
+        "description": "Canny durva felső",
+        "category": "Él detektálás"
+    },
+    {
+        "key": "hough_lines_threshold",
+        "value": 80.0,
+        "description": "Hough küszöb",
+        "category": "Strukturális elemzés"
+    },
+    {
+        "key": "hough_lines_min_length",
+        "value": 50.0,
+        "description": "Hough min hossz",
+        "category": "Strukturális elemzés"
+    },
+    {
+        "key": "block_size",
+        "value": 32.0,
+        "description": "Blokk méret",
+        "category": "Textúra analízis"
+    },
+    {
+        "key": "road_region_height_ratio",
+        "value": 0.4,
+        "description": "Út régió arány",
+        "category": "Textúra analízis"
+    }
+]

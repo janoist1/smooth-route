@@ -1,10 +1,12 @@
 """
 Job service for tracking background tasks.
 """
+
 import uuid
 from datetime import datetime
 from typing import Dict, Optional
 from enum import Enum
+
 
 class JobStatus(str, Enum):
     PENDING = "pending"
@@ -12,10 +14,12 @@ class JobStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
 
+
 class JobStep(str, Enum):
     COLLECTING = "collecting"
     DOWNLOADING = "downloading"
     ANALYZING = "analyzing"
+
 
 class Job:
     def __init__(self, job_id: str):
@@ -30,24 +34,84 @@ class Job:
         self.completed_at = None
         self.result = None
 
-# In-memory job store (in production, use Redis or database)
-_jobs: Dict[str, Job] = {}
+
+from app.core.database import SessionLocal
+from app.models.models import Job as JobModel
+
+# In-memory job store is REMOVED in favor of database
+# _jobs: Dict[str, Job] = {}
 
 def create_job() -> str:
     """Create a new job and return its ID."""
     job_id = str(uuid.uuid4())
-    _jobs[job_id] = Job(job_id)
-    return job_id
+    
+    print(f"DEBUG: Creating job {job_id} in database...")
+    db = SessionLocal()
+    try:
+        job = JobModel(job_id=job_id, status=JobStatus.PENDING.value)
+        db.add(job)
+        db.commit()
+        print(f"DEBUG: Job {job_id} committed successfully.")
+        return job_id
+    except Exception as e:
+        print(f"ERROR: Failed to create job {job_id}: {e}")
+        db.rollback()
+        raise e
+    finally:
+        db.close()
 
-def get_job(job_id: str) -> Optional[Job]:
+
+def get_job(job_id: str) -> Optional[JobModel]:
     """Get a job by ID."""
-    return _jobs.get(job_id)
+    # print(f"DEBUG: Retrieving job {job_id}...")
+    db = SessionLocal()
+    try:
+        job = db.query(JobModel).filter(JobModel.job_id == job_id).first()
+        if job:
+            # print(f"DEBUG: Job {job_id} found with status {job.status}")
+            # Convert SQLAlchemy model to dict-like object or return as is
+            # The caller expects an object with attributes
+            
+            # We need to return an object that persists after session close
+            # OR keep session open (not ideal here)
+            # Simple DTO approach:
+            class JobDTO:
+                def __init__(self, model):
+                    self.job_id = model.job_id
+                    self.status = JobStatus(model.status) if model.status else JobStatus.PENDING
+                    self.current_step = JobStep(model.current_step) if model.current_step else None
+                    self.progress = model.progress
+                    self.total = model.total
+                    self.message = model.message
+                    self.error = model.error
+                    self.created_at = model.created_at
+                    self.completed_at = model.completed_at
+                    self.result = model.result
+            
+            return JobDTO(job)
+        print(f"DEBUG: Job {job_id} NOT found in database.")
+        return None
+    except Exception as e:
+        print(f"ERROR: Failed to get job {job_id}: {e}")
+        return None
+    finally:
+        db.close()
+
 
 def update_job(job_id: str, **kwargs):
     """Update job properties."""
-    job = _jobs.get(job_id)
-    if job:
-        for key, value in kwargs.items():
-            if hasattr(job, key):
-                setattr(job, key, value)
-
+    db = SessionLocal()
+    try:
+        job = db.query(JobModel).filter(JobModel.job_id == job_id).first()
+        if job:
+            for key, value in kwargs.items():
+                if hasattr(job, key):
+                    # Handle Enum conversion
+                    if isinstance(value, Enum):
+                        value = value.value
+                    setattr(job, key, value)
+            db.commit()
+    except Exception as e:
+        print(f"Error updating job {job_id}: {e}")
+    finally:
+        db.close()
