@@ -1,0 +1,7 @@
+export { actions } from './slice'
+export { default as reducer } from './slice'
+export * as selectors from './selectors'
+export { default as sagas } from './sagas'
+export * from './hooks'
+export * from './types'
+export { default as TrainingView } from './components/TrainingView'

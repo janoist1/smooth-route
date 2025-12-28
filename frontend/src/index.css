@@ -1,0 +1,59 @@
+:root {
+  /* HSL Colors for easier manipulation */
+  --hue: 220; /* Blue-ish base */
+  --bg-dark: hsl(var(--hue), 15%, 10%);
+  --bg-panel: hsla(var(--hue), 15%, 15%, 0.7); /* Glass */
+  --primary: hsl(var(--hue), 80%, 60%);
+  --accent: hsl(340, 80%, 60%); /* Pink-ish accent */
+  --text-main: hsl(var(--hue), 10%, 95%);
+  --text-dim: hsl(var(--hue), 10%, 70%);
+  --danger: hsl(0, 70%, 55%);
+  --success: hsl(140, 70%, 45%);
+
+  --glass-border: 1px solid hsla(0, 0%, 100%, 0.1);
+  --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+
+  --font-main: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg-dark);
+  color: var(--text-main);
+  font-family: var(--font-main);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden; /* App-like feel */
+  height: 100vh;
+  width: 100vw;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  font-family: inherit;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-dark);
+}
+::-webkit-scrollbar-thumb {
+  background: #444;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
