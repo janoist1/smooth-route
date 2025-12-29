@@ -33,6 +33,4 @@ function* handleLocationChange(action: any) {
   }
 }
 
-export default [
-  takeLatest(routingActions.LOCATION_CHANGE, handleLocationChange),
-]
+export default [takeLatest(routingActions.LOCATION_CHANGE, handleLocationChange)]

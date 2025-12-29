@@ -6,8 +6,8 @@ import type { GetPointsQuery, GetPointDetailQuery } from '../graphql/generated/g
 // Fragment Colocation: Define what we need
 // Inlined for simplicity to satisfy linter
 const GET_POINTS = gql(`
-  query GetPoints {
-    points {
+  query GetPoints($limit: Int, $bbox: [Float!]) {
+    points(limit: $limit, bbox: $bbox) {
       id
       latitude
       longitude
@@ -41,10 +41,13 @@ const GET_POINT_DETAIL = gql(`
 `)
 
 // Backend endpoint: GET /api/v1/points
-function* fetchPointsSaga() {
+function* fetchPointsSaga(action: ReturnType<typeof actions.fetchPoints>) {
   try {
+    const bbox = action.payload
+
     const result: { data: GetPointsQuery } = yield call([client, client.query], {
       query: GET_POINTS,
+      variables: { limit: 2000, bbox },
     })
 
     // Map GraphQL result to Redux state shape
@@ -67,7 +70,7 @@ function* fetchPointsSaga() {
       latitude: p.latitude,
       longitude: p.longitude,
       heading: p.heading,
-      rqi_score: p.rqiScore,
+      rqi_score: p.rqiScore ?? undefined,
     }))
 
     yield put(actions.fetchPointsSuccess(points))

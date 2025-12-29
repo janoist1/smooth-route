@@ -23,4 +23,8 @@ export interface MapState {
   selectedPointId: number | null
   selectedPointDetail: RoadPointDetail | null
   loadingDetail: boolean
+  viewport: {
+    center: [number, number]
+    zoom: number
+  }
 }

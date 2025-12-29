@@ -21,3 +21,5 @@ export const selectSelectedPointDetail = createSelector(
 )
 
 export const selectLoadingDetail = createSelector(selectMapState, map => map.loadingDetail)
+
+export const selectViewport = createSelector(selectMapState, map => map.viewport)

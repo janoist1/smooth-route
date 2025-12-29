@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react'
-import { MapContainer, TileLayer, Polyline } from 'react-leaflet'
+import { MapContainer, TileLayer, Polyline, useMapEvents } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useMap } from '../hooks'
 import PointDetailCard from './PointDetailCard'
@@ -34,6 +34,33 @@ const TILE_LAYERS: Record<MapStyle, { url: string; attribution: string }> = {
   },
 }
 
+// Helper to handle map events
+// Helper to handle map events
+const MapEvents = ({
+  onMove,
+}: {
+  onMove: (bbox: number[], center: [number, number], zoom: number) => void
+}) => {
+  const map = useMapEvents({
+    moveend: () => {
+      const bounds = map.getBounds()
+      const bbox = [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()]
+      const center = map.getCenter()
+      onMove(bbox, [center.lat, center.lng], map.getZoom())
+    },
+  })
+
+  // Initial initialization (if needed for fetch)
+  useEffect(() => {
+    const bounds = map.getBounds()
+    const bbox = [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()]
+    const center = map.getCenter()
+    onMove(bbox, [center.lat, center.lng], map.getZoom())
+  }, [map, onMove])
+
+  return null
+}
+
 const MapView: React.FC = () => {
   const {
     points,
@@ -43,13 +70,19 @@ const MapView: React.FC = () => {
     selectedPointDetail,
     loadingDetail,
     selectedPoint,
+    viewport,
+    setViewport,
   } = useMap()
   const [mapStyle, setMapStyle] = useState<MapStyle>('dark')
 
-  useEffect(() => {
-    fetchPoints()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  // Unified handler for map moves
+  const handleMapMove = React.useCallback(
+    (bbox: number[], center: [number, number], zoom: number) => {
+      fetchPoints(bbox)
+      setViewport({ center, zoom })
+    },
+    [fetchPoints, setViewport],
+  )
 
   // Generate segments for traffic-like visualization
   const segments = useMemo(() => {
@@ -84,13 +117,14 @@ const MapView: React.FC = () => {
   return (
     <div style={{ height: '100vh', width: '100vw', position: 'relative' }}>
       <MapContainer
-        center={[47.4979, 19.0402]} // Default Budapest
-        zoom={13}
+        center={viewport.center}
+        zoom={viewport.zoom}
         style={{ height: '100%', width: '100%', background: '#111' }}>
         <TileLayer
           attribution={TILE_LAYERS[mapStyle].attribution}
           url={TILE_LAYERS[mapStyle].url}
         />
+        <MapEvents onMove={handleMapMove} />
 
         {/* Traffic Segments (Lines) */}
         {segments.map((seg, idx) => (

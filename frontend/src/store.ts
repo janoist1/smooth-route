@@ -11,11 +11,7 @@ import { reducer as appReducer } from './modules/app'
 import globalSagas from './sagas'
 
 function* rootSaga() {
-  yield all([
-    ...mapSagas,
-    ...trainingSagas,
-    ...globalSagas,
-  ])
+  yield all([...mapSagas, ...trainingSagas, ...globalSagas])
 }
 
 const rootReducer = combineReducers({

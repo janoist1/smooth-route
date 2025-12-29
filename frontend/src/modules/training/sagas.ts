@@ -35,7 +35,7 @@ function* fetchImageWorker(action: any) {
     variables: { id: pointId },
     fetchPolicy: 'network-only', // Ensure freshness
   })
-  
+
   console.log('fetchImageWorker', { pointId, result })
 
   const pt = result.data.point

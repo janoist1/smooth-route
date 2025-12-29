@@ -9,13 +9,18 @@ const initialState: MapState = {
   selectedPointId: null,
   selectedPointDetail: null,
   loadingDetail: false,
+  viewport: {
+    center: [47.4979, 19.0402], // Default Budapest
+    zoom: 13,
+  },
 }
 
 const mapSlice = createSlice({
   name: 'map',
   initialState,
   reducers: {
-    fetchPoints(state) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    fetchPoints(state, _action: PayloadAction<number[] | undefined>) {
       state.loading = true
       state.error = null
     },
@@ -33,7 +38,8 @@ const mapSlice = createSlice({
         state.selectedPointDetail = null
       }
     },
-    fetchPointDetail(state) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    fetchPointDetail(state, _action: PayloadAction<number>) {
       state.loadingDetail = true
       state.selectedPointDetail = null
     },
@@ -44,6 +50,9 @@ const mapSlice = createSlice({
     fetchPointDetailFailure(state) {
       state.loadingDetail = false
       // error logic for detail?
+    },
+    setViewport(state, action: PayloadAction<{ center: [number, number]; zoom: number }>) {
+      state.viewport = action.payload
     },
   },
 })

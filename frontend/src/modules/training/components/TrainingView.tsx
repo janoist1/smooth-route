@@ -353,7 +353,8 @@ const TrainingView: React.FC = () => {
           }}>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span>Manual RQI</span>
-            <span style={{ fontWeight: 'bold', color: manualRqi ? getColorForRqi(manualRqi) : '#666' }}>
+            <span
+              style={{ fontWeight: 'bold', color: manualRqi ? getColorForRqi(manualRqi) : '#666' }}>
               {manualRqi ? manualRqi.toFixed(1) : 'Not Rated'}
             </span>
           </div>
@@ -366,22 +367,60 @@ const TrainingView: React.FC = () => {
             onChange={e => setRqi(parseFloat(e.target.value))}
             style={{ width: '100%', cursor: 'pointer' }}
           />
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#666' }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              fontSize: '10px',
+              color: '#666',
+            }}>
             <span>1.0 (Good)</span>
             <span>5.0 (Bad)</span>
           </div>
         </div>
 
         {/* Column 2: Tags (Middle) */}
-        <div style={{ flex: 1, padding: '15px', display: 'flex', flexDirection: 'column', gap: '8px', minWidth: 0 }}>
+        <div
+          style={{
+            flex: 1,
+            padding: '15px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+            minWidth: 0,
+          }}>
           <span style={{ fontSize: '13px', color: '#ccc', marginBottom: '4px' }}>Tags</span>
-          
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1, overflowY: 'auto', paddingRight: '5px' }}>
+
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px',
+              flex: 1,
+              overflowY: 'auto',
+              paddingRight: '5px',
+            }}>
             {/* Group 1: Surface & Condition */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <span style={{ fontSize: '10px', textTransform: 'uppercase', color: '#666', fontWeight: 'bold' }}>Surface Details</span>
+              <span
+                style={{
+                  fontSize: '10px',
+                  textTransform: 'uppercase',
+                  color: '#666',
+                  fontWeight: 'bold',
+                }}>
+                Surface Details
+              </span>
               <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                {['smooth', 'uneven', 'mild_wear', 'heavy_wear', 'fragmented', 'cracked', 'patched'].map(tag => {
+                {[
+                  'smooth',
+                  'uneven',
+                  'mild_wear',
+                  'heavy_wear',
+                  'fragmented',
+                  'cracked',
+                  'patched',
+                ].map(tag => {
                   const isActive = tags.includes(tag)
                   return (
                     <button
@@ -409,7 +448,15 @@ const TrainingView: React.FC = () => {
 
             {/* Group 2: Environment */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <span style={{ fontSize: '10px', textTransform: 'uppercase', color: '#666', fontWeight: 'bold' }}>Environment</span>
+              <span
+                style={{
+                  fontSize: '10px',
+                  textTransform: 'uppercase',
+                  color: '#666',
+                  fontWeight: 'bold',
+                }}>
+                Environment
+              </span>
               <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                 {['shadow', 'wet', 'glare', 'occlusion', 'blur', 'car', 'person'].map(tag => {
                   const isActive = tags.includes(tag)
@@ -437,7 +484,7 @@ const TrainingView: React.FC = () => {
 
           {/* Custom Input */}
           <div style={{ marginTop: 'auto', borderTop: '1px solid #333', paddingTop: '8px' }}>
-             <input
+            <input
               type="text"
               value={tagInput}
               onChange={e => setTagInput(e.target.value)}
@@ -458,7 +505,15 @@ const TrainingView: React.FC = () => {
         </div>
 
         {/* Column 3: Comment (Right) */}
-        <div style={{ width: '300px', padding: '15px', borderLeft: '1px solid #333', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+        <div
+          style={{
+            width: '300px',
+            padding: '15px',
+            borderLeft: '1px solid #333',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '5px',
+          }}>
           <span>Comment</span>
           <textarea
             value={manualComment}

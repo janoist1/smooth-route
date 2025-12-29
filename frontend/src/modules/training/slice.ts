@@ -74,13 +74,14 @@ const trainingSlice = createSlice({
       state.tags = state.tags.filter(t => t !== action.payload)
     },
     setComment(state, action: PayloadAction<string>) {
-        state.manualComment = action.payload
-    }
+      state.manualComment = action.payload
+    },
   },
   extraReducers: builder => {
     builder
       .addCase(fetchImage.pending, (state, action) => {
-        const newId = action.meta.arg.toString()
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const newId = (action as any).meta.arg.toString()
         // Only reset if ID changed (Orchestrator Pattern)
         if (state.imageId !== newId) {
           state.imageId = newId
@@ -102,7 +103,8 @@ const trainingSlice = createSlice({
       })
       .addCase(saveAnnotations.rejected, (state, action) => {
         state.saving = false
-        state.error = action.error.message || 'Saving failed'
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        state.error = (action as any).error.message || 'Saving failed'
       })
       .addCase(fetchImage.fulfilled, (state, action: PayloadAction<FetchImageSuccess>) => {
         state.loading = false
@@ -119,8 +121,10 @@ const trainingSlice = createSlice({
       .addCase(fetchImage.rejected, (state, action) => {
         state.loading = false
         // Ignore Aborted errors (happens in StrictMode due to double-mount)
-        if (action.error.name !== 'AbortError' && action.error.message !== 'Aborted') {
-          state.error = action.error.message || 'Failed to fetch image'
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const err = (action as any).error
+        if (err.name !== 'AbortError' && err.message !== 'Aborted') {
+          state.error = err.message || 'Failed to fetch image'
         }
       })
   },

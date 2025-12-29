@@ -113,10 +113,7 @@ export default [
 
 // store.ts
 function* rootSaga() {
-  yield all([
-    ...mapSagas,
-    ...trainingSagas,
-  ])
+  yield all([...mapSagas, ...trainingSagas])
 }
 ```
 

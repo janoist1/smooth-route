@@ -8,6 +8,4 @@ function* handleAppStart() {
   yield call(console.log, 'App initialized')
 }
 
-export default [
-  takeLatestAsync(appActions.start.type, handleAppStart),
-]
+export default [takeLatestAsync(appActions.start.type, handleAppStart)]
