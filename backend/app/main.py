@@ -21,6 +21,13 @@ Base.metadata.create_all(bind=engine)
 # Include API router
 app.include_router(api_router)
 
+# GraphQL
+from strawberry.asgi import GraphQL
+from app.graphql.schema import schema
+graphql_app = GraphQL(schema)
+app.add_route("/graphql", graphql_app)
+app.add_websocket_route("/graphql", graphql_app)
+
 # Serve static files (web interface)
 static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
 if os.path.exists(static_dir):

@@ -18,7 +18,8 @@ dependencies = [
     "requests>=2.31.0",
     "typer>=0.9.0",
     "ultralytics>=8.0.0",
-    "opencv-python>=4.8.0"
+    "opencv-python>=4.8.0",
+    "strawberry-graphql[debug-server]>=0.219.0"
 ]
 
 [build-system]

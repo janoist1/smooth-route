@@ -54,3 +54,29 @@ class Job(Base):
 
 
 
+class TrainingData(Base):
+    """
+    Stores manual training data for Machine Learning.
+    Includes ground truth RQI, bounding boxes, tags, and metadata.
+    """
+
+    __tablename__ = "training_data"
+
+    id = Column(Integer, primary_key=True, index=True)
+    image_filename = Column(String, unique=True, index=True)  # Link to file on disk
+    manual_rqi = Column(Float, nullable=True)  # User's ground truth score (1.0 - 5.0)
+    
+    # YOLO-style annotations: List of {id, label, x, y, w, h}
+    annotations = Column(JSON, default=[]) 
+    
+    # Tags: List of strings e.g. ["shadow", "wet", "occlusion"]
+    tags = Column(JSON, default=[])
+
+    # Optional user comment
+    comment = Column(String, nullable=True)
+    
+    # Flexible metadata bucket
+    meta_data = Column(JSON, default={})
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
