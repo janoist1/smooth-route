@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import React, { useEffect } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import { bindActionCreators } from 'redux'
 import { actions } from './slice'
@@ -30,8 +30,10 @@ export const useApp = (): DynamicState &
 
   const dispatch = useDispatch()
 
+  const boundActions = React.useMemo(() => bindActionCreators(actions, dispatch), [dispatch])
+
   return {
-    ...bindActionCreators(actions, dispatch),
+    ...boundActions,
     ...root,
     loading: false, // implementation needed if we want to track global loading
   }

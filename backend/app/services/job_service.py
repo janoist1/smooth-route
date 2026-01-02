@@ -13,12 +13,14 @@ class JobStatus(str, Enum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class JobStep(str, Enum):
     COLLECTING = "collecting"
     DOWNLOADING = "downloading"
     ANALYZING = "analyzing"
+    TRAINING = "training"
 
 
 class Job:
@@ -113,5 +115,39 @@ def update_job(job_id: str, **kwargs):
             db.commit()
     except Exception as e:
         print(f"Error updating job {job_id}: {e}")
+    finally:
+        db.close()
+
+
+def get_active_job() -> Optional[JobModel]:
+    """Get the most recent pending or running job."""
+    db = SessionLocal()
+    try:
+        # Get the most recent job that is not completed, failed, or cancelled
+        job = (
+            db.query(JobModel)
+            .filter(JobModel.status.in_([JobStatus.PENDING.value, JobStatus.RUNNING.value]))
+            .order_by(JobModel.created_at.desc())
+            .first()
+        )
+        if job:
+            class JobDTO:
+                def __init__(self, model):
+                    self.job_id = model.job_id
+                    self.status = JobStatus(model.status) if model.status else JobStatus.PENDING
+                    self.current_step = JobStep(model.current_step) if model.current_step else None
+                    self.progress = model.progress
+                    self.total = model.total
+                    self.message = model.message
+                    self.error = model.error
+                    self.created_at = model.created_at
+                    self.completed_at = model.completed_at
+                    self.result = model.result
+            
+            return JobDTO(job)
+        return None
+    except Exception as e:
+        print(f"ERROR: Failed to get active job: {e}")
+        return None
     finally:
         db.close()

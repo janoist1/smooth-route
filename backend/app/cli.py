@@ -9,6 +9,7 @@ from datetime import datetime
 from rich.console import Console
 from rich.table import Table
 from geoalchemy2 import Geometry
+from sqlalchemy import func, or_, and_, not_
 
 app = typer.Typer()
 console = Console()
@@ -69,7 +70,12 @@ def list_points():
         total_points = db.query(StreetViewImage).count()
         points_with_images = (
             db.query(StreetViewImage)
-            .filter(StreetViewImage.image_url.like("%data/images%"))
+            .filter(
+                or_(
+                    StreetViewImage.image_url.like("images/%"),
+                    StreetViewImage.image_url.like("%data/images%")
+                )
+            )
             .count()
         )
         points_with_rqi = (
@@ -143,6 +149,33 @@ def download_images(
 
 
 @app.command()
+def fetch_missing_images(
+    limit: int = typer.Option(0, help="Max number of images to download (0 = all missing)"),
+    output_dir: Optional[str] = typer.Option(None, help="Directory to save images")
+):
+    """
+    Find points with missing image files on disk and re-download them from Google.
+    
+    This command checks every point in the database, verifies if the file exists on disk,
+    and if missing, regenerates the Google Street View URL and downloads the image.
+    """
+    from app.services.processing_service import processing_service
+    
+    try:
+        console.print(f"[bold blue]Checking for missing images on disk...[/bold blue]")
+        
+        result = processing_service.download_missing_images(output_dir, limit)
+        
+        console.print(f"[bold green]Sync complete![/bold green]")
+        console.print(f"Downloaded: {result['downloaded']} | Healthy (Skipped): {result['skipped']} | Errors: {result['errors']}")
+        
+    except Exception as e:
+        console.print(f"[bold red]Error: {str(e)}[/bold red]")
+        import traceback
+        traceback.print_exc()
+
+
+@app.command()
 def analyze_image(image_path: str, simple: bool = False):
     """
     Analyze a single image for road quality.
@@ -188,8 +221,7 @@ def analyze_points(
     lng: Optional[float] = None,
     radius: float = 1000.0,
     limit: int = 0,
-    simple: bool = False,
-    save: bool = True,
+    strategy: str = "HEURISTIC",
     reanalyze: bool = False
 ):
     """
@@ -204,22 +236,24 @@ def analyze_points(
     --lat, --lng: Center point for area analysis (optional)
     --radius: Radius in meters for area analysis (default: 1000m)
     --limit: Max number of points to analyze (0 = all)
-    --simple: Use simple heuristic analysis (no YOLO)
-    --save/--no-save: Save RQI scores to database
-    --reanalyze: Re-analyze points that already have RQI but missing analysis_metadata
+    --strategy: Strategy to use: "HEURISTIC", "YOLO", or "FUSION"
+    --reanalyze: Re-analyze points that already have RQI scores.
     """
     from app.services.processing_service import processing_service
     
     try:
-        console.print(f"[bold blue]Starting analysis...[/bold blue]")
+        console.print(f"[bold blue]Starting analysis (Strategy: {strategy})...[/bold blue]")
         if lat and lng:
             console.print(f"[dim]Analyzing points within {radius}m of ({lat}, {lng})[/dim]")
         
-        # Note: processing_service.analyze_points currently saves automatically.
-        # The 'save' and 'reanalyze' flags might need to be added to the service if needed.
-        # For now, we assume standard behavior.
-        
-        result = processing_service.analyze_points(lat, lng, radius, limit, simple, reanalyze=reanalyze)
+        result = processing_service.analyze_points(
+            lat=lat, 
+            lng=lng, 
+            radius=radius, 
+            limit=limit, 
+            strategy=strategy, 
+            reanalyze=reanalyze
+        )
         
         console.print(f"[bold green]Analysis complete.[/bold green]")
         console.print(f"Analyzed: {result['analyzed']} | Errors: {result['errors']} | Total candidates: {result['total']}")

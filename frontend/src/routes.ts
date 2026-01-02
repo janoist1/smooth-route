@@ -1,6 +1,8 @@
 export const ROUTES = {
   HOME: { path: '/', exact: true },
-  TRAINING: { path: '/training/:id', exact: true },
+  TRAINING_LIST: { path: '/training', exact: true },
+  TRAINING_DETAIL: { path: '/training/:id', exact: true },
+  TRAINING_REVIEW: { path: '/training/:id/review', exact: true },
 } as const
 
 export const buildPath = (route: { path: string }, params?: Record<string, string | number>) => {

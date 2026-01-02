@@ -7,6 +7,9 @@ const config: CodegenConfig = {
     './src/modules/graphql/generated/': {
       preset: 'client',
       plugins: [],
+      config: {
+        enumsAsTypes: true,
+      },
       presetConfig: {
         gqlTagName: 'gql',
       },

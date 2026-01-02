@@ -16,4 +16,7 @@ export const selectAnnotations = createSelector(
 
 export const selectTool = createSelector(selectTrainingDomain, training => training.selectedTool)
 
+export const selectTotalCount = createSelector(selectTrainingDomain, training => training.totalCount)
+export const selectItems = createSelector(selectTrainingDomain, training => training.items)
 export const selectTrainingState = selectTrainingDomain
+export const selectActiveMode = createSelector(selectTrainingDomain, training => training.activeMode)

@@ -55,9 +55,9 @@ class RoadQualityService:
     # Severity weights for RQI calculation
     DAMAGE_WEIGHTS = {
         "D00": 1.0,  # Minor
-        "D10": 1.5,  # Moderate
-        "D20": 2.0,  # Significant
-        "D40": 3.0,  # Severe (pothole)
+        "D10": 1.2,  # Moderate
+        "D20": 1.5,  # Significant
+        "D40": 2.5,  # Severe (pothole)
     }
 
     def __init__(self, model_path: Optional[str] = None):
@@ -178,14 +178,25 @@ class RoadQualityService:
             return
 
         from ultralytics import YOLO
+        import os
+        from app.core.config import settings
 
-        if self.model_path:
-            self.model = YOLO(self.model_path)
-        else:
-            # Use YOLOv8 nano as base - we'll detect general damage patterns
-            # For production, you'd use a fine-tuned RDD model
-            self.model = YOLO("yolov8n.pt")
+        # Determine model path
+        actual_model_path = self.model_path
+        
+        if not actual_model_path:
+            # Check for high-priority trained model in data directory
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            trained_model = os.path.join(project_root, "data", "models", "trained_yolo.pt")
+            
+            if os.path.exists(trained_model):
+                actual_model_path = trained_model
+                print(f"Using trained YOLO model: {trained_model}")
+            else:
+                actual_model_path = "yolov8m.pt"
+                print(f"Using default YOLO model: {actual_model_path}")
 
+        self.model = YOLO(actual_model_path)
         self._loaded = True
         print(f"Model loaded. Device: {self.model.device}")
 
@@ -295,13 +306,13 @@ class RoadQualityService:
 
         # Map to 1-5 scale
         # Thresholds tuned empirically
-        if total_weight < 1:
+        if total_weight < 1.5:
             return 1.0
-        elif total_weight < 3:
+        elif total_weight < 4.5:
             return 2.0
-        elif total_weight < 6:
+        elif total_weight < 8.0:
             return 3.0
-        elif total_weight < 10:
+        elif total_weight < 12.0:
             return 4.0
         else:
             return 5.0
@@ -544,10 +555,10 @@ class RoadQualityService:
         # - Poor roads (significant damage, cracks): RQI 4
         # - Very Poor roads (severe damage, potholes): RQI 5
         # Use configurable thresholds from database settings
-        threshold_excellent = self._get_setting("rqi_threshold_excellent", 18.0)
-        threshold_good = self._get_setting("rqi_threshold_good", 24.0)
-        threshold_fair = self._get_setting("rqi_threshold_fair", 32.0)
-        threshold_poor = self._get_setting("rqi_threshold_poor", 45.0)
+        threshold_excellent = self._get_setting("rqi_threshold_excellent", 22.0)
+        threshold_good = self._get_setting("rqi_threshold_good", 35.0)
+        threshold_fair = self._get_setting("rqi_threshold_fair", 50.0)
+        threshold_poor = self._get_setting("rqi_threshold_poor", 65.0)
 
         if damage_score < threshold_excellent:
             rqi = 1.0  # Excellent

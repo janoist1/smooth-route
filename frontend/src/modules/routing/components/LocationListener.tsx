@@ -8,7 +8,9 @@ const LocationListener: React.FC = () => {
   const dispatch = useDispatch()
 
   useEffect(() => {
-    dispatch(locationChange(location))
+    // Pick only serializable properties to avoid breaking Redux DevTools bridge
+    const { pathname, search, hash, state, key } = location
+    dispatch(locationChange({ pathname, search, hash, state, key }))
   }, [location, dispatch])
 
   return null

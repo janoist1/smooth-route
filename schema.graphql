@@ -1,0 +1,100 @@
+"""Date with time (isoformat)"""
+scalar DateTime
+
+enum FilterMode {
+  ALL
+  PENDING
+  REVIEWED
+}
+
+"""
+The `JSON` scalar type represents JSON values as specified by [ECMA-404](https://ecma-international.org/wp-content/uploads/ECMA-404_2nd_edition_december_2017.pdf).
+"""
+scalar JSON @specifiedBy(url: "https://ecma-international.org/wp-content/uploads/ECMA-404_2nd_edition_december_2017.pdf")
+
+type Job {
+  jobId: String!
+  status: String!
+  currentStep: String
+  progress: Int!
+  total: Int!
+  message: String!
+  error: String
+  result: JSON
+  createdAt: DateTime!
+  completedAt: DateTime
+}
+
+type Mutation {
+  runAnalysis(input: RunAnalysisInput!): Job!
+  startModelTraining: Job!
+  processRoute(input: ProcessRouteInput!): Job!
+  saveTrainingData(input: TrainingDataInput!): String!
+}
+
+type Point {
+  id: Int!
+  latitude: Float!
+  longitude: Float!
+  heading: Float!
+  pitch: Float
+  imageUrl: String
+  rqiScore: Float
+  damageCount: Int!
+  damageTypes: JSON
+  analysisMetadata: JSON
+  createdAt: DateTime!
+  manualRqi: Float
+  manualTags: [String!]
+  manualAnnotations: JSON
+  manualComment: String
+  localImagePath: String
+}
+
+input ProcessRouteInput {
+  originLat: Float!
+  originLng: Float!
+  destinationLat: Float!
+  destinationLng: Float!
+}
+
+type Query {
+  config: String!
+  point(id: Int!): Point
+  points(bbox: [Float!] = null, limit: Int! = 100, offset: Int! = 0): [Point!]!
+  trainingPoints(mode: FilterMode! = ALL, limit: Int! = 100, offset: Int! = 0): TrainingPointsResponse!
+  trainingStats(mode: FilterMode! = ALL): TrainingStats!
+  job(id: String!): Job
+}
+
+input RunAnalysisInput {
+  strategy: String!
+  limit: Int! = 0
+  reanalyze: Boolean! = false
+}
+
+input TrainingDataInput {
+  imageFilename: String!
+  manualRqi: Float = null
+  annotations: JSON = null
+  tags: [String!] = null
+  manualComment: String = null
+  metaData: JSON = null
+}
+
+type TrainingPointsResponse {
+  items: [Point!]!
+  totalCount: Int!
+  hasMore: Boolean!
+}
+
+type TrainingStats {
+  total: Int!
+  pending: Int!
+  annotated: Int!
+  avgRqi: Float!
+  goodCount: Int!
+  fairCount: Int!
+  poorCount: Int!
+  pendingAnalysis: Int!
+}

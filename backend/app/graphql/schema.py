@@ -12,7 +12,7 @@ from app.core.config import settings
 from app.api.routes import run_route_processing
 from app.services.job_service import create_job, get_job
 
-from .types import Point, Job, TrainingData, ProcessRouteInput, TrainingDataInput
+from .types import Point, Job, TrainingData, ProcessRouteInput, TrainingDataInput, RunAnalysisInput, TrainingStats, TrainingPointsResponse, FilterMode
 
 def get_db_session():
     return SessionLocal()
@@ -21,12 +21,6 @@ def get_db_session():
 class Query:
     @strawberry.field
     def config(self) -> str:
-        # Just returning the key directly as a simple field, or a structured object?
-        # The REST API returns {"google_maps_api_key": ...}
-        # Let's return a simple object or string.
-        # For simplicity, let's create a Config type ideally, but string is fine for now/
-        # Actually returning a JSON string might be easiest if we didn't define a type.
-        # But let's define a Config type inline or just return the key.
         return settings.GOOGLE_MAPS_API_KEY or ""
 
     @strawberry.field
@@ -37,7 +31,6 @@ class Query:
             if not p:
                 return None
             
-            # Helper to parse filename similar to REST
             image_url = p.image_url
             filename_for_training = None
             if image_url:
@@ -51,11 +44,6 @@ class Query:
                     import os
                     filename_for_training = os.path.basename(image_url)
 
-            # Convert SQLAlchemy model to Strawberry Type
-            # And merge manually training data
-            # Note: Strawberry types are plain classes.
-            
-            # 2. Fetch Training Data override
             manual_rqi = None
             manual_tags = None
             manual_annotations = None
@@ -69,8 +57,7 @@ class Query:
                     manual_annotations = td.annotations
                     manual_comment = td.comment
 
-            # 3. Construct Point
-            point_data = Point(
+            return Point(
                 id=p.id,
                 latitude=p.latitude,
                 longitude=p.longitude,
@@ -87,20 +74,16 @@ class Query:
                 manual_annotations=manual_annotations,
                 manual_comment=manual_comment
             )
-            
-            return point_data
         finally:
             db.close()
 
     @strawberry.field
     def points(self, bbox: Optional[List[float]] = None, limit: int = 100, offset: int = 0) -> List[Point]:
-        # bbox: [min_lng, min_lat, max_lng, max_lat]
         db = get_db_session()
         try:
             query = db.query(StreetViewImage)
             if bbox and len(bbox) == 4:
                 min_lng, min_lat, max_lng, max_lat = bbox
-                # Simple box filter
                 query = query.filter(
                     StreetViewImage.longitude >= min_lng,
                     StreetViewImage.longitude <= max_lng,
@@ -108,17 +91,9 @@ class Query:
                     StreetViewImage.latitude <= max_lat
                 )
             
-            # Apply limit/offset
-            # If bbox is present, we might want to increase limit or remove it? keeping it for safety.
             results = query.offset(offset).limit(limit).all()
 
-            # Batch fetch training data
-            # Logic matches single point resolver: parse filename from URL
-            # To optimize, we'd preload or map them. For now, let's map in memory.
-            
-            # 1. Collect all filenames
             import os
-            
             def get_filename(url):
                 if not url: return None
                 if url.startswith("images/"): return url.replace("images/", "")
@@ -126,14 +101,6 @@ class Query:
                 if url.startswith("http"): return url.split("/")[-1]
                 return os.path.basename(url)
 
-            # Map filename -> Point metadata
-            # We can fetch all relevant TrainingData in one go if we had a list of filenames.
-            # But "IN" clause with strings might be heavy. Let's do it simply loop for <100 items.
-            # OR better: fetch all training data? No.
-
-            # Let's just do it per item for now, or build a map if many items.
-            # Since limit is 100, simple loop with batched query is better.
-            
             filenames = [get_filename(x.image_url) for x in results if x.image_url]
             filenames = [f for f in filenames if f]
             
@@ -154,7 +121,7 @@ class Query:
                     longitude=x.longitude,
                     heading=x.heading,
                     pitch=x.pitch,
-                    image_url=f"images/{get_filename(x.image_url)}" if x.image_url else None,
+                    image_url=f"images/{fname}" if x.image_url else None,
                     rqi_score=x.rqi_score,
                     damage_count=x.damage_count or 0,
                     damage_types=x.damage_types,
@@ -167,6 +134,144 @@ class Query:
                 ))
 
             return final_points
+        finally:
+            db.close()
+    
+    @strawberry.field
+    def training_points(self, mode: FilterMode = FilterMode.ALL, limit: int = 100, offset: int = 0) -> TrainingPointsResponse:
+        db = get_db_session()
+        try:
+            import os
+            def get_filename(url):
+                if not url: return None
+                if url.startswith("images/"): return url.replace("images/", "")
+                if "/data/images/" in url: return url.split("/data/images/")[-1]
+                if url.startswith("http"): return url.split("/")[-1]
+                return os.path.basename(url)
+
+            # 1. Fetch TrainingData
+            training_entries = db.query(TrainingDataModel).all()
+            training_files = {t.image_filename: t for t in training_entries}
+            
+            # 2. Main query
+            query = db.query(StreetViewImage)
+            
+            paged_results = []
+            total_count = 0
+
+            if mode == FilterMode.PENDING:
+                # High RQI and NOT in training data
+                all_unfiltered = query.filter(StreetViewImage.rqi_score >= 2.5).order_by(StreetViewImage.id.desc()).all()
+                filtered = [c for c in all_unfiltered if get_filename(c.image_url) not in training_files]
+                total_count = len(filtered)
+                paged_results = filtered[offset : offset + limit]
+            
+            elif mode == FilterMode.REVIEWED:
+                # MUST be in training data
+                all_unfiltered = query.order_by(StreetViewImage.id.desc()).all()
+                filtered = [c for c in all_unfiltered if get_filename(c.image_url) in training_files]
+                total_count = len(filtered)
+                paged_results = filtered[offset : offset + limit]
+            
+            else: # ALL
+                total_count = query.count()
+                paged_results = query.order_by(StreetViewImage.id.desc()).offset(offset).limit(limit).all()
+
+            # Convert to GraphQL Types
+            result_list = []
+            for p in paged_results:
+                fname = get_filename(p.image_url)
+                td = training_files.get(fname)
+                
+                result_list.append(Point(
+                    id=p.id,
+                    latitude=p.latitude,
+                    longitude=p.longitude,
+                    heading=p.heading,
+                    pitch=p.pitch,
+                    image_url=f"images/{fname}",
+                    rqi_score=p.rqi_score,
+                    damage_count=p.damage_count or 0,
+                    damage_types=p.damage_types,
+                    analysis_metadata=p.analysis_metadata,
+                    created_at=p.created_at,
+                    manual_rqi=td.manual_rqi if td else None,
+                    manual_tags=td.tags if td else None,
+                    manual_annotations=td.annotations if td else None,
+                    manual_comment=td.comment if td else None
+                ))
+            
+            return TrainingPointsResponse(
+                items=result_list,
+                total_count=total_count,
+                has_more=(offset + limit) < total_count
+            )
+        finally:
+            db.close()
+
+    @strawberry.field
+    def training_stats(self, mode: FilterMode = FilterMode.ALL) -> TrainingStats:
+        db = get_db_session()
+        try:
+            import os
+            def get_filename(url):
+                if not url: return None
+                if url.startswith("images/"): return url.replace("images/", "")
+                if "/data/images/" in url: return url.split("/data/images/")[-1]
+                if url.startswith("http"): return url.split("/")[-1]
+                return os.path.basename(url)
+
+            # 1. Fetch training data (manual ground truth)
+            training_entries = db.query(TrainingDataModel).all()
+            # Map filename to manual RQI score
+            manual_scores = {t.image_filename: t.manual_rqi for t in training_entries if t.manual_rqi is not None}
+            training_files = {t.image_filename for t in training_entries}
+            
+            from app.models.models import StreetViewImage
+            # 2. Get points based on mode
+            query = db.query(StreetViewImage)
+            if mode == FilterMode.PENDING:
+                candidates = query.filter(StreetViewImage.rqi_score >= 2.5).all()
+                relevant_points = [c for c in candidates if get_filename(c.image_url) not in training_files]
+            elif mode == FilterMode.REVIEWED:
+                candidates = query.all()
+                relevant_points = [c for c in candidates if get_filename(c.image_url) in training_files]
+            else: # ALL
+                relevant_points = query.all()
+
+            total = len(relevant_points)
+            annotated_list = [p for p in relevant_points if get_filename(p.image_url) in training_files]
+            annotated = len(annotated_list)
+            pending = total - annotated
+            
+            # Quality stats (Prioritize Manual RQI over AI RQI)
+            effective_scores = []
+            for p in relevant_points:
+                fname = get_filename(p.image_url)
+                if fname in manual_scores:
+                    effective_scores.append(manual_scores[fname])
+                elif p.rqi_score is not None:
+                    effective_scores.append(p.rqi_score)
+            
+            avg_rqi = sum(effective_scores) / len(effective_scores) if effective_scores else 0.0
+            
+            good = len([s for s in effective_scores if s <= 2.0])
+            fair = len([s for s in effective_scores if 2.0 < s <= 3.5])
+            poor = len([s for s in effective_scores if s > 3.5])
+
+            # 5. Pending analysis count (images without RQI score)
+            pending_analysis_count = db.query(StreetViewImage).filter(StreetViewImage.rqi_score.is_(None)).count()
+
+            return TrainingStats(
+                total=total,
+                pending=pending,
+                annotated=annotated,
+                avg_rqi=float(avg_rqi),
+                good_count=good,
+                fair_count=fair,
+                poor_count=poor,
+                pending_analysis=pending_analysis_count
+            )
         finally:
             db.close()
 
@@ -188,8 +293,61 @@ class Query:
             completed_at=j.completed_at
         )
 
+from app.api.routes import run_route_processing, run_analysis_job, run_training_job
+
 @strawberry.type
 class Mutation:
+    @strawberry.mutation
+    def run_analysis(self, input: RunAnalysisInput) -> Job:
+        job_id = create_job()
+        
+        # Start background thread
+        thread = threading.Thread(
+            target=run_analysis_job, 
+            args=(job_id, input.strategy, input.limit, input.reanalyze), 
+            daemon=True
+        )
+        thread.start()
+        
+        return Job(
+            job_id=job_id,
+            status="pending",
+            current_step="analyzing",
+            progress=0,
+            total=0,
+            message=f"Analysis started ({input.strategy})",
+            error=None,
+            result=None,
+            created_at=datetime.datetime.utcnow(),
+            completed_at=None
+        )
+
+    @strawberry.mutation
+    def start_model_training(self) -> Job:
+        print("DEBUG: start_model_training mutation INVOKED")
+        job_id = create_job()
+        
+        # Start background thread
+        thread = threading.Thread(
+            target=run_training_job, 
+            args=(job_id,), 
+            daemon=True
+        )
+        thread.start()
+        
+        return Job(
+            job_id=job_id,
+            status="pending",
+            current_step="training",
+            progress=0,
+            total=0,
+            message="Training started",
+            error=None,
+            result=None,
+            created_at=datetime.datetime.utcnow(),
+            completed_at=None
+        )
+
     @strawberry.mutation
     def process_route(self, input: ProcessRouteInput) -> Job:
         job_id = create_job()

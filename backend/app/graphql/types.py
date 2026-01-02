@@ -2,6 +2,13 @@ import strawberry
 from typing import List, Optional
 import datetime
 from strawberry.scalars import JSON
+from enum import Enum
+
+@strawberry.enum
+class FilterMode(Enum):
+    ALL = "all"
+    PENDING = "pending"
+    REVIEWED = "reviewed"
 
 @strawberry.type
 class Point:
@@ -57,6 +64,29 @@ class Job:
     result: Optional[JSON]
     created_at: datetime.datetime
     completed_at: Optional[datetime.datetime]
+
+@strawberry.type
+class TrainingStats:
+    total: int
+    pending: int
+    annotated: int
+    avg_rqi: float
+    good_count: int
+    fair_count: int
+    poor_count: int
+    pending_analysis: int
+
+@strawberry.type
+class TrainingPointsResponse:
+    items: List[Point]
+    total_count: int
+    has_more: bool
+
+@strawberry.input
+class RunAnalysisInput:
+    strategy: str # YOLO, HEURISTIC, FUSION
+    limit: int = 0
+    reanalyze: bool = False
 
 @strawberry.input
 class ProcessRouteInput:

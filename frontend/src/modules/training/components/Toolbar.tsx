@@ -6,6 +6,7 @@ interface ToolbarProps {
   selectedTool: AnnotationBox['label']
   setTool: (tool: AnnotationBox['label']) => void
   onSave: () => void
+  onApplyPrevious?: () => void
 }
 
 const TOOLS = [
@@ -15,7 +16,7 @@ const TOOLS = [
   { id: 'cracks', label: 'Cracks', shortcut: 'C', icon: <Activity size={24} /> },
 ]
 
-const Toolbar: React.FC<ToolbarProps> = ({ selectedTool, setTool, onSave }) => {
+const Toolbar: React.FC<ToolbarProps> = ({ selectedTool, setTool, onSave, onApplyPrevious }) => {
   return (
     <div
       style={{
@@ -57,8 +58,30 @@ const Toolbar: React.FC<ToolbarProps> = ({ selectedTool, setTool, onSave }) => {
           marginBottom: '20px',
           width: '100%',
           display: 'flex',
-          justifyContent: 'center',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '12px',
         }}>
+        {onApplyPrevious && (
+          <button
+            onClick={onApplyPrevious}
+            title="Apply Previous (Space)"
+            style={{
+              width: '40px',
+              height: '40px',
+              background: '#3498db',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
+            }}>
+            <span style={{ fontSize: '18px', fontWeight: 'bold' }}>P</span>
+          </button>
+        )}
         <button
           onClick={onSave}
           title="Save (Enter)"

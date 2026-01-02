@@ -1,31 +1,53 @@
-import { takeLatest, put, call } from 'redux-saga/effects'
+import type { SagaIterator } from 'redux-saga'
+import { takeLatest, put, call, select } from 'redux-saga/effects'
 import { matchPath } from 'react-router-dom'
-import { actions as trainingActions } from '../modules/training'
-import { actions as routingActions } from '../modules/routing'
-import { waitForAppStart } from '../modules/app'
+import { actions as trainingActions } from '../modules/training/slice'
+import * as trainingSelectors from '../modules/training/selectors'
+import * as routingActions from '../modules/routing/actions'
+import { waitForAppStart } from '../modules/app/sagas'
 import { ROUTES } from '../routes'
+import type { TrainingPoint } from '../modules/training/types'
+import type { RootState } from '../store'
 
 // Master Orchestrator for API calls based on Route
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function* handleLocationChange(action: any) {
+function* handleLocationChange(action: { payload: { pathname: string; search: string } }): SagaIterator {
   // Blocking check: Wait for App Start
   yield call(waitForAppStart)
-  console.log('Orchestrator: App Started, proceeding.')
 
-  const { pathname } = action.payload
-  console.log('Orchestrator: Route Changed to', pathname)
+  const { pathname, search } = action.payload
+  const searchParams = new URLSearchParams(search)
 
-  const trainingMatch = matchPath(
-    { path: ROUTES.TRAINING.path, end: ROUTES.TRAINING.exact },
+  const trainingDetailMatch = matchPath(
+    { path: ROUTES.TRAINING_DETAIL.path, end: ROUTES.TRAINING_DETAIL.exact },
+    pathname,
+  ) || matchPath(
+    { path: ROUTES.TRAINING_REVIEW.path, end: ROUTES.TRAINING_REVIEW.exact },
     pathname,
   )
 
-  if (trainingMatch) {
-    // Entered Training View
-    // trainingMatch.params.id will be string.
-    const pointId = trainingMatch.params.id ? parseInt(trainingMatch.params.id, 10) : 0
+  const trainingListMatch = matchPath(
+    { path: ROUTES.TRAINING_LIST.path, end: ROUTES.TRAINING_LIST.exact },
+    pathname,
+  )
+
+  if (trainingDetailMatch) {
+    const pointId = trainingDetailMatch.params.id ? parseInt(trainingDetailMatch.params.id, 10) : 0
     if (pointId) {
       yield put(trainingActions.fetchImage(pointId))
+    }
+  } else if (trainingListMatch) {
+    // TRAINING DASHBOARD
+    const mode = (searchParams.get('mode') || 'all') as 'pending' | 'reviewed' | 'all'
+    
+    // Get current filter from state
+    const activeMode = yield select(trainingSelectors.selectActiveMode)
+    const currentItems: TrainingPoint[] = yield select(trainingSelectors.selectItems)
+
+    // Trigger loads if mode changed OR if we have no items (initial load)
+    const isLoading = yield select((state: RootState) => state.training.loading)
+    if (!isLoading && (mode !== activeMode || currentItems.length === 0)) {
+      yield put(trainingActions.fetchList({ mode: mode.toUpperCase() }))
+      yield put(trainingActions.fetchStats({ mode: mode.toUpperCase() }))
     }
   } else if (matchPath({ path: ROUTES.HOME.path, end: ROUTES.HOME.exact }, pathname)) {
     // Entered Map View
@@ -33,4 +55,4 @@ function* handleLocationChange(action: any) {
   }
 }
 
-export default [takeLatest(routingActions.LOCATION_CHANGE, handleLocationChange)]
+export default [takeLatest(routingActions.locationChange, handleLocationChange)]

@@ -1,7 +1,9 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { Provider } from 'react-redux'
+import { ApolloProvider } from '@apollo/client/react'
 import { store } from './store'
+import { client } from './modules/graphql/client'
 import App from './components/App'
 import './index.css'
 
@@ -11,7 +13,9 @@ const Fragment = strictMode ? React.StrictMode : React.Fragment
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <Fragment>
     <Provider store={store}>
-      <App />
+      <ApolloProvider client={client}>
+        <App />
+      </ApolloProvider>
     </Provider>
   </Fragment>,
 )

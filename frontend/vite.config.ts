@@ -4,6 +4,7 @@ import checker from 'vite-plugin-checker'
 import path from 'path'
 
 // https://vitejs.dev/config/
+// Trigger reload
 export default defineConfig({
   plugins: [
     react(),

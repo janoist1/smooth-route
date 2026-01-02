@@ -8,11 +8,14 @@ from typing import List, Optional
 from app.core.database import SessionLocal
 from app.models.models import StreetViewImage
 from app.core.config import settings
-from app.services.job_service import create_job, get_job, update_job, JobStatus, JobStep
+from app.services.job_service import create_job, get_job, update_job, get_active_job, JobStatus, JobStep
 from sqlalchemy import func
 from pydantic import BaseModel
 import threading
 import time
+import asyncio
+import json
+from sse_starlette.sse import EventSourceResponse
 
 # Alias for clarity
 PydanticBaseModel = BaseModel
@@ -213,6 +216,86 @@ async def get_job_status(job_id: str):
     }
 
 
+@router.get("/api/v1/job/{job_id}/stream")
+async def stream_job_status(job_id: str):
+    """Stream job status and progress using SSE."""
+
+    async def event_generator():
+        last_progress = -1
+        last_status = None
+
+        while True:
+            job = get_job(job_id)
+            if not job:
+                yield {"event": "error", "data": "Job not found"}
+                break
+
+            # Only send update if something changed
+            if job.progress != last_progress or job.status != last_status:
+                last_progress = job.progress
+                last_status = job.status
+
+                yield {
+                    "data": json.dumps(
+                        {
+                            "job_id": job.job_id,
+                            "status": job.status.value,
+                            "current_step": job.current_step.value
+                            if job.current_step
+                            else None,
+                            "progress": job.progress,
+                            "total": job.total,
+                            "message": job.message,
+                            "error": job.error,
+                            "result": job.result,
+                        }
+                    )
+                }
+
+            if job.status in [JobStatus.COMPLETED, JobStatus.FAILED]:
+                break
+
+            await asyncio.sleep(0.1)  # Faster heartbeat for rapid tasks
+
+    return EventSourceResponse(event_generator())
+
+
+@router.post("/api/v1/job/{job_id}/stop")
+async def stop_job(job_id: str):
+    """Stop/cancel a running job."""
+    job = get_job(job_id)
+    if not job:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    if job.status in [JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED]:
+        return {"status": "already_stopped", "message": f"Job is already {job.status}"}
+    
+    update_job(job_id, status=JobStatus.CANCELLED, message="Folyamat leállítva a felhasználó által.")
+    return {"status": "stopped", "message": "Stopping job..."}
+
+
+@router.get("/api/v1/jobs/active")
+async def get_current_active_job():
+    """Get the currently active job (for reconnection)."""
+    job = get_active_job()
+    if not job:
+        return {"job": None}
+    
+    return {
+        "job": {
+            "job_id": job.job_id,
+            "status": job.status.value,
+            "current_step": job.current_step.value if job.current_step else None,
+            "progress": job.progress,
+            "total": job.total,
+            "message": job.message,
+            "error": job.error,
+            "result": job.result
+        }
+    }
+
+
 def run_route_processing(job_id: str, origin: str, destination: str):
     """Run the full route processing pipeline using RouteProcessingService."""
     print(f"DEBUG: Thread started for job {job_id}")
@@ -238,7 +321,7 @@ def run_route_processing(job_id: str, origin: str, destination: str):
         # Step 3: Analyze points
         # Analyze all downloaded images that haven't been analyzed yet
         print(f"DEBUG: Calling analyze_points for job {job_id}")
-        processing_service.analyze_points(job_id=job_id, simple=True)
+        processing_service.analyze_points(job_id=job_id, strategy="HEURISTIC")
         
         # Complete
         update_job(
@@ -268,6 +351,85 @@ def run_route_processing(job_id: str, origin: str, destination: str):
         except Exception as update_error:
             print(f"CRITICAL: Failed to update job status after error: {update_error}")
 
+def run_analysis_job(job_id: str, strategy: str, limit: int = 0, reanalyze: bool = False):
+    """Run analysis job in background."""
+    print(f"DEBUG: Analysis thread started for job {job_id} (Strategy: {strategy})")
+    try:
+        from app.services.processing_service import processing_service
+        from app.services.job_service import update_job, JobStatus
+        from datetime import datetime
+        
+        update_job(job_id, status=JobStatus.RUNNING, message=f"Elemzés indítása ({strategy})...")
+        
+        result = processing_service.analyze_points(
+            strategy=strategy, 
+            limit=limit, 
+            reanalyze=reanalyze, 
+            job_id=job_id
+        )
+        
+        if result.get("status") == "cancelled":
+            print(f"DEBUG: Analysis job {job_id} was cancelled, not marking as completed.")
+            return
+
+        strategy_used = result.get("strategy_used", strategy)
+        update_job(
+            job_id,
+            status=JobStatus.COMPLETED,
+            message=f"Elemzés sikeresen befejezve ({strategy_used})",
+            completed_at=datetime.utcnow(),
+            result={"status": "success", "counts": result}
+        )
+
+    except Exception as e:
+        from app.services.job_service import update_job, JobStatus
+        from datetime import datetime
+        import traceback
+        print(f"Analysis job failed: {traceback.format_exc()}")
+        update_job(
+            job_id,
+            status=JobStatus.FAILED,
+            message=f"Hiba az elemzés során: {str(e)}",
+            error=str(e),
+            completed_at=datetime.utcnow()
+        )
+
+def run_training_job(job_id: str):
+    """Run YOLO fine-tuning job in background."""
+    print(f"DEBUG: Training thread started for job {job_id}")
+    try:
+        from app.services.job_service import update_job, JobStatus, JobStep
+        from app.services.processing_service import processing_service
+        from datetime import datetime
+        import time
+        
+        update_job(job_id, status=JobStatus.RUNNING, message="Modell finomhangolása indítása...")
+        
+        # Call the real training logic in processing_service
+        result = processing_service.run_training(job_id)
+        
+        if result.get("status") == "cancelled":
+            print(f"DEBUG: Training job {job_id} was cancelled, not marking as completed.")
+            return
+
+        update_job(
+            job_id,
+            status=JobStatus.COMPLETED,
+            message="Modell finomhangolva és élesítve!",
+            completed_at=datetime.utcnow(),
+            result=result
+        )
+
+    except Exception as e:
+        from app.services.job_service import update_job, JobStatus
+        from datetime import datetime
+        update_job(
+            job_id,
+            status=JobStatus.FAILED,
+            message=f"Hiba a tanítás során: {str(e)}",
+            error=str(e),
+            completed_at=datetime.utcnow()
+        )
 
 # Settings API endpoints
 

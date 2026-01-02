@@ -1,14 +1,31 @@
 import React, { useRef, useState, useEffect } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
+import { useSelector } from 'react-redux'
 import { useTraining } from '../hooks'
-import type { AnnotationBox } from '../types'
+import type { AnnotationBox, TrainingState } from '../types'
 import Toolbar from './Toolbar'
+import { X, ChevronLeft, ChevronRight } from 'lucide-react'
 
-import { useNavigate } from 'react-router-dom'
-import { X } from 'lucide-react'
+interface TrainingLocationState {
+  allIds?: (string | number)[]
+}
 
-const TrainingView: React.FC = () => {
+interface TrainingViewProps {
+  reviewMode?: boolean
+}
+
+const TrainingView: React.FC<TrainingViewProps> = ({ reviewMode }) => {
   const navigate = useNavigate()
+  const location = useLocation()
+  
+  // Get navigation context from Redux (preferred) or Location State (fallback)
+  const navIdsFromRedux = useSelector((state: { training: TrainingState }) => state.training.navigationIds)
+  const allIds = React.useMemo(() => {
+    if (navIdsFromRedux && navIdsFromRedux.length > 0) return navIdsFromRedux
+    return (location.state as TrainingLocationState)?.allIds || []
+  }, [navIdsFromRedux, location.state])
   const {
+    imageId,
     imageUrl,
     loading,
     error,
@@ -25,6 +42,8 @@ const TrainingView: React.FC = () => {
     removeTag,
     manualComment,
     setComment,
+    setSettings,
+    lastSavedSettings,
   } = useTraining()
 
   // Local state for tag input
@@ -35,6 +54,31 @@ const TrainingView: React.FC = () => {
   const imageRef = useRef<HTMLImageElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
+  const handleApplyPrevious = React.useCallback(() => {
+    if (lastSavedSettings) {
+      setSettings(lastSavedSettings)
+    }
+  }, [lastSavedSettings, setSettings])
+
+  // Navigation Helpers
+  const currentIndex = allIds.findIndex(id => String(id) === String(imageId))
+  const hasNext = currentIndex !== -1 && currentIndex < allIds.length - 1
+  const hasPrev = currentIndex > 0
+
+  const handleNext = React.useCallback(() => {
+    if (hasNext) {
+      const nextId = allIds[currentIndex + 1]
+      navigate(`/training/${nextId}/review`, { state: { allIds } })
+    }
+  }, [hasNext, allIds, currentIndex, navigate])
+
+  const handlePrev = React.useCallback(() => {
+    if (hasPrev) {
+      const prevId = allIds[currentIndex - 1]
+      navigate(`/training/${prevId}/review`, { state: { allIds } })
+    }
+  }, [hasPrev, allIds, currentIndex, navigate])
+
   // Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -42,6 +86,12 @@ const TrainingView: React.FC = () => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
 
       switch (e.key.toLowerCase()) {
+        case 'arrowleft':
+          handlePrev()
+          break
+        case 'arrowright':
+          handleNext()
+          break
         case 'p':
           setTool('pothole')
           break
@@ -54,15 +104,28 @@ const TrainingView: React.FC = () => {
         case 'c':
           setTool('cracks')
           break
+        case ' ': // Space key
+          e.preventDefault()
+          handleApplyPrevious()
+          break
         case 'enter':
+          e.preventDefault()
           saveAnnotations()
+          
+          if (reviewMode) {
+             handleNext()
+          } else {
+             // If not in review mode (e.g. single view), maybe just save? 
+             // Logic kept simple: enter saves, and if listing exists, moves next.
+             if (hasNext) handleNext()
+          }
           break
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [setTool, saveAnnotations])
+  }, [setTool, saveAnnotations, reviewMode, handleNext, handlePrev, handleApplyPrevious, hasNext])
 
   // Global mouse tracking / Clamping
   useEffect(() => {
@@ -213,9 +276,14 @@ const TrainingView: React.FC = () => {
 
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         {/* Photoshop-style Toolbar */}
-        <Toolbar selectedTool={selectedTool} setTool={setTool} onSave={saveAnnotations} />
-
-        {/* Canvas Area */}
+        <Toolbar 
+          selectedTool={selectedTool} 
+          setTool={setTool} 
+          onSave={saveAnnotations} 
+          onApplyPrevious={lastSavedSettings ? handleApplyPrevious : undefined}
+        />
+        
+        {/* Canvas Area representation... (removed old float button) */}
         <div
           ref={containerRef}
           style={{
@@ -229,7 +297,7 @@ const TrainingView: React.FC = () => {
           }}>
           {/* Close / Back Button */}
           <button
-            onClick={() => navigate('/')}
+            onClick={() => navigate(reviewMode ? '/training' : '/')}
             style={{
               position: 'absolute',
               top: '20px',
@@ -327,6 +395,63 @@ const TrainingView: React.FC = () => {
             </div>
           )}
         </div>
+
+        {/* Navigation Arrows (Floating) */}
+        {hasPrev && (
+          <button
+            onClick={handlePrev}
+            style={{
+              position: 'absolute',
+              left: '20px',
+              top: '50%',
+              transform: 'translateY(-50%)',
+              background: 'rgba(0,0,0,0.5)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '50%',
+              width: '48px',
+              height: '48px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              zIndex: 60,
+              transition: 'background 0.2s',
+            }}
+            onMouseOver={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.8)')}
+            onMouseOut={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.5)')}
+          >
+            <ChevronLeft size={32} />
+          </button>
+        )}
+        
+        {hasNext && (
+          <button
+            onClick={handleNext}
+            style={{
+              position: 'absolute',
+              right: '20px',
+              top: '50%',
+              transform: 'translateY(-50%)',
+              background: 'rgba(0,0,0,0.5)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '50%',
+              width: '48px',
+              height: '48px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              zIndex: 60,
+              transition: 'background 0.2s',
+            }}
+            onMouseOver={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.8)')}
+            onMouseOut={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.5)')}
+          >
+            <ChevronRight size={32} />
+          </button>
+        )}
       </div>
 
       {/* Bottom Panel: RQI & Tags */}
@@ -374,8 +499,8 @@ const TrainingView: React.FC = () => {
               fontSize: '10px',
               color: '#666',
             }}>
-            <span>1.0 (Good)</span>
-            <span>5.0 (Bad)</span>
+            <span>Excellent (1.0)</span>
+            <span>Poor (5.0)</span>
           </div>
         </div>
 
