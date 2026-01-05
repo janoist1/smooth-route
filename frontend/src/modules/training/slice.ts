@@ -150,7 +150,19 @@ const trainingSlice = createSlice({
       state.analysisTotal = action.payload.total
       state.analysisMessage = action.payload.message
       if (action.payload.status) {
-        state.analysisStatus = action.payload.status
+        // Enforce state machine constraint: Once 'completed' or 'failed', cannot go back to 'running' for the SAME flow.
+        // This handles race conditions where a lagging poller sends old status updates.
+        if (state.analysisStatus === 'completed' && action.payload.status !== 'completed') {
+           // Ignore
+        } else {
+           state.analysisStatus = action.payload.status
+        }
+      }
+      
+      // Auto-complete if 100% processed
+      const isFinished = action.payload.total > 0 && action.payload.progress >= action.payload.total
+      if (isFinished && state.analysisStatus !== 'failed') {
+          state.analysisStatus = 'completed'
       }
     },
     setAnalysisStatus(state, action: PayloadAction<TrainingState['analysisStatus']>) {
