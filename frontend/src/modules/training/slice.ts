@@ -318,7 +318,9 @@ const trainingSlice = createSlice({
       })
       .addCase(runAnalysis.fulfilled, (state, action: PayloadAction<{ jobId: string }>) => {
         state.analysisJobId = action.payload.jobId
-        state.analysisStatus = 'running'
+        // Do NOT set status to 'running' here. The saga only completes when the poller finishes (attached fork).
+        // By then, the job is likely 'completed' via updateJobProgress/jobCompleted.
+        // Overwriting it here would revert the UI to running state improperly.
       })
       .addCase(runAnalysis.rejected, (state, action: AnyAction) => {
         state.analysisStatus = 'failed'
@@ -333,8 +335,7 @@ const trainingSlice = createSlice({
       })
       .addCase(startTraining.fulfilled, (state, action: PayloadAction<{ jobId: string }>) => {
         state.analysisJobId = action.payload.jobId
-        state.trainingStatus = 'running'
-        state.analysisStatus = 'running'
+        // Same here: Do NOT reset status to 'running'. It's already handled by pending + poller.
       })
       .addCase(startTraining.rejected, (state, action: AnyAction) => {
         state.trainingStatus = 'failed'
