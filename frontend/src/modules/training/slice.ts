@@ -149,21 +149,8 @@ const trainingSlice = createSlice({
       state.analysisProgress = action.payload.progress
       state.analysisTotal = action.payload.total
       state.analysisMessage = action.payload.message
-      
-      const isFinished = action.payload.total > 0 && action.payload.progress >= action.payload.total
-      
       if (action.payload.status) {
-         // Defensive check: Don't revert 'completed' status to 'running' if we are actually finished based on progress
-         if (state.analysisStatus === 'completed' && action.payload.status !== 'completed' && isFinished) {
-             // Ignore status regression
-         } else {
-             state.analysisStatus = action.payload.status
-         }
-      }
-      
-      // Force completion if 100% done, ensuring UI shows result even if backend status lags
-      if (isFinished) {
-          state.analysisStatus = 'completed'
+        state.analysisStatus = action.payload.status
       }
     },
     setAnalysisStatus(state, action: PayloadAction<TrainingState['analysisStatus']>) {

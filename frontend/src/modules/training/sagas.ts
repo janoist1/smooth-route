@@ -1,4 +1,4 @@
-import { call, select, put, fork, take } from 'redux-saga/effects'
+import { call, select, put, fork, take, cancelled } from 'redux-saga/effects'
 import { eventChannel, END } from 'redux-saga'
 
 import { actions, fetchImage, fetchList, fetchStats } from './slice'
@@ -307,12 +307,21 @@ function* pollAnalysisJobWorker(jobId: string) {
   } catch {
     // Channel error
   } finally {
-    if (channel) {
-      channel.close()
+    const isCancelled: boolean = yield cancelled()
+    if (isCancelled) {
+      // If cancelled (e.g. by new reconnect or navigation), close channel but DO NOT trigger completion.
+      // This prevents race conditions where an old cancelled poller overwrites the state.
+      if (channel) {
+        channel.close()
+      }
+    } else {
+      // Normal completion (break from loop)
+      if (channel) {
+        channel.close()
+      }
+      // Check final status from API to ensure we didn't miss the last update (especially exports)
+      yield call(checkFinalJobStatus, jobId)
     }
-
-    // Check final status from API to ensure we didn't miss the last update (especially exports)
-    yield call(checkFinalJobStatus, jobId)
   }
 }
 
