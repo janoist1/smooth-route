@@ -1,134 +1,170 @@
 [
     {
-        "key": "edge_density_weight",
-        "value": 15.0,
-        "description": "Élsűrűség súlya",
-        "category": "Súlyok"
+        "key": "ai_model",
+        "value": "yolov8s-seg-best-20260105.pt",
+        "description": "Aktív AI Modell",
+        "example": "yolov8m-seg.pt",
+        "category": "AI & Modell",
+        "explanation": "Az úthibák felismeréséért és elemzéséért felelős mesterséges intelligencia modell."
     },
     {
-        "key": "edge_density_fine_weight",
-        "value": 10.0,
-        "description": "Finom repedések súlya",
-        "category": "Súlyok"
+        "key": "cleaner_model",
+        "value": "yolov8m-seg.pt",
+        "description": "Tisztító AI Modell",
+        "example": "yolov8n.pt",
+        "category": "AI & Modell",
+        "explanation": "A képek előfeldolgozásáért és a zavaró elemek eltávolításáért felelős mesterséges intelligencia modell."
     },
     {
-        "key": "texture_variance_divisor",
-        "value": 500.0,
-        "description": "Textúra variancia osztó",
-        "category": "Súlyok"
+        "key": "cleaner_conf",
+        "value": 0.25,
+        "description": "Tisztító AI Biztonsági Szint",
+        "example": "0.25",
+        "category": "AI & Modell",
+        "explanation": "Meghatározza, milyen magabiztosnak kell lennie a tisztító modellnek a zavaró elemek azonosításához."
     },
     {
-        "key": "line_density_weight",
-        "value": 0.8,
-        "description": "Vonal sűrűség súlya",
-        "category": "Súlyok"
+        "key": "ai_inference_conf",
+        "value": 0.15,
+        "description": "AI Észlelési Küszöb",
+        "example": "0.25",
+        "category": "AI & Modell",
+        "explanation": "Meghatározza a minimális magabiztossági szintet minden AI alapú észlelésnél (Varázspálca és kötegelt elemzés)."
     },
     {
-        "key": "contrast_score_divisor",
-        "value": 8000.0,
-        "description": "Kontraszt osztó",
-        "category": "Súlyok"
+        "key": "training_epochs",
+        "value": 150,
+        "description": "Tanulási Időtartam",
+        "example": "10-20",
+        "category": "Tanítás",
+        "explanation": "Hányszor fusson át az AI a teljes tanító adatbázison."
     },
     {
-        "key": "patch_density_weight",
-        "value": 10.0,
-        "description": "Foltsűrűség súlya",
-        "category": "Súlyok"
+        "key": "training_provider",
+        "value": "google_colab",
+        "description": "Tanítási Platform",
+        "example": "local",
+        "category": "Tanítás",
+        "explanation": "Hol fusson a tanítás: lokálisan (helyi gépen) vagy Google Colab felhőben."
+    },
+    {
+        "key": "training_workers",
+        "value": 4,
+        "description": "Adatbetöltő Szálak",
+        "example": "4",
+        "category": "Tanítás",
+        "explanation": "Párhuzamos adatbetöltő processzek száma a gyorsabb tanításhoz."
+    },
+    {
+        "key": "training_batch_size",
+        "value": 16,
+        "description": "Adagolási Méret",
+        "example": "16",
+        "category": "Tanítás",
+        "explanation": "Az egyszerre feldolgozott képek száma a tanítás alatt."
+    },
+    {
+        "key": "training_patience",
+        "value": 50,
+        "description": "Türelem (Patience)",
+        "example": "50",
+        "category": "Tanítás",
+        "explanation": "Hány epoch-ot várjon a rendszer javulás nélkül, mielőtt leállítja a tanítást. 0 a kikapcsoláshoz."
     },
     {
         "key": "repair_score_weight",
         "value": 150.0,
-        "description": "Foltozás/javítás detektálás súlya",
-        "category": "Súlyok"
+        "description": "Folytozások Súlya",
+        "example": null,
+        "category": "Súlyok",
+        "explanation": "A már javított úthibák súlyozása a végső minősítésben."
+    },
+    {
+        "key": "edge_density_weight",
+        "value": 10,
+        "description": "Repedés-hálózat Súly",
+        "example": null,
+        "category": "Súlyok",
+        "explanation": "Az apró, pókhálószerű repedések fontossága az értékelésnél."
+    },
+    {
+        "key": "edge_density_fine_weight",
+        "value": 10.0,
+        "description": "Hajszálrepedés Súly",
+        "example": null,
+        "category": "Súlyok",
+        "explanation": "A legvékonyabb, alig látható repedések érzékenysége."
+    },
+    {
+        "key": "patch_density_weight",
+        "value": 10.0,
+        "description": "Kátyúk Súlya",
+        "example": null,
+        "category": "Súlyok",
+        "explanation": "A mély kátyúk és lyukak fontossága a biztonság szempontjából."
     },
     {
         "key": "rqi_threshold_excellent",
-        "value": 15.0,
-        "description": "RQI 1 (Kiváló) küszöb",
-        "category": "Küszöbértékek"
+        "value": 20,
+        "description": "Kiváló Minőség Határ",
+        "example": null,
+        "category": "Küszöbértékek",
+        "explanation": "A maximális hiba-pontszám a Kiváló minősítéshez."
     },
     {
         "key": "rqi_threshold_good",
-        "value": 25.0,
-        "description": "RQI 2 (Jó) küszöb",
-        "category": "Küszöbértékek"
+        "value": 35,
+        "description": "Jó Minőség Határa",
+        "example": null,
+        "category": "Küszöbértékek",
+        "explanation": "A határvonal az RQI 2 (Jó) és Közepes kategóriák között."
     },
     {
         "key": "rqi_threshold_fair",
         "value": 40.0,
-        "description": "RQI 3 (Közepes) küszöb",
-        "category": "Küszöbértékek"
+        "description": "Közepes Minőség Határ",
+        "example": null,
+        "category": "Küszöbértékek",
+        "explanation": "Ezen pontszám felett az út már rázkódósnak minősül."
     },
     {
         "key": "rqi_threshold_poor",
         "value": 55.0,
-        "description": "RQI 4 (Rossz) küszöb",
-        "category": "Küszöbértékek"
-    },
-    {
-        "key": "markings_filter_threshold",
-        "value": 0.15,
-        "description": "Útvonaljelölés szűrés küszöb",
-        "category": "Szűrők"
-    },
-    {
-        "key": "shadow_compensation_dark",
-        "value": 0.7,
-        "description": "Árnyék kompenzáció sötét képeknél",
-        "category": "Szűrők"
-    },
-    {
-        "key": "shadow_compensation_moderate",
-        "value": 0.85,
-        "description": "Árnyék kompenzáció közepesen sötét képeknél",
-        "category": "Szűrők"
-    },
-    {
-        "key": "canny_threshold_fine_low",
-        "value": 30.0,
-        "description": "Canny alsó küszöb",
-        "category": "Él detektálás"
-    },
-    {
-        "key": "canny_threshold_fine_high",
-        "value": 80.0,
-        "description": "Canny felső küszöb",
-        "category": "Él detektálás"
-    },
-    {
-        "key": "canny_threshold_coarse_low",
-        "value": 80.0,
-        "description": "Canny durva alsó",
-        "category": "Él detektálás"
-    },
-    {
-        "key": "canny_threshold_coarse_high",
-        "value": 200.0,
-        "description": "Canny durva felső",
-        "category": "Él detektálás"
-    },
-    {
-        "key": "hough_lines_threshold",
-        "value": 80.0,
-        "description": "Hough küszöb",
-        "category": "Strukturális elemzés"
-    },
-    {
-        "key": "hough_lines_min_length",
-        "value": 50.0,
-        "description": "Hough min hossz",
-        "category": "Strukturális elemzés"
-    },
-    {
-        "key": "block_size",
-        "value": 32.0,
-        "description": "Blokk méret",
-        "category": "Textúra analízis"
+        "description": "Rossz Minőség Határa",
+        "example": null,
+        "category": "Küszöbértékek",
+        "explanation": "A kritikus pontszám, ami felett az út állapota nem elfogadható."
     },
     {
         "key": "road_region_height_ratio",
         "value": 0.4,
-        "description": "Út régió arány",
-        "category": "Textúra analízis"
+        "description": "Keresési Tartomány",
+        "example": null,
+        "category": "Képfeldolgozás",
+        "explanation": "A kép aljától számított rész, ahol az AI hibákat keres."
+    },
+    {
+        "key": "markings_filter_threshold",
+        "value": 0.15,
+        "description": "Felfestések Szűrése",
+        "example": null,
+        "category": "Szűrők",
+        "explanation": "A fehér vonalak kiszűrése a téves riasztások elkerülése végett."
+    },
+    {
+        "key": "google_maps_pitch",
+        "value": -20.0,
+        "description": "Kamera Szöge",
+        "example": "-20",
+        "category": "Google Street View",
+        "explanation": "A Google autó kamerájának dőlésszöge az út felé."
+    },
+    {
+        "key": "texture_variance_divisor",
+        "value": 500.0,
+        "description": "Szemcsézettség Súly",
+        "example": null,
+        "category": "Súlyok",
+        "explanation": "Az aszfalt érdességének hatása a végső minősítésre."
     }
 ]

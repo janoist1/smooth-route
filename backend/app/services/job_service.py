@@ -43,6 +43,20 @@ from app.models.models import Job as JobModel
 # In-memory job store is REMOVED in favor of database
 # _jobs: Dict[str, Job] = {}
 
+class JobDTO:
+    """Data Transfer Object for Job model to decouple from DB session."""
+    def __init__(self, model: JobModel):
+        self.job_id = model.job_id
+        self.status = JobStatus(model.status) if model.status else JobStatus.PENDING
+        self.current_step = JobStep(model.current_step) if model.current_step else None
+        self.progress = model.progress
+        self.total = model.total
+        self.message = model.message
+        self.error = model.error
+        self.created_at = model.created_at
+        self.completed_at = model.completed_at
+        self.result = model.result
+
 def create_job() -> str:
     """Create a new job and return its ID."""
     job_id = str(uuid.uuid4())
@@ -63,35 +77,13 @@ def create_job() -> str:
         db.close()
 
 
-def get_job(job_id: str) -> Optional[JobModel]:
+def get_job(job_id: str) -> Optional[JobDTO]:
     """Get a job by ID."""
-    # print(f"DEBUG: Retrieving job {job_id}...")
     db = SessionLocal()
     try:
         job = db.query(JobModel).filter(JobModel.job_id == job_id).first()
         if job:
-            # print(f"DEBUG: Job {job_id} found with status {job.status}")
-            # Convert SQLAlchemy model to dict-like object or return as is
-            # The caller expects an object with attributes
-            
-            # We need to return an object that persists after session close
-            # OR keep session open (not ideal here)
-            # Simple DTO approach:
-            class JobDTO:
-                def __init__(self, model):
-                    self.job_id = model.job_id
-                    self.status = JobStatus(model.status) if model.status else JobStatus.PENDING
-                    self.current_step = JobStep(model.current_step) if model.current_step else None
-                    self.progress = model.progress
-                    self.total = model.total
-                    self.message = model.message
-                    self.error = model.error
-                    self.created_at = model.created_at
-                    self.completed_at = model.completed_at
-                    self.result = model.result
-            
             return JobDTO(job)
-        print(f"DEBUG: Job {job_id} NOT found in database.")
         return None
     except Exception as e:
         print(f"ERROR: Failed to get job {job_id}: {e}")
@@ -119,7 +111,7 @@ def update_job(job_id: str, **kwargs):
         db.close()
 
 
-def get_active_job() -> Optional[JobModel]:
+def get_active_job() -> Optional[JobDTO]:
     """Get the most recent pending or running job."""
     db = SessionLocal()
     try:
@@ -131,19 +123,6 @@ def get_active_job() -> Optional[JobModel]:
             .first()
         )
         if job:
-            class JobDTO:
-                def __init__(self, model):
-                    self.job_id = model.job_id
-                    self.status = JobStatus(model.status) if model.status else JobStatus.PENDING
-                    self.current_step = JobStep(model.current_step) if model.current_step else None
-                    self.progress = model.progress
-                    self.total = model.total
-                    self.message = model.message
-                    self.error = model.error
-                    self.created_at = model.created_at
-                    self.completed_at = model.completed_at
-                    self.result = model.result
-            
             return JobDTO(job)
         return None
     except Exception as e:

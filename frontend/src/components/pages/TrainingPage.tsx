@@ -12,7 +12,7 @@ interface TrainingLocationState {
 const TrainingPage: React.FC<{ reviewMode?: boolean }> = ({ reviewMode }) => {
   const navigate = useNavigate()
   const location = useLocation()
-  
+
   const navIdsFromRedux = useSelector(
     (state: { training: TrainingState }) => state.training.navigationIds,
   )

@@ -73,7 +73,6 @@ const TrainingView: React.FC<TrainingViewProps> = ({ allIds, onNext, onPrev, onC
     [selectedTool, selectedAnnotationId, annotations, updateAnnotation, setTool],
   )
 
-
   // Reset image loaded state when URL changes
   if (imageUrl !== lastImageUrl) {
     setLastImageUrl(imageUrl)
@@ -252,7 +251,7 @@ const TrainingView: React.FC<TrainingViewProps> = ({ allIds, onNext, onPrev, onC
         onClassesChange={setAutoDetectClasses}
         loading={loading}
         // Filter Tool Wiring
-        onFilter={(threshold) => filterCurrentAnnotations(threshold)}
+        onFilter={threshold => filterCurrentAnnotations(threshold)}
         filterThreshold={filterThreshold}
         onFilterThreshChange={setFilterThreshold}
       />

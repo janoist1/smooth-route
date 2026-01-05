@@ -92,12 +92,14 @@ class GoogleMapsService:
         
         return R * c
 
-    def get_street_view_url(self, lat: float, lng: float, heading: float = 0, pitch: float = 0) -> str:
+    def get_street_view_url(self, lat: float, lng: float, heading: float = 0, pitch: Optional[float] = None) -> str:
         """
         Generates a signed URL for Street View Static API.
-        Note: Actual signing logic would be needed if 'signature' is required.
-        For now, we just return the URL structure.
         """
+        if pitch is None:
+            from app.core.settings_manager import settings_manager
+            pitch = settings_manager.get_setting("google_maps_pitch", -20.0)
+            
         base_url = "https://maps.googleapis.com/maps/api/streetview"
         return f"{base_url}?size=600x400&location={lat},{lng}&heading={heading}&pitch={pitch}&key={settings.GOOGLE_MAPS_API_KEY}"
 
@@ -143,13 +145,13 @@ class GoogleMapsService:
             else:
                 heading = 0.0
 
-            url = self.get_street_view_url(current_point[0], current_point[1], heading=heading)
+            url = self.get_street_view_url(current_point[0], current_point[1], heading=heading, pitch=-20.0)
             
             metadata.append({
                 "latitude": current_point[0],
                 "longitude": current_point[1],
                 "heading": heading,
-                "pitch": 0.0,
+                "pitch": -20.0,
                 "image_url": url
             })
             

@@ -3,7 +3,7 @@ from typing import Optional
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Kátyúőr"
-    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/smooth_route"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5433/smooth_route"
     GOOGLE_MAPS_API_KEY: Optional[str] = None
     
     # Quota limits

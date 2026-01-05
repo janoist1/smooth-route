@@ -4,7 +4,7 @@ API endpoints for web interface.
 
 from fastapi import APIRouter, Depends, BackgroundTasks
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, Any, Dict
 from app.core.database import SessionLocal
 from app.models.models import StreetViewImage
 from app.core.config import settings
@@ -300,7 +300,7 @@ def run_route_processing(job_id: str, origin: str, destination: str):
     """Run the full route processing pipeline using RouteProcessingService."""
     print(f"DEBUG: Thread started for job {job_id}")
     try:
-        from app.services.processing_service import processing_service
+        from app.services.road_quality import road_quality_service
         from app.services.job_service import update_job, JobStatus
         from datetime import datetime
         import traceback
@@ -310,18 +310,18 @@ def run_route_processing(job_id: str, origin: str, destination: str):
         
         # Step 1: Collect points
         print(f"DEBUG: Calling collect_points for job {job_id}")
-        processing_service.collect_points(origin, destination, job_id)
+        road_quality_service.collect_points(origin, destination, job_id)
         
         # Step 2: Download images
         # Note: We download all pending images, not just for this route, 
         # as points are shared.
         print(f"DEBUG: Calling download_images for job {job_id}")
-        processing_service.download_images(job_id=job_id)
+        road_quality_service.download_images(job_id=job_id)
         
         # Step 3: Analyze points
         # Analyze all downloaded images that haven't been analyzed yet
         print(f"DEBUG: Calling analyze_points for job {job_id}")
-        processing_service.analyze_points(job_id=job_id, strategy="HEURISTIC")
+        road_quality_service.analyze_points(job_id=job_id, strategy="HEURISTIC")
         
         # Complete
         update_job(
@@ -355,13 +355,13 @@ def run_analysis_job(job_id: str, strategy: str, limit: int = 0, reanalyze: bool
     """Run analysis job in background."""
     print(f"DEBUG: Analysis thread started for job {job_id} (Strategy: {strategy})")
     try:
-        from app.services.processing_service import processing_service
+        from app.services.road_quality import road_quality_service
         from app.services.job_service import update_job, JobStatus
         from datetime import datetime
         
         update_job(job_id, status=JobStatus.RUNNING, message=f"Elemzés indítása ({strategy})...")
         
-        result = processing_service.analyze_points(
+        result = road_quality_service.analyze_points(
             strategy=strategy, 
             limit=limit, 
             reanalyze=reanalyze, 
@@ -399,14 +399,14 @@ def run_training_job(job_id: str):
     print(f"DEBUG: Training thread started for job {job_id}")
     try:
         from app.services.job_service import update_job, JobStatus, JobStep
-        from app.services.processing_service import processing_service
+        from app.services.road_quality import road_quality_service
         from datetime import datetime
         import time
         
         update_job(job_id, status=JobStatus.RUNNING, message="Modell finomhangolása indítása...")
         
         # Call the real training logic in processing_service
-        result = processing_service.run_training(job_id)
+        result = road_quality_service.run_training(job_id)
         
         if result.get("status") == "cancelled":
             print(f"DEBUG: Training job {job_id} was cancelled, not marking as completed.")
@@ -415,7 +415,8 @@ def run_training_job(job_id: str):
         update_job(
             job_id,
             status=JobStatus.COMPLETED,
-            message="Modell finomhangolva és élesítve!",
+            progress=100,
+            message=result.get("message", "Modell finomhangolva és élesítve!"),
             completed_at=datetime.utcnow(),
             result=result
         )
@@ -431,50 +432,43 @@ def run_training_job(job_id: str):
             completed_at=datetime.utcnow()
         )
 
-# Settings API endpoints
-
-from app.core.settings_manager import settings_manager
-
-class SettingResponse(PydanticBaseModel):
-    key: str
-    value: float
-    description: Optional[str]
-    example: Optional[str]
-    category: Optional[str]
-
-    class Config:
-        from_attributes = True
 
 
-class SettingUpdateRequest(PydanticBaseModel):
-    value: float
+
+class DetectRequest(BaseModel):
+    filename: str
+    conf_threshold: float = 0.25
 
 
-@router.get("/api/v1/settings", response_model=List[SettingResponse])
-async def get_settings():
-    """Get all analysis settings."""
-    return settings_manager.get_all_settings()
-
-
-@router.get("/api/v1/settings/{key}", response_model=SettingResponse)
-async def get_setting(key: str):
-    """Get a specific setting by key."""
-    all_settings = settings_manager.get_all_settings()
-    for s in all_settings:
-        if s.key == key:
-            return s
-            
+@router.post("/api/v1/inference/detect")
+async def detect_objects(request: DetectRequest):
+    """
+    Run YOLO inference on a specific image and return polygons.
+    """
+    from app.services.inference import inference_service
+    import os
     from fastapi import HTTPException
-    raise HTTPException(status_code=404, detail=f"Setting '{key}' not found")
-
-
-@router.put("/api/v1/settings/{key}", response_model=SettingResponse)
-async def update_setting(
-    key: str, request: SettingUpdateRequest
-):
-    """Update a setting value."""
-    setting = settings_manager.update_setting(key, request.value)
-    if not setting:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=404, detail=f"Setting '{key}' not found")
-    return setting
+    
+    # Resolve image path (matching get_image logic)
+    data_dir = settings.DATA_DIR
+    if not os.path.isabs(data_dir):
+        # backend/app/api -> backend/app -> backend
+        backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        # backend -> project_root
+        project_root = os.path.dirname(backend_dir)
+        data_dir = os.path.join(project_root, data_dir)
+    
+    image_path = os.path.join(data_dir, "images", request.filename)
+    
+    if not os.path.exists(image_path):
+        raise HTTPException(status_code=404, detail=f"Image not found at {image_path}")
+        
+    try:
+        # Run inference (cpu/gpu auto-selected by ultralytics)
+        predictions = inference_service.detect_objects(image_path, request.conf_threshold)
+        return {"predictions": predictions}
+    except Exception as e:
+        print(f"Inference error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))

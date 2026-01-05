@@ -6,12 +6,16 @@ export interface UsePaginationProps {
   pageParamName?: string
 }
 
-export const usePagination = ({ totalCount, pageSize, pageParamName = 'page' }: UsePaginationProps) => {
+export const usePagination = ({
+  totalCount,
+  pageSize,
+  pageParamName = 'page',
+}: UsePaginationProps) => {
   const [searchParams, setSearchParams] = useSearchParams()
 
   const pageParam = searchParams.get(pageParamName)
   const currentPage = pageParam ? Math.max(1, parseInt(pageParam, 10)) : 1
-  
+
   const totalPages = Math.max(1, Math.ceil((totalCount || 0) / pageSize))
   const offset = (currentPage - 1) * pageSize
 

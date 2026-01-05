@@ -38,9 +38,8 @@ const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
   const [limit, setLimit] = useState(0)
   const [reanalyze, setReanalyze] = useState(false)
 
-
-
-  const isRunning = (analysisStatus === 'running' || trainingStatus === 'running') && analysisStatus !== 'completed'
+  const isRunning =
+    (analysisStatus === 'running' || trainingStatus === 'running') && analysisStatus !== 'completed'
 
   // Clean up message from manual percentage suffix
   const cleanMessage = analysisMessage?.replace(/\s\d+%\s*$/, '') || ''
@@ -273,7 +272,10 @@ const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
                   fontSize: '0.75rem',
                   fontWeight: 'bold',
                   color: pendingAnalysisCount > 0 ? '#fb923c' : '#4ade80',
-                  background: pendingAnalysisCount > 0 ? 'rgba(251, 146, 60, 0.1)' : 'rgba(74, 222, 128, 0.1)',
+                  background:
+                    pendingAnalysisCount > 0
+                      ? 'rgba(251, 146, 60, 0.1)'
+                      : 'rgba(74, 222, 128, 0.1)',
                   padding: '2px 8px',
                   borderRadius: '6px',
                   border: `1px solid ${pendingAnalysisCount > 0 ? 'rgba(251, 146, 60, 0.2)' : 'rgba(74, 222, 128, 0.2)'}`,
@@ -282,7 +284,13 @@ const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
               </div>
             </div>
 
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+            <div
+              style={{
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'center',
+              }}>
               {!isRunning && analysisStatus !== 'completed' && analysisStatus !== 'failed' && (
                 <div style={{ color: '#9ca3af', fontSize: '0.9rem', lineHeight: 1.5 }}>
                   Model ready: <span style={{ color: 'white', fontWeight: 600 }}>{modelName}</span>
@@ -312,7 +320,10 @@ const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
                       <span>{cleanMessage}</span>
                     </div>
                     <span style={{ fontWeight: 'bold' }}>
-                      {Math.round((analysisProgress / (analysisTotal > 0 ? analysisTotal : 1)) * 100)}%
+                      {Math.round(
+                        (analysisProgress / (analysisTotal > 0 ? analysisTotal : 1)) * 100,
+                      )}
+                      %
                     </span>
                   </div>
                 </div>
@@ -363,13 +374,22 @@ const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
                         gap: '12px',
                         marginTop: '8px',
                       }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#60a5fa' }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          color: '#60a5fa',
+                        }}>
                         <Download size={18} />
-                        <span style={{ fontSize: '0.9rem', fontWeight: 700 }}>Exportált Fájlok Letöltése</span>
+                        <span style={{ fontSize: '0.9rem', fontWeight: 700 }}>
+                          Exportált Fájlok Letöltése
+                        </span>
                       </div>
-                      
+
                       <div style={{ fontSize: '0.85rem', color: '#cbd5e1', lineHeight: 1.4 }}>
-                        A tanításhoz szükséges fájlok elkészültek. Töltsd le őket az alábbi gombokkal:
+                        A tanításhoz szükséges fájlok elkészültek. Töltsd le őket az alábbi
+                        gombokkal:
                       </div>
 
                       <div style={{ display: 'flex', gap: '8px' }}>
@@ -390,7 +410,7 @@ const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
                             fontWeight: 600,
                             textDecoration: 'none',
                             transition: 'all 0.2s',
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
                           }}
                           className="hover:bg-blue-600">
                           <FileText size={16} />
@@ -413,7 +433,7 @@ const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
                             fontWeight: 600,
                             textDecoration: 'none',
                             transition: 'all 0.2s',
-                             boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
                           }}
                           className="hover:bg-emerald-600">
                           <Download size={16} />

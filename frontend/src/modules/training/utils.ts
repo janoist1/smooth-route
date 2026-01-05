@@ -18,14 +18,17 @@ interface AnnotationLike {
  */
 export function getBounds(points: [number, number][]): Box {
   if (!points || !Array.isArray(points) || points.length === 0) {
-      return { x: 0, y: 0, w: 0, h: 0 }
+    return { x: 0, y: 0, w: 0, h: 0 }
   }
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity
   for (const pt of points) {
     // Handle both [x,y] and {x,y} for robustness
     const x = Array.isArray(pt) ? pt[0] : (pt as { x: number }).x
     const y = Array.isArray(pt) ? pt[1] : (pt as { y: number }).y
-    
+
     if (typeof x !== 'number' || typeof y !== 'number') continue
 
     minX = Math.min(minX, x)
@@ -76,11 +79,11 @@ export function filterAnnotationsNMS(annotations: any[], iouThreshold: number = 
   for (const candidate of sorted) {
     let keep = true
     for (const existing of kept) {
-       const iou = calculateIoU(candidate, existing)
-       if (iou > iouThreshold) {
-         keep = false
-         break
-       }
+      const iou = calculateIoU(candidate, existing)
+      if (iou > iouThreshold) {
+        keep = false
+        break
+      }
     }
     if (keep) kept.push(candidate)
   }

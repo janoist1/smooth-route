@@ -48,16 +48,19 @@ function* handleLocationChange(action: {
 
     // Trigger loads if mode changed OR if we have no items (initial load) OR if offset mismatch
     const isLoading = yield select((state: RootState) => state.training.loading)
-    
+
     // We fetch if:
     // 1. Not loading
     // 2. AND (Mode changed OR Items empty OR Offset changed)
     // Note: We might want strictly checking if the *current* data matches the URL requirements.
-    if (!isLoading && (mode !== activeMode || currentItems.length === 0 || currentOffset !== offset)) {
+    if (
+      !isLoading &&
+      (mode !== activeMode || currentItems.length === 0 || currentOffset !== offset)
+    ) {
       yield put(trainingActions.fetchList({ mode: mode.toUpperCase(), offset }))
       yield put(trainingActions.fetchStats({ mode: mode.toUpperCase() }))
     }
-    
+
     // Always check for active jobs and ensuring settings when visiting dashboard
     yield put(trainingActions.reconnectJob())
     yield put(settingsActions.fetchSettings())

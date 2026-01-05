@@ -74,6 +74,7 @@ async def get_image(filename: str):
     
     data_dir = settings.DATA_DIR
     if not os.path.isabs(data_dir):
+        # __file__ is /backend/app/main.py
         backend_dir = os.path.dirname(os.path.dirname(__file__))
         project_root = os.path.dirname(backend_dir)
         data_dir = os.path.join(project_root, data_dir)
@@ -88,3 +89,35 @@ async def get_image(filename: str):
         raise HTTPException(status_code=404, detail="Image not found")
     
     return FileResponse(image_path, media_type="image/jpeg")
+
+@app.get("/api/v1/exports/{filename}")
+async def get_export_file(filename: str):
+    """Serve exported files (notebooks, datasets) from the data/exports directory."""
+    import os
+    from fastapi import HTTPException
+    
+    # __file__ is /backend/app/main.py, so parent is /backend/app, and its parent is /backend
+    backend_dir = os.path.dirname(os.path.dirname(__file__))
+    
+    data_dir = settings.DATA_DIR
+    if not os.path.isabs(data_dir):
+        data_dir = os.path.join(backend_dir, data_dir)
+    
+    export_path = os.path.join(data_dir, "exports", filename)
+    
+    # Security: prevent directory traversal
+    if not os.path.abspath(export_path).startswith(os.path.abspath(os.path.join(data_dir, "exports"))):
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    if not os.path.exists(export_path):
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    # Determine media type based on extension
+    if filename.endswith(".ipynb"):
+        media_type = "application/x-ipynb+json"
+    elif filename.endswith(".zip"):
+        media_type = "application/zip"
+    else:
+        media_type = "application/octet-stream"
+        
+    return FileResponse(export_path, media_type=media_type, filename=filename)

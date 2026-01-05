@@ -1,11 +1,6 @@
 import React, { useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { 
-  AnalysisPanel, 
-  TrainingList, 
-  TrainingStatsView, 
-  useTraining 
-} from 'modules/training'
+import { AnalysisPanel, TrainingList, TrainingStatsView, useTraining } from 'modules/training'
 import { ROUTES, buildPath } from '../../routes'
 import { usePagination, SegmentedControl } from 'modules/ui'
 import { PAGE_SIZE } from '../../constants'
@@ -37,13 +32,13 @@ const TrainingDashboardPage: React.FC = () => {
     trainingStatus,
     analysisJobId,
     exports,
-    activeModel
+    activeModel,
   } = useTraining()
 
   // --- Pagination Logic (from UI Module) ---
   const { currentPage, totalPages, goToPage } = usePagination({
     totalCount: totalCount || 0,
-    pageSize: PAGE_SIZE
+    pageSize: PAGE_SIZE,
   })
 
   // --- Event Handlers ---
@@ -54,10 +49,10 @@ const TrainingDashboardPage: React.FC = () => {
   const handleItemClick = (id: string | number) => {
     navigate(buildPath(ROUTES.TRAINING_REVIEW, { id }))
   }
-  
+
   const handlePageChange = (page: number) => {
-      goToPage(page)
-      window.scrollTo({ top: 0, behavior: 'smooth' })
+    goToPage(page)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   // --- Derived View Data ---
@@ -76,16 +71,19 @@ const TrainingDashboardPage: React.FC = () => {
 
   return (
     <MainLayout>
-      <div style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto', paddingBottom: '100px' }}>
+      <div
+        style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto', paddingBottom: '100px' }}>
         {/* 1. Header */}
-        <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'flex-start',
-          marginBottom: '32px',
-        }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            marginBottom: '32px',
+          }}>
           <div>
-            <h1 style={{ fontSize: '2rem', fontWeight: 'bold', color: 'white', marginBottom: '8px' }}>
+            <h1
+              style={{ fontSize: '2rem', fontWeight: 'bold', color: 'white', marginBottom: '8px' }}>
               Training Dashboard
             </h1>
             <p style={{ color: '#9ca3af' }}>Manage and annotate analysis results</p>
@@ -99,7 +97,7 @@ const TrainingDashboardPage: React.FC = () => {
             analysisMessage={analysisMessage}
             analysisProgress={analysisProgress}
             analysisTotal={analysisTotal}
-            onRunAnalysis={(params) => runAnalysis(params)}
+            onRunAnalysis={params => runAnalysis(params)}
             onStartTraining={() => startTraining()}
             onStopJob={() => {
               if (analysisJobId) stopJob(analysisJobId)
@@ -116,12 +114,13 @@ const TrainingDashboardPage: React.FC = () => {
         {stats && <TrainingStatsView stats={stats} />}
 
         {/* 4. Filter Controls (Widget) */}
-        <div style={{
-          marginBottom: '24px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-        }}>
+        <div
+          style={{
+            marginBottom: '24px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}>
           <SegmentedControl
             options={[
               { value: 'all', label: 'All Items', icon: <Layers size={14} /> },

@@ -7,7 +7,12 @@ import type { TrainingState, Annotation, TrainingPoint, TrainingStats } from './
 import { takeLatestAsync } from 'saga-toolkit'
 import type { SagaActionFromCreator } from 'saga-toolkit'
 import { client, gql } from '../graphql'
-import type { GetTrainingDataQuery, GetJobQuery, GetActiveJobQuery, DetectObjectsMutation } from '../graphql/generated/graphql'
+import type {
+  GetTrainingDataQuery,
+  GetJobQuery,
+  GetActiveJobQuery,
+  DetectObjectsMutation,
+} from '../graphql/generated/graphql'
 import { selectTrainingState } from './selectors'
 
 const GET_TRAINING_DATA = gql(`
@@ -159,7 +164,9 @@ function* fetchImageWorker(action: SagaActionFromCreator<typeof actions.fetchIma
 function* fetchListWorker(action: SagaActionFromCreator<typeof actions.fetchList>) {
   const { mode, offset = 0 } = action.meta.arg
 
-  const result: { data: { trainingPoints: { items: TrainingPoint[]; totalCount: number; hasMore: boolean } } } = yield call([client, client.query], {
+  const result: {
+    data: { trainingPoints: { items: TrainingPoint[]; totalCount: number; hasMore: boolean } }
+  } = yield call([client, client.query], {
     query: GET_TRAINING_POINTS,
     variables: { mode: mode.toUpperCase(), offset, limit: 20 },
     fetchPolicy: 'network-only',
@@ -255,7 +262,11 @@ function createJobChannel(jobId: string) {
         const data = JSON.parse(event.data)
         emitter(data)
 
-        if (data.status === 'completed' || data.status === 'failed' || data.status === 'cancelled') {
+        if (
+          data.status === 'completed' ||
+          data.status === 'failed' ||
+          data.status === 'cancelled'
+        ) {
           emitter(END)
         }
       } catch {
@@ -277,7 +288,7 @@ function createJobChannel(jobId: string) {
 // Worker to poll job status and update state
 function* pollAnalysisJobWorker(jobId: string) {
   const channel: ReturnType<typeof createJobChannel> = yield call(createJobChannel, jobId)
-  
+
   try {
     while (true) {
       const job: {
@@ -297,10 +308,12 @@ function* pollAnalysisJobWorker(jobId: string) {
         }),
       )
 
-      if (job.status.toLowerCase() === 'completed' || 
-          job.status.toLowerCase() === 'failed' || 
-          job.status.toLowerCase() === 'cancelled' ||
-          (job.total > 0 && job.progress >= job.total)) {
+      if (
+        job.status.toLowerCase() === 'completed' ||
+        job.status.toLowerCase() === 'failed' ||
+        job.status.toLowerCase() === 'cancelled' ||
+        (job.total > 0 && job.progress >= job.total)
+      ) {
         break
       }
     }
@@ -328,54 +341,60 @@ function* pollAnalysisJobWorker(jobId: string) {
 // Helper to check final status via REST API
 function* checkFinalJobStatus(jobId: string) {
   try {
-      const finalResult: { data: GetJobQuery } = yield call([client, client.query], {
-        query: GET_JOB,
-        variables: { id: jobId },
-        fetchPolicy: 'network-only',
-      })
+    const finalResult: { data: GetJobQuery } = yield call([client, client.query], {
+      query: GET_JOB,
+      variables: { id: jobId },
+      fetchPolicy: 'network-only',
+    })
 
-      const job = finalResult.data.job
-      if (job) {
-        if (job.status === 'failed') {
-          const errorMsg = job.details 
-            ? (JSON.parse(job.details).error || 'Unknown error') 
-            : 'Unknown error'
-          yield put(actions.jobFailed(errorMsg))
-        } else if (job.status === 'completed' || (job.total > 0 && job.progress >= job.total)) {
-          // Extract exports from job result
-          const jobResult = job.result ? (typeof job.result === 'string' ? JSON.parse(job.result) : job.result) : null
-          
-          let exports = null
-          if (jobResult?.exports) {
-            exports = {
-              notebookPath: jobResult.exports.notebook_path || jobResult.exports.notebookPath,
-              datasetPath: jobResult.exports.dataset_path || jobResult.exports.datasetPath,
-              instructions: jobResult.instructions,
-            }
+    const job = finalResult.data.job
+    if (job) {
+      if (job.status === 'failed') {
+        const errorMsg = job.details
+          ? JSON.parse(job.details).error || 'Unknown error'
+          : 'Unknown error'
+        yield put(actions.jobFailed(errorMsg))
+      } else if (job.status === 'completed' || (job.total > 0 && job.progress >= job.total)) {
+        // Extract exports from job result
+        const jobResult = job.result
+          ? typeof job.result === 'string'
+            ? JSON.parse(job.result)
+            : job.result
+          : null
+
+        let exports = null
+        if (jobResult?.exports) {
+          exports = {
+            notebookPath: jobResult.exports.notebook_path || jobResult.exports.notebookPath,
+            datasetPath: jobResult.exports.dataset_path || jobResult.exports.datasetPath,
+            instructions: jobResult.instructions,
           }
-
-          yield put(actions.jobCompleted({ exports }))
-          // Refresh data
-          yield put(actions.fetchStats({ mode: 'ALL' }))
-          yield put(actions.fetchList({ mode: 'ALL' }))
-        } else if (job.status === 'cancelled') {
-             // Ensure status is cancelled and message is preserved (or updated)
-             const msg = job.details 
-                ? (JSON.parse(job.details).message || 'Folyamat leállítva.') 
-                : 'Folyamat leállítva.'
-             yield put(actions.updateJobProgress({
-               progress: job.progress,
-               total: job.total,
-               message: msg,
-               status: 'cancelled'
-             }))
-        } else {
-             // Still running? Maybe just network blip. 
-             yield put(actions.setAnalysisStatus('idle'))
         }
+
+        yield put(actions.jobCompleted({ exports }))
+        // Refresh data
+        yield put(actions.fetchStats({ mode: 'ALL' }))
+        yield put(actions.fetchList({ mode: 'ALL' }))
+      } else if (job.status === 'cancelled') {
+        // Ensure status is cancelled and message is preserved (or updated)
+        const msg = job.details
+          ? JSON.parse(job.details).message || 'Folyamat leállítva.'
+          : 'Folyamat leállítva.'
+        yield put(
+          actions.updateJobProgress({
+            progress: job.progress,
+            total: job.total,
+            message: msg,
+            status: 'cancelled',
+          }),
+        )
+      } else {
+        // Still running? Maybe just network blip.
+        yield put(actions.setAnalysisStatus('idle'))
       }
+    }
   } catch {
-      yield put(actions.setAnalysisStatus('idle'))
+    yield put(actions.setAnalysisStatus('idle'))
   }
 }
 
@@ -385,7 +404,7 @@ function* stopJobSaga(action: SagaActionFromCreator<typeof actions.stopJob>) {
     mutation: STOP_JOB,
     variables: { jobId },
   })
-  
+
   // Handled by polling, but we can optimistically update
   yield put(
     actions.updateJobProgress({
@@ -406,18 +425,18 @@ function* reconnectJobSaga() {
 
   if (result.data?.activeJob) {
     const job = result.data.activeJob
-    
+
     // If backend reports job as completed, do NOT show it on UI upon reconnect/reload.
     // User expectation: "Fresh start" when entering the page, unless a job is actively running.
     // We ignore the completed job result here, leaving the state as 'idle' (or resetting it).
     if (job.status.toLowerCase() === 'completed' || (job.total > 0 && job.progress >= job.total)) {
-        yield put(actions.setAnalysisStatus('idle'))
-        return
+      yield put(actions.setAnalysisStatus('idle'))
+      return
     }
-    
+
     // Restore state manually since this is a "re-" connection, not a fresh start
     // We use inner actions for this part as it doesn't fit the Request/Response cleanly
-    
+
     // BUT we need to start the poller.
     yield put(
       actions.updateJobProgress({
@@ -450,9 +469,12 @@ function* runAnalysisSaga(action: SagaActionFromCreator<typeof actions.runAnalys
 }
 
 function* startTrainingSaga() {
-  const result: { data: { startModelTraining: { id: string } } } = yield call([client, client.mutate], {
-    mutation: START_MODEL_TRAINING,
-  })
+  const result: { data: { startModelTraining: { id: string } } } = yield call(
+    [client, client.mutate],
+    {
+      mutation: START_MODEL_TRAINING,
+    },
+  )
 
   const jobId = result.data.startModelTraining.id
   yield fork(pollAnalysisJobWorker, jobId)
@@ -480,12 +502,12 @@ function* autoDetectWorker(action: SagaActionFromCreator<typeof actions.autoDete
   const predictions = result.data.detectObjects
 
   if (predictions && predictions.length > 0) {
-    const annotations = predictions.map((p) => ({
+    const annotations = predictions.map(p => ({
       id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2),
-      points: p.points, 
+      points: p.points,
       label: p.label,
       type: (p.points.length > 2 ? 'polygon' : 'box') as 'polygon' | 'box',
-      score: p.confidence, 
+      score: p.confidence,
     }))
 
     return annotations
@@ -493,7 +515,6 @@ function* autoDetectWorker(action: SagaActionFromCreator<typeof actions.autoDete
 
   return []
 }
-
 
 export default [
   takeLatestAsync(fetchImage.type, fetchImageWorker),

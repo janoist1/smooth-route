@@ -14,20 +14,53 @@ setup:
 	cd backend && ../$(PYTHON) -m pip install -e .
 	cd frontend && npm install
 
+# Core Services
 backend:
-	@echo "🚀 Starting Backend..."
+	@echo "🚀 Starting Backend (FastAPI)..."
 	cd backend && DATABASE_URL=postgresql://postgres:postgres@localhost:5433/smooth_route \
 	../$(UVICORN) app.main:app --host 0.0.0.0 --port 8000 --reload
 
 frontend:
-	@echo "🎨 Starting Frontend..."
+	@echo "🎨 Starting Frontend (Vite)..."
 	cd frontend && npm run dev
 
 dev:
-	@echo "🌟 Starting all services..."
-	# Use foreman, or just run in parallel if simple
-	# For now, suggest running in separate terminals or use a tool if available
-	@echo "Please run 'make backend' and 'make frontend' in separate terminals."
+	@echo "🌟 Starting all services sensibly (Ctrl+C to stop all)..."
+	@cd frontend && npx concurrently \
+		-n "BACKEND,FRONTEND" \
+		-c "blue,magenta" \
+		"cd ../backend && DATABASE_URL=postgresql://postgres:postgres@localhost:5433/smooth_route ../$(UVICORN) app.main:app --host 0.0.0.0 --port 8000 --reload" \
+		"npm run dev"
+
+# Data & Training Management
+reimport-images:
+	@echo "🔄 Re-importing all images with -20 pitch..."
+	DATABASE_URL=postgresql://postgres:postgres@localhost:5433/smooth_route \
+	$(PYTHON) scripts/redownload_images.py
+
+purge-data:
+	@echo "🗑️ Purging training data..."
+	DATABASE_URL=postgresql://postgres:postgres@localhost:5433/smooth_route \
+	$(PYTHON) scripts/purge_data.py
+
+download-models:
+	@echo "📦 Downloading and building AI models..."
+	$(PYTHON) scripts/download_models.py
+
+# Analysis & Utility
+clear-jobs:
+	@echo "🧹 Clearing background jobs..."
+	DATABASE_URL=postgresql://postgres:postgres@localhost:5433/smooth_route \
+	$(PYTHON) clear_jobs.py
+
+list-jobs:
+	$(PYTHON) list_jobs.py
+
+analyze-calibration:
+	$(PYTHON) analyze_calibration.py
+
+verify-real:
+	$(PYTHON) verify_real_images.py
 
 lint:
 	@echo "🧹 Linting..."

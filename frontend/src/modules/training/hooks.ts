@@ -13,7 +13,8 @@ export const useTraining = () => {
   const boundActions = useMemo(() => bindActionCreators(actions, dispatch), [dispatch])
 
   // --- Derived State (Calculations) ---
-  const activeModel = (settingsItems.find(s => s.key === 'ai_model')?.value as string) || 'YOLOv8 Default'
+  const activeModel =
+    (settingsItems.find(s => s.key === 'ai_model')?.value as string) || 'YOLOv8 Default'
 
   return {
     ...state,

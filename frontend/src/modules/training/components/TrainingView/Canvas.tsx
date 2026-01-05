@@ -55,7 +55,7 @@ export const Canvas: React.FC<CanvasProps> = ({
       onAnnotationSelect?.(annotationId)
     }
   }
-  
+
   // Handle polygon deletion (right-click on body)
   const handlePolygonRightClick = (e: React.MouseEvent, annotationId: string) => {
     e.preventDefault()
@@ -77,11 +77,11 @@ export const Canvas: React.FC<CanvasProps> = ({
 
   const handlePointMouseMove = (e: React.MouseEvent) => {
     if (draggingPointIndex === null || !editingPoints || !imageRef.current) return
-    
+
     const rect = imageRef.current.getBoundingClientRect()
     const x = Math.round(e.clientX - rect.left)
     const y = Math.round(e.clientY - rect.top)
-    
+
     const newPoints = [...editingPoints]
     newPoints[draggingPointIndex] = [x, y]
     setEditingPoints(newPoints)
@@ -106,10 +106,10 @@ export const Canvas: React.FC<CanvasProps> = ({
     e.preventDefault()
     e.stopPropagation()
     if (!editingPoints || editingPoints.length <= 3) return // Minimum 3 points for polygon
-    
+
     const newPoints = editingPoints.filter((_, i) => i !== pointIndex)
     setEditingPoints(newPoints)
-    
+
     if (selectedAnnotationId) {
       const annotation = annotations.find(a => a.id === selectedAnnotationId)
       if (annotation) {
@@ -123,7 +123,7 @@ export const Canvas: React.FC<CanvasProps> = ({
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (selectedTool === 'edit') return // Don't draw in edit mode
-    
+
     if (!imageRef.current) return
     const rect = imageRef.current.getBoundingClientRect()
     const x = e.clientX - rect.left
@@ -135,7 +135,7 @@ export const Canvas: React.FC<CanvasProps> = ({
 
   const handleDoubleClick = (e: React.MouseEvent) => {
     if (selectedTool === 'edit') return // No double-click behavior in edit mode
-    
+
     e.preventDefault()
     finishPolygon()
   }
@@ -178,10 +178,10 @@ export const Canvas: React.FC<CanvasProps> = ({
           // Revert changes
           const annotation = annotations.find(a => a.id === selectedAnnotationId)
           if (annotation) {
-             updateAnnotation({
-               ...annotation,
-               points: originalPoints,
-             })
+            updateAnnotation({
+              ...annotation,
+              points: originalPoints,
+            })
           }
           // Clear selection
           setSelectedAnnotationId(null)
@@ -281,40 +281,42 @@ export const Canvas: React.FC<CanvasProps> = ({
           onContextMenu={e => {
             e.preventDefault()
             e.stopPropagation()
-            
+
             // If in edit mode, let the specific polygon handlers handle it (if enabled)
             // But if we clicked 'outside' a polygon in edit mode, maybe we want to deselect?
             // Actually, if selectedTool !== 'edit', pointerEvents is 'none' on polygons,
             // so THIS handler receives the Right Click. We must manually check for collision.
-            
+
             if (selectedTool !== 'edit' && imageRef.current) {
-               const rect = imageRef.current.getBoundingClientRect()
-               const x = e.clientX - rect.left
-               const y = e.clientY - rect.top
-               
-               // Find top-most polygon under cursor (reverse order)
-               // Ray-casting algorithm
-               const isPointInPoly = (px: number, py: number, poly: number[][]) => {
-                 let inside = false
-                 for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-                   const xi = poly[i][0], yi = poly[i][1]
-                   const xj = poly[j][0], yj = poly[j][1]
-                   const intersect = ((yi > py) !== (yj > py)) &&
-                                     (px < (xj - xi) * (py - yi) / (yj - yi) + xi)
-                   if (intersect) inside = !inside
-                 }
-                 return inside
-               }
-               
-               // Check efficiently from top (latest) to bottom
-               // Annotations are rendered in order, so last is on top.
-               for (let i = annotations.length - 1; i >= 0; i--) {
-                 const ann = annotations[i]
-                 if (ann.type === 'polygon' && ann.points && isPointInPoly(x, y, ann.points)) {
-                   removeAnnotation(ann.id)
-                   return // Only delete one at a time (the top one)
-                 }
-               }
+              const rect = imageRef.current.getBoundingClientRect()
+              const x = e.clientX - rect.left
+              const y = e.clientY - rect.top
+
+              // Find top-most polygon under cursor (reverse order)
+              // Ray-casting algorithm
+              const isPointInPoly = (px: number, py: number, poly: number[][]) => {
+                let inside = false
+                for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+                  const xi = poly[i][0],
+                    yi = poly[i][1]
+                  const xj = poly[j][0],
+                    yj = poly[j][1]
+                  const intersect =
+                    yi > py !== yj > py && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi
+                  if (intersect) inside = !inside
+                }
+                return inside
+              }
+
+              // Check efficiently from top (latest) to bottom
+              // Annotations are rendered in order, so last is on top.
+              for (let i = annotations.length - 1; i >= 0; i--) {
+                const ann = annotations[i]
+                if (ann.type === 'polygon' && ann.points && isPointInPoly(x, y, ann.points)) {
+                  removeAnnotation(ann.id)
+                  return // Only delete one at a time (the top one)
+                }
+              }
             }
           }}
           onMouseMove={handlePointMouseMove}
@@ -351,10 +353,10 @@ export const Canvas: React.FC<CanvasProps> = ({
               if (ann.type === 'polygon' && ann.points) {
                 const pointsStr = ann.points.map(p => `${p[0]},${p[1]}`).join(' ')
                 const isEditing = ann.id === selectedAnnotationId && editingPoints !== null
-                
+
                 // Don't render if being edited
                 if (isEditing) return null
-                
+
                 return (
                   <g key={ann.id}>
                     <polygon
@@ -367,7 +369,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                         cursor: selectedTool === 'edit' ? 'pointer' : 'default',
                       }}
                       onClick={() => handlePolygonClick(ann.id)}
-                      onContextMenu={(e) => handlePolygonRightClick(e, ann.id)}
+                      onContextMenu={e => handlePolygonRightClick(e, ann.id)}
                     />
                     {/* Label tag */}
                     <text
@@ -389,40 +391,42 @@ export const Canvas: React.FC<CanvasProps> = ({
             })}
 
             {/* Editing Polygon */}
-            {editingPoints && selectedAnnotationId && (() => {
-              const annotation = annotations.find(a => a.id === selectedAnnotationId)
-              const pointsStr = editingPoints.map(p => `${p[0]},${p[1]}`).join(' ')
-              return (
-                <g>
-                  <polygon
-                    points={pointsStr}
-                    style={{
-                      fill: `rgba(${getRgbForLabel(annotation?.label || 'long_crack')}, 0.3)`,
-                      stroke: '#3b82f6',
-                      strokeWidth: 3,
-                      pointerEvents: 'none',
-                    }}
-                  />
-                  {editingPoints.map((p, i) => (
-                    <circle
-                      key={i}
-                      cx={p[0]}
-                      cy={p[1]}
-                      r={6}
+            {editingPoints &&
+              selectedAnnotationId &&
+              (() => {
+                const annotation = annotations.find(a => a.id === selectedAnnotationId)
+                const pointsStr = editingPoints.map(p => `${p[0]},${p[1]}`).join(' ')
+                return (
+                  <g>
+                    <polygon
+                      points={pointsStr}
                       style={{
-                        fill: '#3b82f6',
-                        stroke: 'white',
-                        strokeWidth: 2,
-                        cursor: 'move',
-                        pointerEvents: 'auto',
+                        fill: `rgba(${getRgbForLabel(annotation?.label || 'long_crack')}, 0.3)`,
+                        stroke: '#3b82f6',
+                        strokeWidth: 3,
+                        pointerEvents: 'none',
                       }}
-                      onMouseDown={(e) => handlePointMouseDown(e, i)}
-                      onContextMenu={(e) => handlePointRightClick(e, i)}
                     />
-                  ))}
-                </g>
-              )
-            })()}
+                    {editingPoints.map((p, i) => (
+                      <circle
+                        key={i}
+                        cx={p[0]}
+                        cy={p[1]}
+                        r={6}
+                        style={{
+                          fill: '#3b82f6',
+                          stroke: 'white',
+                          strokeWidth: 2,
+                          cursor: 'move',
+                          pointerEvents: 'auto',
+                        }}
+                        onMouseDown={e => handlePointMouseDown(e, i)}
+                        onContextMenu={e => handlePointRightClick(e, i)}
+                      />
+                    ))}
+                  </g>
+                )
+              })()}
 
             {/* Current Drawing Polygon */}
             {currentPoints.length > 0 && (

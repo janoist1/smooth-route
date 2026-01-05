@@ -5,10 +5,11 @@ from pydantic import BaseModel
 
 class Setting(BaseModel):
     key: str
-    value: float
+    value: Any
     description: Optional[str] = None
     example: Optional[str] = None
     category: Optional[str] = None
+    explanation: Optional[str] = None
 
 class SettingsManager:
     """Manages analysis settings using a JSON file."""
@@ -51,7 +52,7 @@ class SettingsManager:
         except Exception as e:
             print(f"Error saving settings: {e}")
 
-    def get_setting(self, key: str, default: float = 0.0) -> float:
+    def get_setting(self, key: str, default: Any = 0.0) -> Any:
         """Get a setting value by key."""
         if key in self._settings:
             return self._settings[key].value
@@ -61,7 +62,7 @@ class SettingsManager:
         """Get all settings as a list."""
         return list(self._settings.values())
 
-    def update_setting(self, key: str, value: float) -> Optional[Setting]:
+    def update_setting(self, key: str, value: Any) -> Optional[Setting]:
         """Update a setting value and save to file."""
         if key in self._settings:
             self._settings[key].value = value

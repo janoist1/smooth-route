@@ -20,8 +20,7 @@ export type DamageLabel =
   | 'manhole'
   | 'marking'
   | 'ignore'
-  | 'edit'  // Special tool for editing existing polygons
-
+  | 'edit' // Special tool for editing existing polygons
 
 export interface Annotation {
   id: string

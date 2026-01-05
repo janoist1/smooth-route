@@ -153,16 +153,16 @@ const trainingSlice = createSlice({
         // Enforce state machine constraint: Once 'completed' or 'failed', cannot go back to 'running' for the SAME flow.
         // This handles race conditions where a lagging poller sends old status updates.
         if (state.analysisStatus === 'completed' && action.payload.status !== 'completed') {
-           // Ignore
+          // Ignore
         } else {
-           state.analysisStatus = action.payload.status
+          state.analysisStatus = action.payload.status
         }
       }
-      
+
       // Auto-complete if 100% processed
       const isFinished = action.payload.total > 0 && action.payload.progress >= action.payload.total
       if (isFinished && state.analysisStatus !== 'failed') {
-          state.analysisStatus = 'completed'
+        state.analysisStatus = 'completed'
       }
     },
     setAnalysisStatus(state, action: PayloadAction<TrainingState['analysisStatus']>) {
@@ -175,15 +175,15 @@ const trainingSlice = createSlice({
     filterCurrentAnnotations(state, action: PayloadAction<number>) {
       const threshold = action.payload
       if (!state.annotations || state.annotations.length === 0) return
-      
+
       const filtered = filterAnnotationsNMS(state.annotations, threshold)
       state.annotations = filtered
     },
-    
+
     // Manual Job State Updates (if needed for SSE)
     jobCompleted(state, action: PayloadAction<{ exports?: TrainingState['exports'] } | undefined>) {
       state.analysisStatus = 'completed'
-      state.trainingStatus = 'completed' 
+      state.trainingStatus = 'completed'
       state.analysisMessage = 'Kész!'
       state.analysisJobId = null
       state.exports = action.payload?.exports || null
@@ -240,16 +240,19 @@ const trainingSlice = createSlice({
           comment: state.manualComment,
         }
       })
-      .addCase(saveAnnotations.fulfilled, (state, action: PayloadAction<{ rqi: number | null; tags: string[]; comment: string }>) => {
-        state.saving = false
-        if (action.payload) {
-          state.lastSavedSettings = {
-            rqi: action.payload.rqi,
-            tags: [...action.payload.tags],
-            comment: action.payload.comment,
+      .addCase(
+        saveAnnotations.fulfilled,
+        (state, action: PayloadAction<{ rqi: number | null; tags: string[]; comment: string }>) => {
+          state.saving = false
+          if (action.payload) {
+            state.lastSavedSettings = {
+              rqi: action.payload.rqi,
+              tags: [...action.payload.tags],
+              comment: action.payload.comment,
+            }
           }
-        }
-      })
+        },
+      )
       .addCase(saveAnnotations.rejected, (state, action: AnyAction) => {
         state.saving = false
         state.error = action.error.message || 'Saving failed'
@@ -273,7 +276,11 @@ const trainingSlice = createSlice({
         state.loading = true
         state.error = null
 
-        const payloadAction = action as unknown as PayloadAction<undefined, string, { arg: { mode: string; offset?: number } }>
+        const payloadAction = action as unknown as PayloadAction<
+          undefined,
+          string,
+          { arg: { mode: string; offset?: number } }
+        >
         const offset = payloadAction.meta.arg.offset || 0
         if (offset === 0) {
           state.items = []
@@ -285,9 +292,13 @@ const trainingSlice = createSlice({
       })
       .addCase(fetchList.fulfilled, (state, action) => {
         state.loading = false
-        
-        const payloadAction = action as unknown as PayloadAction<FetchListSuccess, string, { arg: { mode: string; offset?: number } }>
-        
+
+        const payloadAction = action as unknown as PayloadAction<
+          FetchListSuccess,
+          string,
+          { arg: { mode: string; offset?: number } }
+        >
+
         const offset = payloadAction.meta.arg.offset || 0
         state.items = payloadAction.payload.items
 
@@ -297,7 +308,9 @@ const trainingSlice = createSlice({
 
         state.navigationIds = state.items.map(i => String(i.id))
 
-        const mode = (payloadAction.meta.arg.mode || 'all').toLowerCase() as TrainingState['activeMode']
+        const mode = (
+          payloadAction.meta.arg.mode || 'all'
+        ).toLowerCase() as TrainingState['activeMode']
         state.activeMode = mode
       })
       .addCase(fetchList.rejected, (state, action: AnyAction) => {
@@ -307,9 +320,9 @@ const trainingSlice = createSlice({
       .addCase(fetchStats.fulfilled, (state, action: PayloadAction<TrainingStats>) => {
         state.globalStats = action.payload
       })
-      
+
       // --- Async Job Handlers (Refactored) ---
-      .addCase(runAnalysis.pending, (state) => {
+      .addCase(runAnalysis.pending, state => {
         state.analysisStatus = 'running'
         state.analysisProgress = 0
         state.analysisTotal = 0
@@ -326,8 +339,8 @@ const trainingSlice = createSlice({
         state.analysisStatus = 'failed'
         state.analysisMessage = action.error.message || 'Start failed'
       })
-      
-      .addCase(startTraining.pending, (state) => {
+
+      .addCase(startTraining.pending, state => {
         state.analysisStatus = 'running'
         state.trainingStatus = 'running'
         state.analysisMessage = 'Tanítás előkészítése...'
@@ -342,12 +355,11 @@ const trainingSlice = createSlice({
         state.analysisStatus = 'failed'
         state.analysisMessage = action.error.message || 'Training start failed'
       })
-      
-      .addCase(stopJob.pending, (state) => {
+
+      .addCase(stopJob.pending, state => {
         state.analysisMessage = 'Leállítás...'
       })
-      // stopJob fulfilled/rejected handled by saga polling updates
-      
+    // stopJob fulfilled/rejected handled by saga polling updates
   },
 })
 

@@ -193,10 +193,8 @@ def analyze_image(image_path: str, simple: bool = False):
 
     console.print(f"[bold blue]Analyzing: {image_path}[/bold blue]")
 
-    if simple:
-        result = road_quality_service.analyze_image_simple(image_path)
-    else:
-        result = road_quality_service.analyze_image(image_path)
+    # Strategy selection removed - always use YOLO as per user request
+    result = road_quality_service.analyze_image(image_path)
 
     # Display results
     rqi_color = {1: "green", 2: "green", 3: "yellow", 4: "red", 5: "bold red"}
@@ -221,7 +219,6 @@ def analyze_points(
     lng: Optional[float] = None,
     radius: float = 1000.0,
     limit: int = 0,
-    strategy: str = "HEURISTIC",
     reanalyze: bool = False
 ):
     """
@@ -251,7 +248,7 @@ def analyze_points(
             lng=lng, 
             radius=radius, 
             limit=limit, 
-            strategy=strategy, 
+            strategy="YOLO", 
             reanalyze=reanalyze
         )
         

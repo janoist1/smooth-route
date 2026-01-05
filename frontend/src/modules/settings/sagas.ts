@@ -1,5 +1,5 @@
 import { call } from 'redux-saga/effects'
- import { takeLatestAsync } from 'saga-toolkit'
+import { takeLatestAsync } from 'saga-toolkit'
 import type { SagaActionFromCreator } from 'saga-toolkit'
 import { fetchSettings, updateSetting, applyPreset } from './slice'
 import type { SystemSetting } from './types'

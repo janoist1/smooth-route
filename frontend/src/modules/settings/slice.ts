@@ -3,7 +3,6 @@ import { createSlice } from '@reduxjs/toolkit'
 import { createSagaAction } from 'saga-toolkit'
 import type { SystemSetting } from './types'
 
-
 interface SettingsState {
   items: SystemSetting[]
   loading: boolean

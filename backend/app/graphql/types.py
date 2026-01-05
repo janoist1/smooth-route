@@ -54,16 +54,18 @@ class TrainingData:
 
 @strawberry.type
 class Job:
-    job_id: str
+    id: str
     status: str
-    current_step: Optional[str]
     progress: int
     total: int
     message: str
-    error: Optional[str]
-    result: Optional[JSON]
-    created_at: datetime.datetime
-    completed_at: Optional[datetime.datetime]
+    type: str = "analysis" # 'analysis' or 'training'
+    current_step: Optional[str] = None
+    details: Optional[JSON] = None
+    result: Optional[JSON] = None
+    error: Optional[str] = None
+    created_at: datetime.datetime = datetime.datetime.now
+    completed_at: Optional[datetime.datetime] = None
 
 @strawberry.type
 class TrainingStats:
@@ -103,3 +105,29 @@ class TrainingDataInput:
     tags: Optional[List[str]] = None
     manual_comment: Optional[str] = None
     meta_data: Optional[JSON] = None
+
+@strawberry.type
+class Setting:
+    key: str
+    value: JSON
+    description: Optional[str] = None
+    example: Optional[str] = None
+    category: Optional[str] = None
+    explanation: Optional[str] = None
+
+@strawberry.input
+class UpdateSettingInput:
+    key: str
+    value: JSON
+
+@strawberry.type
+class DetectPrediction:
+    label: str
+    confidence: float
+    points: JSON # List of [x, y]
+
+@strawberry.input
+class DetectInput:
+    filename: str
+    conf_threshold: Optional[float] = None
+    classes: Optional[List[str]] = None

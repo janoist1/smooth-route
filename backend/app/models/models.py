@@ -66,8 +66,11 @@ class TrainingData(Base):
     image_filename = Column(String, unique=True, index=True)  # Link to file on disk
     manual_rqi = Column(Float, nullable=True)  # User's ground truth score (1.0 - 5.0)
     
-    # YOLO-style annotations: List of {id, label, x, y, w, h}
+    # Annotations: List of {id, label, x, y, w, h} OR {id, label, points: [[x,y], ...]} for polygons
     annotations = Column(JSON, default=[]) 
+    
+    # Internal metrics (calculated from area %)
+    rqi_area_percent = Column(Float, default=0.0)
     
     # Tags: List of strings e.g. ["shadow", "wet", "occlusion"]
     tags = Column(JSON, default=[])

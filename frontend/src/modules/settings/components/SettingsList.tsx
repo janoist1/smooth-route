@@ -1,12 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import {
-  Settings,
-  BarChart3,
-  BrainCircuit,
-  Map as MapIcon,
-  Wand2,
-  Loader2,
-} from 'lucide-react'
+import { Settings, BarChart3, BrainCircuit, Map as MapIcon, Wand2, Loader2 } from 'lucide-react'
 import { GlassPanel, FormControl, TextInput, NumberInput, Select } from '../../ui'
 import { client, gql } from '../../graphql'
 import type { SystemSetting } from '..'
@@ -73,14 +66,20 @@ const SettingsList: React.FC<SettingsListProps> = ({
               let label = filename.replace('.pt', '')
               const isBest = label.includes('best')
               const isSeg = label.includes('seg')
-              
+
               // Extract version and size
               const verMatch = label.match(/yolo(v?\d+)([nsmlx])?/i)
               let info = ''
               if (verMatch) {
                 const ver = verMatch[1].toLowerCase().replace('v', '')
                 const size = verMatch[2] ? verMatch[2].toUpperCase() : ''
-                const sizeNames: Record<string, string> = { 'N': 'Nano', 'S': 'Kicsi', 'M': 'Közepes', 'L': 'Nagy', 'X': 'Extra' }
+                const sizeNames: Record<string, string> = {
+                  N: 'Nano',
+                  S: 'Kicsi',
+                  M: 'Közepes',
+                  L: 'Nagy',
+                  X: 'Extra',
+                }
                 info = `YOLOv${ver}${size ? '-' + size : ''}${size ? ' (' + sizeNames[size] + ')' : ''}`
               }
 
@@ -93,39 +92,39 @@ const SettingsList: React.FC<SettingsListProps> = ({
               // General check for timestamp suffix (e.g. ...-20260104.pt)
               const dateMatch = filename.match(/[-_](\d{8})(?:[-_](\d{4,6}))?\.pt$/)
               if (dateMatch) {
-                 const dStr = dateMatch[1] // 20260104
-                 const tStr = dateMatch[2] // HHMM or HHMMSS
-                 
-                 const y = dStr.slice(0, 4)
-                 const m = dStr.slice(4, 6)
-                 const d = dStr.slice(6, 8)
-                 
-                 let timeDisplay = ''
-                 if (tStr && tStr.length >= 4) {
-                     timeDisplay = ` ${tStr.slice(0,2)}:${tStr.slice(2,4)}`
-                 }
-                 
-                 // Append to whatever label we built above
-                 label += ` (${y}-${m}-${d}${timeDisplay})`
+                const dStr = dateMatch[1] // 20260104
+                const tStr = dateMatch[2] // HHMM or HHMMSS
+
+                const y = dStr.slice(0, 4)
+                const m = dStr.slice(4, 6)
+                const d = dStr.slice(6, 8)
+
+                let timeDisplay = ''
+                if (tStr && tStr.length >= 4) {
+                  timeDisplay = ` ${tStr.slice(0, 2)}:${tStr.slice(2, 4)}`
+                }
+
+                // Append to whatever label we built above
+                label += ` (${y}-${m}-${d}${timeDisplay})`
               } else if (filename.startsWith('model_') && !label.includes('Mentett')) {
                 // Fallback for old 'model_YYYYMMDD' format if regex didn't catch it or if it didn't match the suffix pattern perfectly
-                 // (Though the regex usually catches it if it ends in .pt)
-                 const datePart = filename.replace('model_', '').replace('.pt', '')
-                 if (datePart.length >= 8 && /^\d+$/.test(datePart)) {
-                    label = `Mentett Modell (${datePart.slice(0, 4)}-${datePart.slice(4, 6)}-${datePart.slice(6, 8)})`
-                 }
+                // (Though the regex usually catches it if it ends in .pt)
+                const datePart = filename.replace('model_', '').replace('.pt', '')
+                if (datePart.length >= 8 && /^\d+$/.test(datePart)) {
+                  label = `Mentett Modell (${datePart.slice(0, 4)}-${datePart.slice(4, 6)}-${datePart.slice(6, 8)})`
+                }
               }
 
               return { value: m, label }
             })
             // Sort: Known models and "Best" models first
-             .sort((a, b) => {
-                const aIsBest = a.label.includes('🎯')
-                const bIsBest = b.label.includes('🎯')
-                if (aIsBest && !bIsBest) return -1
-                if (!aIsBest && bIsBest) return 1
-                return a.label.localeCompare(b.label)
-             })
+            .sort((a, b) => {
+              const aIsBest = a.label.includes('🎯')
+              const bIsBest = b.label.includes('🎯')
+              if (aIsBest && !bIsBest) return -1
+              if (!aIsBest && bIsBest) return 1
+              return a.label.localeCompare(b.label)
+            })
 
           setModelOptions(options)
         } else {

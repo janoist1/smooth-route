@@ -239,10 +239,9 @@ const Toolbar: React.FC<ToolbarProps> = ({
             style={{ position: 'relative' }}
             onMouseEnter={() => setShowConfSlider(true)}
             onMouseLeave={() => setShowConfSlider(false)}>
-            
             {/* Horizontal Bridge to prevent closing on gap */}
             {showConfSlider && (
-              <div 
+              <div
                 style={{
                   position: 'absolute',
                   left: '30px', // Start slightly inside the button
@@ -250,7 +249,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
                   bottom: '-10px',
                   width: '30px', // Span across to the slider
                   background: 'transparent',
-                  zIndex: 900
+                  zIndex: 900,
                 }}
               />
             )}
@@ -337,13 +336,25 @@ const Toolbar: React.FC<ToolbarProps> = ({
                     background: '#333',
                   }}
                 />
-                <div style={{ fontSize: '10px', color: '#666', fontStyle: 'italic', marginBottom: '8px' }}>
+                <div
+                  style={{
+                    fontSize: '10px',
+                    color: '#666',
+                    fontStyle: 'italic',
+                    marginBottom: '8px',
+                  }}>
                   Alacsonyabb = több észlelés, több zaj.
                 </div>
-                
+
                 {/* Class Selection Filter */}
                 <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '8px' }}>
-                  <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#a855f7', marginBottom: '6px' }}>
+                  <div
+                    style={{
+                      fontSize: '10px',
+                      fontWeight: 'bold',
+                      color: '#a855f7',
+                      marginBottom: '6px',
+                    }}>
                     KERESETT TÍPUSOK
                   </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
@@ -354,7 +365,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
                       { id: 'long_crack', label: 'Long.' },
                       { id: 'trans_crack', label: 'Trans.' },
                       { id: 'patch', label: 'Patch' },
-                      { id: 'degradation', label: 'Degradation' }
+                      { id: 'degradation', label: 'Degradation' },
                     ].map(opt => {
                       const isSelected = autoDetectClasses.includes(opt.id)
                       return (
@@ -373,10 +384,14 @@ const Toolbar: React.FC<ToolbarProps> = ({
                             padding: '3px 6px',
                             borderRadius: '4px',
                             cursor: 'pointer',
-                            background: isSelected ? 'rgba(168, 85, 247, 0.3)' : 'rgba(255,255,255,0.05)',
+                            background: isSelected
+                              ? 'rgba(168, 85, 247, 0.3)'
+                              : 'rgba(255,255,255,0.05)',
                             color: isSelected ? '#d8b4fe' : '#888',
-                            border: isSelected ? '1px solid rgba(168, 85, 247, 0.4)' : '1px solid transparent',
-                            transition: 'all 0.1s'
+                            border: isSelected
+                              ? '1px solid rgba(168, 85, 247, 0.4)'
+                              : '1px solid transparent',
+                            transition: 'all 0.1s',
                           }}>
                           {opt.label}
                         </div>
@@ -384,9 +399,9 @@ const Toolbar: React.FC<ToolbarProps> = ({
                     })}
                   </div>
                   {autoDetectClasses.length === 0 && (
-                     <div style={{ fontSize: '9px', color: '#666', marginTop: '4px' }}>
-                       (Üres = minden típus)
-                     </div>
+                    <div style={{ fontSize: '9px', color: '#666', marginTop: '4px' }}>
+                      (Üres = minden típus)
+                    </div>
                   )}
                 </div>
                 {/* Overlay Arrow */}
@@ -432,9 +447,8 @@ const Toolbar: React.FC<ToolbarProps> = ({
             style={{ position: 'relative' }}
             onMouseEnter={() => setShowFilterSlider(true)}
             onMouseLeave={() => setShowFilterSlider(false)}>
-            
             {showFilterSlider && (
-              <div 
+              <div
                 style={{
                   position: 'absolute',
                   left: '30px',
@@ -442,7 +456,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
                   bottom: '-10px',
                   width: '30px',
                   background: 'transparent',
-                  zIndex: 900
+                  zIndex: 900,
                 }}
               />
             )}
@@ -527,7 +541,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
                 />
                 <div style={{ fontSize: '10px', color: '#666', fontStyle: 'italic' }}>
                   Kisebb érték = Szigorúbb szűrés
-                  <br/>
+                  <br />
                   (Több elemet töröl)
                 </div>
 

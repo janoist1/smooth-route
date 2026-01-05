@@ -30,7 +30,8 @@ const SettingsHeader: React.FC = () => {
           </h1>
         </div>
         <p style={{ color: '#9ca3af', fontSize: '1.1rem', maxWidth: '600px', lineHeight: 1.5 }}>
-          Itt konfigurálhatod a mesterséges intelligencia paramétereit és az adatgyűjtési stratégiát.
+          Itt konfigurálhatod a mesterséges intelligencia paramétereit és az adatgyűjtési
+          stratégiát.
         </p>
       </div>
     </header>
