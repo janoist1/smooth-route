@@ -1,4 +1,5 @@
-import { createSlice, PayloadAction, AnyAction, createAction } from '@reduxjs/toolkit'
+import { createSlice, createAction } from '@reduxjs/toolkit'
+import type { PayloadAction, AnyAction } from '@reduxjs/toolkit'
 import { createSagaAction } from 'saga-toolkit'
 import type { TrainingState, Annotation, TrainingPoint, TrainingStats, DamageLabel } from './types'
 import { filterAnnotationsNMS } from './utils'
