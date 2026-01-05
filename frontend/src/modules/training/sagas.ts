@@ -1,4 +1,4 @@
-import { call, select, put, fork, take, cancelled } from 'redux-saga/effects'
+import { call, select, put, fork, take, cancelled, takeLatest } from 'redux-saga/effects'
 import { eventChannel, END } from 'redux-saga'
 
 import { actions, fetchImage, fetchList, fetchStats } from './slice'
@@ -407,10 +407,11 @@ function* reconnectJobSaga() {
   if (result.data?.activeJob) {
     const job = result.data.activeJob
     
-    // If backend reports job as completed, load final details (including exports) directly
-    // instead of restarting the poller which might cause race conditions or state overwrite.
+    // If backend reports job as completed, do NOT show it on UI upon reconnect/reload.
+    // User expectation: "Fresh start" when entering the page, unless a job is actively running.
+    // We ignore the completed job result here, leaving the state as 'idle' (or resetting it).
     if (job.status.toLowerCase() === 'completed' || (job.total > 0 && job.progress >= job.total)) {
-        yield call(checkFinalJobStatus, job.id)
+        yield put(actions.setAnalysisStatus('idle'))
         return
     }
     
@@ -504,5 +505,5 @@ export default [
   takeLatestAsync(actions.runAnalysis.type, runAnalysisSaga),
   takeLatestAsync(actions.startTraining.type, startTrainingSaga),
   takeLatestAsync(actions.stopJob.type, stopJobSaga),
-  takeLatestAsync(actions.reconnectJob.type, reconnectJobSaga),
+  takeLatest(actions.reconnectJob.type, reconnectJobSaga),
 ]

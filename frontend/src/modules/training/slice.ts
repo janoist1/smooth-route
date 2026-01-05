@@ -1,5 +1,4 @@
-import { createSlice } from '@reduxjs/toolkit'
-import type { PayloadAction, AnyAction } from '@reduxjs/toolkit'
+import { createSlice, PayloadAction, AnyAction, createAction } from '@reduxjs/toolkit'
 import { createSagaAction } from 'saga-toolkit'
 import type { TrainingState, Annotation, TrainingPoint, TrainingStats, DamageLabel } from './types'
 import { filterAnnotationsNMS } from './utils'
@@ -33,7 +32,8 @@ export const deleteTrainingData = createSagaAction<string, void>('training/delet
 export const autoDetect = createSagaAction<number | undefined, Annotation[]>('training/autoDetect')
 
 // Job Actions
-export const reconnectJob = createSagaAction<void, void>('training/reconnectJob')
+// Job Actions
+export const reconnectJob = createAction('training/reconnectJob')
 export const runAnalysis = createSagaAction<
   { strategy: string; limit: number; reanalyze: boolean },
   { jobId: string }
@@ -348,9 +348,6 @@ const trainingSlice = createSlice({
       })
       // stopJob fulfilled/rejected handled by saga polling updates
       
-      .addCase(reconnectJob.pending, () => {
-        // Nothing visual, just checking
-      })
   },
 })
 
