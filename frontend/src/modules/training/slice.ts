@@ -1,14 +1,15 @@
 import { createSlice } from '@reduxjs/toolkit'
-import type { PayloadAction } from '@reduxjs/toolkit'
+import type { PayloadAction, AnyAction } from '@reduxjs/toolkit'
 import { createSagaAction } from 'saga-toolkit'
-import type { TrainingState, AnnotationBox, TrainingPoint, TrainingStats } from './types'
+import type { TrainingState, Annotation, TrainingPoint, TrainingStats, DamageLabel } from './types'
+import { filterAnnotationsNMS } from './utils'
 
 // Actions
 interface FetchImageSuccess {
   url: string
   manualRqi: number | null
   tags: string[]
-  annotations: AnnotationBox[]
+  annotations: Annotation[]
   manualComment: string | null
 }
 
@@ -19,9 +20,26 @@ interface FetchListSuccess {
 }
 
 export const fetchImage = createSagaAction<number, FetchImageSuccess>('training/fetchImage')
-export const fetchList = createSagaAction<{ mode: string; offset?: number }, FetchListSuccess>('training/fetchList')
+export const fetchList = createSagaAction<{ mode: string; offset?: number }, FetchListSuccess>(
+  'training/fetchList',
+)
 export const fetchStats = createSagaAction<{ mode: string }, TrainingStats>('training/fetchStats')
-export const saveAnnotations = createSagaAction<void, { rqi: number | null; tags: string[]; comment: string }>('training/saveAnnotations')
+export const saveAnnotations = createSagaAction<
+  void,
+  { rqi: number | null; tags: string[]; comment: string }
+>('training/saveAnnotations')
+export const deleteTrainingData = createSagaAction<string, void>('training/deleteTrainingData')
+
+export const autoDetect = createSagaAction<number | undefined, Annotation[]>('training/autoDetect')
+
+// Job Actions
+export const reconnectJob = createSagaAction<void, void>('training/reconnectJob')
+export const runAnalysis = createSagaAction<
+  { strategy: string; limit: number; reanalyze: boolean },
+  { jobId: string }
+>('training/runAnalysis')
+export const startTraining = createSagaAction<void, { jobId: string }>('training/startTraining')
+export const stopJob = createSagaAction<string, void>('training/stopJob')
 
 const initialState: TrainingState = {
   imageId: null,
@@ -46,19 +64,24 @@ const initialState: TrainingState = {
   trainingStatus: 'idle',
   navigationIds: [],
   items: [],
-  
+
   // Pagination & Stats
   totalCount: 0,
   hasMore: false,
   offset: 0,
   activeMode: 'all',
-  globalStats: null
+  globalStats: null,
+  autoDetectConf: 0.25,
+  autoDetectClasses: [],
 }
 
 const trainingSlice = createSlice({
   name: 'training',
   initialState,
   reducers: {
+    setAutoDetectClasses(state, action: PayloadAction<string[]>) {
+      state.autoDetectClasses = action.payload
+    },
     // Lifecycle
     unmount(state) {
       state.imageId = null
@@ -70,22 +93,26 @@ const trainingSlice = createSlice({
       state.error = null
       state.loading = false
       state.lastSavedSettings = null
+      state.exports = null
     },
 
     // Annotation Actions
-    addAnnotation(state, action: PayloadAction<AnnotationBox>) {
+    addAnnotation(state, action: PayloadAction<Annotation>) {
       state.annotations.push(action.payload)
+    },
+    setAutoDetections(state, action: PayloadAction<Annotation[]>) {
+      state.annotations.push(...action.payload)
     },
     removeAnnotation(state, action: PayloadAction<string>) {
       state.annotations = state.annotations.filter(a => a.id !== action.payload)
     },
-    updateAnnotation(state, action: PayloadAction<AnnotationBox>) {
+    updateAnnotation(state, action: PayloadAction<Annotation>) {
       const index = state.annotations.findIndex(a => a.id === action.payload.id)
       if (index !== -1) {
         state.annotations[index] = action.payload
       }
     },
-    setTool(state, action: PayloadAction<TrainingState['selectedTool']>) {
+    setTool(state, action: PayloadAction<DamageLabel>) {
       state.selectedTool = action.payload
     },
     setRqi(state, action: PayloadAction<number>) {
@@ -102,12 +129,23 @@ const trainingSlice = createSlice({
     setComment(state, action: PayloadAction<string>) {
       state.manualComment = action.payload
     },
-    setSettings(state, action: PayloadAction<{ rqi: number | null; tags: string[]; comment: string }>) {
+    setSettings(
+      state,
+      action: PayloadAction<{ rqi: number | null; tags: string[]; comment: string }>,
+    ) {
       if (action.payload.rqi !== undefined) state.manualRqi = action.payload.rqi
       if (action.payload.tags !== undefined) state.tags = action.payload.tags
       if (action.payload.comment !== undefined) state.manualComment = action.payload.comment
     },
-    updateJobProgress(state, action: PayloadAction<{ progress: number; total: number; message: string; status?: TrainingState['analysisStatus'] }>) {
+    updateJobProgress(
+      state,
+      action: PayloadAction<{
+        progress: number
+        total: number
+        message: string
+        status?: TrainingState['analysisStatus']
+      }>,
+    ) {
       state.analysisProgress = action.payload.progress
       state.analysisTotal = action.payload.total
       state.analysisMessage = action.payload.message
@@ -118,53 +156,58 @@ const trainingSlice = createSlice({
     setAnalysisStatus(state, action: PayloadAction<TrainingState['analysisStatus']>) {
       state.analysisStatus = action.payload
     },
-    // Standard Actions for Sagas
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    runAnalysis(state, _action: PayloadAction<{ strategy: string; limit: number; reanalyze: boolean }>) {
-      state.analysisStatus = 'running'
-      state.analysisProgress = 0
-      state.analysisTotal = 0
-      state.analysisMessage = 'Kapcsolódás...'
+    setAutoDetectConf(state, action: PayloadAction<number>) {
+      state.autoDetectConf = action.payload
     },
-    runAnalysisSuccess(state, action: PayloadAction<{ jobId: string }>) {
-      state.analysisJobId = action.payload.jobId
-      state.analysisStatus = 'running'
+    // Filters current annotations using NMS with given threshold
+    filterCurrentAnnotations(state, action: PayloadAction<number>) {
+      const threshold = action.payload
+      if (!state.annotations || state.annotations.length === 0) return
+      
+      const filtered = filterAnnotationsNMS(state.annotations, threshold)
+      state.annotations = filtered
     },
-    runAnalysisFailure(state, action: PayloadAction<string>) {
+    
+    // Manual Job State Updates (if needed for SSE)
+    jobCompleted(state, action: PayloadAction<{ exports?: TrainingState['exports'] } | undefined>) {
+      state.analysisStatus = 'completed'
+      state.trainingStatus = 'completed' 
+      state.analysisMessage = 'Kész!'
+      state.analysisJobId = null
+      state.exports = action.payload?.exports || null
+    },
+    jobFailed(state, action: PayloadAction<string>) {
       state.analysisStatus = 'failed'
       state.analysisMessage = action.payload
-    },
-    startTraining(state) {
-      state.analysisStatus = 'running'
-      state.trainingStatus = 'running'
-      state.analysisMessage = 'Tanítás előkészítése...'
-    },
-    startTrainingSuccess(state, action: PayloadAction<{ jobId: string }>) {
-      state.analysisJobId = action.payload.jobId
-      state.trainingStatus = 'running'
-      state.analysisStatus = 'running'
-    },
-    startTrainingFailure(state, action: PayloadAction<string>) {
       state.trainingStatus = 'failed'
-      state.analysisStatus = 'failed'
-      state.analysisMessage = action.payload
-    },
-    stopJob(state) {
-      state.analysisMessage = 'Leállítás...'
+      state.exports = null
     },
     resetAnalysisJob(state) {
       state.analysisJobId = null
-      state.analysisProgress = 0
-      state.analysisTotal = 0
       state.analysisStatus = 'idle'
       state.analysisMessage = ''
+      state.analysisProgress = 0
+      state.analysisTotal = 0
+      state.exports = null
     },
   },
   extraReducers: builder => {
     builder
+      .addCase(autoDetect.pending, state => {
+        state.loading = true
+      })
+      .addCase(autoDetect.fulfilled, (state, action: PayloadAction<Annotation[]>) => {
+        state.loading = false
+        state.annotations.push(...action.payload)
+      })
+      .addCase(autoDetect.rejected, (state, action: AnyAction) => {
+        state.loading = false
+        state.error = action.error.message || 'Auto-detect failed'
+      })
       .addCase(fetchImage.pending, (state, action) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const newId = (action as any).meta.arg.toString()
+        // Safe access to meta.arg via types
+        const payloadAction = action as unknown as PayloadAction<undefined, string, { arg: number }>
+        const newId = payloadAction.meta.arg.toString()
         if (state.imageId !== newId) {
           state.imageId = newId
           state.imageUrl = null
@@ -185,8 +228,7 @@ const trainingSlice = createSlice({
           comment: state.manualComment,
         }
       })
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .addCase(saveAnnotations.fulfilled, (state, action: any) => {
+      .addCase(saveAnnotations.fulfilled, (state, action: PayloadAction<{ rqi: number | null; tags: string[]; comment: string }>) => {
         state.saving = false
         if (action.payload) {
           state.lastSavedSettings = {
@@ -196,10 +238,9 @@ const trainingSlice = createSlice({
           }
         }
       })
-      .addCase(saveAnnotations.rejected, (state, action) => {
+      .addCase(saveAnnotations.rejected, (state, action: AnyAction) => {
         state.saving = false
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        state.error = (action as any).error.message || 'Saving failed'
+        state.error = action.error.message || 'Saving failed'
       })
       .addCase(fetchImage.fulfilled, (state, action: PayloadAction<FetchImageSuccess>) => {
         state.loading = false
@@ -210,21 +251,18 @@ const trainingSlice = createSlice({
         if (action.payload.manualComment) state.manualComment = action.payload.manualComment
         state.error = null
       })
-      .addCase(fetchImage.rejected, (state, action) => {
+      .addCase(fetchImage.rejected, (state, action: AnyAction) => {
         state.loading = false
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const err = (action as any).error
-        if (err.name !== 'AbortError' && err.message !== 'Aborted') {
-          state.error = err.message || 'Failed to fetch image'
+        if (action.error.name !== 'AbortError' && action.error.message !== 'Aborted') {
+          state.error = action.error.message || 'Failed to fetch image'
         }
       })
       .addCase(fetchList.pending, (state, action) => {
         state.loading = true
         state.error = null
 
-        // Declarative Reset: if offset is 0 (or undefined), clear the list state
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const offset = (action as any).meta.arg.offset || 0
+        const payloadAction = action as unknown as PayloadAction<undefined, string, { arg: { mode: string; offset?: number } }>
+        const offset = payloadAction.meta.arg.offset || 0
         if (offset === 0) {
           state.items = []
           state.offset = 0
@@ -233,39 +271,87 @@ const trainingSlice = createSlice({
           state.navigationIds = []
         }
       })
-      .addCase(fetchList.fulfilled, (state, action: PayloadAction<FetchListSuccess>) => {
+      .addCase(fetchList.fulfilled, (state, action) => {
         state.loading = false
-        // Handle Append vs Replace
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const offset = (action as any).meta.arg.offset || 0
-        if (offset === 0) {
-          state.items = action.payload.items
-        } else {
-          state.items = [...state.items, ...action.payload.items]
-        }
         
-        state.totalCount = action.payload.totalCount
-        state.hasMore = action.payload.hasMore
-        state.offset = offset + action.payload.items.length
+        const payloadAction = action as unknown as PayloadAction<FetchListSuccess, string, { arg: { mode: string; offset?: number } }>
+        
+        const offset = payloadAction.meta.arg.offset || 0
+        state.items = payloadAction.payload.items
+
+        state.totalCount = payloadAction.payload.totalCount
+        state.hasMore = payloadAction.payload.hasMore
+        state.offset = offset + state.items.length
 
         state.navigationIds = state.items.map(i => String(i.id))
-        
-        // Update activeMode from the fetch request
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const mode = ((action as any).meta.arg.mode || 'all').toLowerCase() as any
+
+        const mode = (payloadAction.meta.arg.mode || 'all').toLowerCase() as TrainingState['activeMode']
         state.activeMode = mode
       })
-      .addCase(fetchList.rejected, (state, action) => {
+      .addCase(fetchList.rejected, (state, action: AnyAction) => {
         state.loading = false
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const err = (action as any).error
-        state.error = err.message || 'Failed to fetch list'
+        state.error = action.error.message || 'Failed to fetch list'
       })
       .addCase(fetchStats.fulfilled, (state, action: PayloadAction<TrainingStats>) => {
         state.globalStats = action.payload
       })
+      
+      // --- Async Job Handlers (Refactored) ---
+      .addCase(runAnalysis.pending, (state) => {
+        state.analysisStatus = 'running'
+        state.analysisProgress = 0
+        state.analysisTotal = 0
+        state.analysisMessage = 'Kapcsolódás...'
+        state.exports = null
+      })
+      .addCase(runAnalysis.fulfilled, (state, action: PayloadAction<{ jobId: string }>) => {
+        state.analysisJobId = action.payload.jobId
+        state.analysisStatus = 'running'
+      })
+      .addCase(runAnalysis.rejected, (state, action: AnyAction) => {
+        state.analysisStatus = 'failed'
+        state.analysisMessage = action.error.message || 'Start failed'
+      })
+      
+      .addCase(startTraining.pending, (state) => {
+        state.analysisStatus = 'running'
+        state.trainingStatus = 'running'
+        state.analysisMessage = 'Tanítás előkészítése...'
+        state.exports = null
+      })
+      .addCase(startTraining.fulfilled, (state, action: PayloadAction<{ jobId: string }>) => {
+        state.analysisJobId = action.payload.jobId
+        state.trainingStatus = 'running'
+        state.analysisStatus = 'running'
+      })
+      .addCase(startTraining.rejected, (state, action: AnyAction) => {
+        state.trainingStatus = 'failed'
+        state.analysisStatus = 'failed'
+        state.analysisMessage = action.error.message || 'Training start failed'
+      })
+      
+      .addCase(stopJob.pending, (state) => {
+        state.analysisMessage = 'Leállítás...'
+      })
+      // stopJob fulfilled/rejected handled by saga polling updates
+      
+      .addCase(reconnectJob.pending, () => {
+        // Nothing visual, just checking
+      })
   },
 })
 
-export const actions = { ...trainingSlice.actions, fetchImage, fetchList, fetchStats, saveAnnotations }
+export const actions = {
+  ...trainingSlice.actions,
+  fetchImage,
+  fetchList,
+  fetchStats,
+  saveAnnotations,
+  deleteTrainingData,
+  autoDetect,
+  reconnectJob,
+  runAnalysis,
+  startTraining,
+  stopJob,
+}
 export default trainingSlice.reducer

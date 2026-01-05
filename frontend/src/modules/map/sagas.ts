@@ -40,83 +40,52 @@ const GET_POINT_DETAIL = gql(`
   }
 `)
 
+import { takeLatestAsync } from 'saga-toolkit'
+import type { SagaActionFromCreator } from 'saga-toolkit'
+
 // Backend endpoint: GET /api/v1/points
-function* fetchPointsSaga(action: ReturnType<typeof actions.fetchPoints>) {
-  try {
-    const bbox = action.payload
+function* fetchPointsWorker(action: SagaActionFromCreator<typeof actions.fetchPoints>) {
+  const bbox = action.meta.arg
 
-    const result: { data: GetPointsQuery } = yield call([client, client.query], {
-      query: GET_POINTS,
-      variables: { limit: 2000, bbox },
-    })
+  const result: { data: GetPointsQuery } = yield call([client, client.query], {
+    query: GET_POINTS,
+    variables: { limit: 2000, bbox },
+  })
 
-    // Map GraphQL result to Redux state shape
-    // Note: The types might slightly mismatch (camelCase vs snake_case).
-    // Our GraphQL schema uses snake_case by default or camelCase?
-    // Strawberry uses snake_case in Python, but camelCase in JSON by default usually unless configured.
-    // Let's check codegen output or safely assume camelCase for GraphQL fields.
-
-    // Wait, Strawberry default is camelCase for fields.
-    // REST API returned snake_case or camelCase? Pydantic used snake_case.
-    // Frontend likely expects whatever REST returned.
-    // Let's assume we might need a mapping layer if frontend relies on snake_case.
-    // Checking PointResponse in routes.py -> snake_case keys (rqi_score).
-    // Checking previous map/slice.ts -> defined as snake_case probably?
-    // Let's look at PointCore fields above: rqiScore.
-    // We probably need to map back to snake_case if the slice expects it.
-
-    const points = result.data.points.map(p => ({
-      id: p.id,
-      latitude: p.latitude,
-      longitude: p.longitude,
-      heading: p.heading,
-      rqi_score: p.rqiScore ?? undefined,
-    }))
-
-    yield put(actions.fetchPointsSuccess(points))
-  } catch (error: unknown) {
-    console.error('Failed to fetch points', error)
-    const msg = error instanceof Error ? error.message : 'Unknown error'
-    yield put(actions.fetchPointsFailure(msg))
-  }
+  return result.data.points.map(p => ({
+    id: p.id,
+    latitude: p.latitude,
+    longitude: p.longitude,
+    heading: p.heading,
+    rqi_score: p.rqiScore ?? undefined,
+  }))
 }
 
-function* fetchPointDetailSaga(action: ReturnType<typeof actions.fetchPointDetail>) {
-  try {
-    const id = action.payload
-    const result: { data: GetPointDetailQuery } = yield call([client, client.query], {
-      query: GET_POINT_DETAIL,
-      variables: { id },
-    })
+function* fetchPointDetailWorker(action: SagaActionFromCreator<typeof actions.fetchPointDetail>) {
+  const id = action.meta.arg
+  const result: { data: GetPointDetailQuery } = yield call([client, client.query], {
+    query: GET_POINT_DETAIL,
+    variables: { id },
+  })
 
-    const pt = result.data.point
-    if (!pt) throw new Error('Point not found')
+  const pt = result.data.point
+  if (!pt) throw new Error('Point not found')
 
-    // Map to expected detail shape
-    // REST returned: { id, latitude, longitude, heading, pitch, rqi_score, damage_count, damage_types ... }
-    const detail = {
-      id: pt.id,
-      latitude: pt.latitude,
-      longitude: pt.longitude,
-      heading: pt.heading,
-      pitch: pt.pitch,
-      rqi_score: pt.rqiScore,
-      damage_count: pt.damageCount,
-      damage_types: pt.damageTypes,
-      analysis_metadata: pt.analysisMetadata,
-      image_url: pt.imageUrl,
-      created_at: pt.createdAt,
-      // Manual data is now here too!
-      manual_rqi: pt.manualRqi,
-      manual_tags: pt.manualTags,
-      manual_annotations: pt.manualAnnotations,
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    yield put(actions.fetchPointDetailSuccess(detail as any))
-  } catch (error: unknown) {
-    console.error('Failed to fetch details', error)
-    // If needed, dispatch failure
+  return {
+    id: pt.id,
+    latitude: pt.latitude,
+    longitude: pt.longitude,
+    heading: pt.heading,
+    pitch: pt.pitch,
+    rqi_score: pt.rqiScore,
+    damage_count: pt.damageCount,
+    damage_types: pt.damageTypes,
+    analysis_metadata: pt.analysisMetadata,
+    image_url: pt.imageUrl,
+    created_at: pt.createdAt,
+    manual_rqi: pt.manualRqi,
+    manual_tags: pt.manualTags,
+    manual_annotations: pt.manualAnnotations,
   }
 }
 
@@ -128,7 +97,7 @@ function* handleSelectionSaga(action: ReturnType<typeof actions.selectPoint>) {
 }
 
 export default [
-  takeLatest(actions.fetchPoints.type, fetchPointsSaga),
+  takeLatestAsync(actions.fetchPoints.type, fetchPointsWorker),
+  takeLatestAsync(actions.fetchPointDetail.type, fetchPointDetailWorker),
   takeLatest(actions.selectPoint.type, handleSelectionSaga),
-  takeLatest(actions.fetchPointDetail.type, fetchPointDetailSaga),
 ]

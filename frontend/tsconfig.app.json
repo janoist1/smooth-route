@@ -10,6 +10,10 @@
 
     /* Bundler mode */
     "moduleResolution": "bundler",
+    "baseUrl": "./src",
+    "paths": {
+      "modules/*": ["modules/*"]
+    },
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "moduleDetection": "force",

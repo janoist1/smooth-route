@@ -1,10 +1,5 @@
 import React from 'react'
-import {
-  BarChart2,
-  AlertTriangle,
-  Check,
-  List as ListIcon
-} from 'lucide-react'
+import { BarChart2, AlertTriangle, Check, List as ListIcon } from 'lucide-react'
 import { StatsGrid, StatCard } from '../../ui'
 
 interface StatsProps {
@@ -38,7 +33,7 @@ const TrainingStats: React.FC<StatsProps> = ({ stats }) => {
         icon={<ListIcon size={16} />}
         theme="neutral"
       />
-      
+
       <StatCard
         label="Annotated"
         value={stats.annotated}

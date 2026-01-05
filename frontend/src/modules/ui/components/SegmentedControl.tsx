@@ -14,14 +14,15 @@ interface SegmentedControlProps {
 
 export const SegmentedControl: React.FC<SegmentedControlProps> = ({ options, value, onChange }) => {
   return (
-    <div style={{ 
-      display: 'inline-flex', 
-      background: 'rgba(255, 255, 255, 0.05)', 
-      padding: '4px', 
-      borderRadius: '12px',
-      border: '1px solid rgba(255, 255, 255, 0.1)'
-    }}>
-      {options.map((option) => (
+    <div
+      style={{
+        display: 'inline-flex',
+        background: 'rgba(255, 255, 255, 0.05)',
+        padding: '4px',
+        borderRadius: '12px',
+        border: '1px solid rgba(255, 255, 255, 0.1)',
+      }}>
+      {options.map(option => (
         <button
           key={option.value}
           onClick={() => onChange(option.value)}
@@ -38,8 +39,7 @@ export const SegmentedControl: React.FC<SegmentedControlProps> = ({ options, val
             transition: 'all 0.2s',
             background: value === option.value ? '#3b82f6' : 'transparent',
             color: value === option.value ? 'white' : '#9ca3af',
-          }}
-        >
+          }}>
           {option.icon}
           {option.label}
         </button>

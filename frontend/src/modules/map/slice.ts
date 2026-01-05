@@ -1,5 +1,6 @@
 import { createSlice } from '@reduxjs/toolkit'
 import type { PayloadAction } from '@reduxjs/toolkit'
+import { createSagaAction } from 'saga-toolkit'
 import type { MapState, RoadPoint, RoadPointDetail } from './types'
 
 const initialState: MapState = {
@@ -15,47 +16,51 @@ const initialState: MapState = {
   },
 }
 
+export const fetchPoints = createSagaAction<number[] | undefined, RoadPoint[]>('map/fetchPoints')
+export const fetchPointDetail = createSagaAction<number, RoadPointDetail>('map/fetchPointDetail')
+
 const mapSlice = createSlice({
   name: 'map',
   initialState,
   reducers: {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    fetchPoints(state, _action: PayloadAction<number[] | undefined>) {
-      state.loading = true
-      state.error = null
-    },
-    fetchPointsSuccess(state, action: PayloadAction<RoadPoint[]>) {
-      state.loading = false
-      state.points = action.payload
-    },
-    fetchPointsFailure(state, action: PayloadAction<string>) {
-      state.loading = false
-      state.error = action.payload
-    },
     selectPoint(state, action: PayloadAction<number | null>) {
       state.selectedPointId = action.payload
       if (action.payload === null) {
         state.selectedPointDetail = null
       }
     },
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    fetchPointDetail(state, _action: PayloadAction<number>) {
-      state.loadingDetail = true
-      state.selectedPointDetail = null
-    },
-    fetchPointDetailSuccess(state, action: PayloadAction<RoadPointDetail>) {
-      state.loadingDetail = false
-      state.selectedPointDetail = action.payload
-    },
-    fetchPointDetailFailure(state) {
-      state.loadingDetail = false
-      // error logic for detail?
-    },
     setViewport(state, action: PayloadAction<{ center: [number, number]; zoom: number }>) {
       state.viewport = action.payload
     },
   },
+  extraReducers: builder => {
+    builder
+      .addCase(fetchPoints.pending, state => {
+        state.loading = true
+        state.error = null
+      })
+      .addCase(fetchPoints.fulfilled, (state, action: PayloadAction<RoadPoint[]>) => {
+        state.loading = false
+        state.points = action.payload
+      })
+      .addCase(fetchPoints.rejected, (state, action) => {
+        state.loading = false
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        state.error = (action as any).error?.message || 'Failed to fetch points'
+      })
+      .addCase(fetchPointDetail.pending, state => {
+        state.loadingDetail = true
+        state.selectedPointDetail = null
+      })
+      .addCase(fetchPointDetail.fulfilled, (state, action: PayloadAction<RoadPointDetail>) => {
+        state.loadingDetail = false
+        state.selectedPointDetail = action.payload
+      })
+      .addCase(fetchPointDetail.rejected, state => {
+        state.loadingDetail = false
+      })
+  },
 })
 
-export const actions = mapSlice.actions
+export const actions = { ...mapSlice.actions, fetchPoints, fetchPointDetail }
 export default mapSlice.reducer

@@ -12,9 +12,13 @@ interface FloatingNavBarProps {
   onNavigate: (path: string) => void
 }
 
-export const FloatingNavBar: React.FC<FloatingNavBarProps> = ({ items, currentPath, onNavigate }) => {
+export const FloatingNavBar: React.FC<FloatingNavBarProps> = ({
+  items,
+  currentPath,
+  onNavigate,
+}) => {
   return (
-    <div 
+    <div
       style={{
         position: 'fixed',
         top: '24px',
@@ -23,9 +27,8 @@ export const FloatingNavBar: React.FC<FloatingNavBarProps> = ({ items, currentPa
         display: 'flex',
         gap: '12px',
         pointerEvents: 'none',
-      }}
-    >
-      {items.map((item) => {
+      }}>
+      {items.map(item => {
         const isActive = currentPath === item.path
         return (
           <button
@@ -38,33 +41,34 @@ export const FloatingNavBar: React.FC<FloatingNavBarProps> = ({ items, currentPa
               gap: '8px',
               padding: '10px 16px',
               borderRadius: '9999px',
-              border: isActive ? '1px solid rgba(59, 130, 246, 0.5)' : '1px solid rgba(255, 255, 255, 0.1)',
+              border: isActive
+                ? '1px solid rgba(59, 130, 246, 0.5)'
+                : '1px solid rgba(255, 255, 255, 0.1)',
               background: isActive ? 'rgba(37, 99, 235, 0.9)' : 'rgba(0, 0, 0, 0.4)',
               color: isActive ? 'white' : '#d1d5db',
               backdropFilter: 'blur(12px)',
-              boxShadow: isActive 
-                ? '0 10px 15px -3px rgba(30, 58, 138, 0.4)' 
+              boxShadow: isActive
+                ? '0 10px 15px -3px rgba(30, 58, 138, 0.4)'
                 : '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
               transition: 'all 0.3s ease-out',
               cursor: 'pointer',
               fontSize: '0.875rem',
               fontWeight: 500,
             }}
-            onMouseEnter={(e) => {
+            onMouseEnter={e => {
               if (!isActive) {
                 e.currentTarget.style.background = 'rgba(0, 0, 0, 0.6)'
                 e.currentTarget.style.color = 'white'
                 e.currentTarget.style.transform = 'scale(1.05)'
               }
             }}
-            onMouseLeave={(e) => {
+            onMouseLeave={e => {
               if (!isActive) {
                 e.currentTarget.style.background = 'rgba(0, 0, 0, 0.4)'
                 e.currentTarget.style.color = '#d1d5db'
                 e.currentTarget.style.transform = 'scale(1)'
               }
-            }}
-          >
+            }}>
             {item.icon}
             <span>{item.label}</span>
           </button>

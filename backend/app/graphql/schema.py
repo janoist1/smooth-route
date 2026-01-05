@@ -11,8 +11,9 @@ from app.models.models import StreetViewImage, TrainingData as TrainingDataModel
 from app.core.config import settings
 from app.api.routes import run_route_processing
 from app.services.job_service import create_job, get_job
+from app.core.settings_manager import settings_manager
 
-from .types import Point, Job, TrainingData, ProcessRouteInput, TrainingDataInput, RunAnalysisInput, TrainingStats, TrainingPointsResponse, FilterMode
+from .types import Point, Job, TrainingData, ProcessRouteInput, TrainingDataInput, RunAnalysisInput, TrainingStats, TrainingPointsResponse, FilterMode, Setting, UpdateSettingInput, DetectInput, DetectPrediction
 
 def get_db_session():
     return SessionLocal()
@@ -22,6 +23,31 @@ class Query:
     @strawberry.field
     def config(self) -> str:
         return settings.GOOGLE_MAPS_API_KEY or ""
+    
+    @strawberry.field
+    def settings(self) -> List[Setting]:
+        from app.core.settings_manager import settings_manager
+        return [
+            Setting(
+                key=s.key,
+                value=s.value,
+                description=s.description,
+                example=s.example,
+                category=s.category,
+                explanation=s.explanation
+            ) for s in settings_manager.get_all_settings()
+        ]
+
+    @strawberry.field
+    def available_models(self) -> List[str]:
+        import glob
+        import os
+        models_dir = os.path.join(os.getcwd(), "data", "models")
+        if not os.path.exists(models_dir):
+            return []
+        # Return relative paths or filenames of .pt files
+        files = glob.glob(os.path.join(models_dir, "*.pt"))
+        return [os.path.basename(f) for f in files]
 
     @strawberry.field
     def point(self, id: int) -> Optional[Point]:
@@ -161,7 +187,7 @@ class Query:
 
             if mode == FilterMode.PENDING:
                 # High RQI and NOT in training data
-                all_unfiltered = query.filter(StreetViewImage.rqi_score >= 2.5).order_by(StreetViewImage.id.desc()).all()
+                all_unfiltered = query.order_by(StreetViewImage.id.desc()).all()
                 filtered = [c for c in all_unfiltered if get_filename(c.image_url) not in training_files]
                 total_count = len(filtered)
                 paged_results = filtered[offset : offset + limit]
@@ -231,7 +257,7 @@ class Query:
             # 2. Get points based on mode
             query = db.query(StreetViewImage)
             if mode == FilterMode.PENDING:
-                candidates = query.filter(StreetViewImage.rqi_score >= 2.5).all()
+                candidates = query.all()
                 relevant_points = [c for c in candidates if get_filename(c.image_url) not in training_files]
             elif mode == FilterMode.REVIEWED:
                 candidates = query.all()
@@ -281,7 +307,26 @@ class Query:
         if not j:
             return None
         return Job(
-            job_id=j.job_id,
+            id=j.job_id,
+            status=j.status.value,
+            current_step=j.current_step.value if j.current_step else None,
+            progress=j.progress,
+            total=j.total,
+            message=j.message,
+            error=j.error,
+            result=j.result,
+            created_at=j.created_at,
+            completed_at=j.completed_at
+        )
+
+    @strawberry.field
+    def active_job(self) -> Optional[Job]:
+        from app.services.job_service import get_active_job
+        j = get_active_job()
+        if not j:
+            return None
+        return Job(
+            id=j.job_id,
             status=j.status.value,
             current_step=j.current_step.value if j.current_step else None,
             progress=j.progress,
@@ -298,6 +343,38 @@ from app.api.routes import run_route_processing, run_analysis_job, run_training_
 @strawberry.type
 class Mutation:
     @strawberry.mutation
+    def update_setting(self, input: UpdateSettingInput) -> Setting:
+        from app.core.settings_manager import settings_manager
+        updated = settings_manager.update_setting(input.key, input.value)
+        if not updated:
+            raise Exception(f"Setting {input.key} not found")
+        return Setting(
+            key=updated.key,
+            value=updated.value,
+            description=updated.description,
+            example=updated.example,
+            category=updated.category,
+            explanation=updated.explanation
+        )
+
+    @strawberry.mutation
+    def apply_preset(self, values: strawberry.scalars.JSON) -> List[Setting]:
+        from app.core.settings_manager import settings_manager
+        updated_settings = []
+        for key, value in values.items():
+            updated = settings_manager.update_setting(key, value)
+            if updated:
+                updated_settings.append(Setting(
+                    key=updated.key,
+                    value=updated.value,
+                    description=updated.description,
+                    example=updated.example,
+                    category=updated.category,
+                    explanation=updated.explanation
+                ))
+        return updated_settings
+
+    @strawberry.mutation
     def run_analysis(self, input: RunAnalysisInput) -> Job:
         job_id = create_job()
         
@@ -310,7 +387,7 @@ class Mutation:
         thread.start()
         
         return Job(
-            job_id=job_id,
+            id=job_id,
             status="pending",
             current_step="analyzing",
             progress=0,
@@ -336,7 +413,7 @@ class Mutation:
         thread.start()
         
         return Job(
-            job_id=job_id,
+            id=job_id,
             status="pending",
             current_step="training",
             progress=0,
@@ -362,7 +439,7 @@ class Mutation:
         
         # Return initial job state
         return Job(
-            job_id=job_id,
+            id=job_id,
             status="pending",
             current_step=None,
             progress=0,
@@ -408,5 +485,64 @@ class Mutation:
             raise Exception(f"Failed to save: {str(e)}")
         finally:
             db.close()
+
+    @strawberry.mutation
+    def delete_training_data(self, image_filename: str) -> bool:
+        db = get_db_session()
+        try:
+            existing = (
+                db.query(TrainingDataModel)
+                .filter(TrainingDataModel.image_filename == image_filename)
+                .first()
+            )
+            if existing:
+                db.delete(existing)
+                db.commit()
+                return True
+            return False
+        except Exception as e:
+            db.rollback()
+            raise Exception(f"Failed to delete: {str(e)}")
+        finally:
+            db.close()
+
+    @strawberry.mutation
+    def stop_job(self, job_id: str) -> bool:
+        from app.services.job_service import update_job
+        update_job(job_id, status="cancelled", message="Folyamat leállítva a felhasználó által.", error="Job stopped by user")
+        return True
+    
+    @strawberry.mutation
+    def detect_objects(self, input: DetectInput) -> List[DetectPrediction]:
+        from app.services.inference import inference_service
+        import os
+        from app.core.config import settings
+
+        # Robust path resolution matching main.py
+        data_dir = settings.DATA_DIR
+        if not os.path.isabs(data_dir):
+            # backend/app/graphql/schema.py -> backend/app/graphql -> backend/app -> backend
+            backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            # backend -> project_root
+            project_root = os.path.dirname(backend_dir)
+            data_dir = os.path.join(project_root, data_dir)
+        
+        image_path = os.path.join(data_dir, "images", input.filename)
+        
+        # Call inference - let InferenceService handle missing files with logs
+        results = inference_service.detect_objects(
+            image_path, 
+            conf_threshold=input.conf_threshold,
+            classes=input.classes
+        )
+        
+        predictions = []
+        for res in results:
+             predictions.append(DetectPrediction(
+                 label=res['label'],
+                 confidence=res['confidence'],
+                 points=res['points']
+             ))
+        return predictions
 
 schema = strawberry.Schema(query=Query, mutation=Mutation)

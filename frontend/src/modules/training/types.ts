@@ -9,14 +9,32 @@ export interface TrainingPoint {
   longitude: number
 }
 
+export type DamageLabel =
+  | 'long_crack'
+  | 'trans_crack'
+  | 'alligator_crack'
+  | 'pothole'
+  | 'patch'
+  | 'degradation'
+  | 'shadow'
+  | 'manhole'
+  | 'marking'
+  | 'ignore'
+  | 'edit'  // Special tool for editing existing polygons
 
-export interface AnnotationBox {
-  x: number
-  y: number
-  w: number
-  h: number
-  label: 'pothole' | 'patch' | 'shadow' | 'cracks'
-  id: string // Unique ID for keying
+
+export interface Annotation {
+  id: string
+  label: DamageLabel
+  type: 'box' | 'polygon'
+  // For box
+  x?: number
+  y?: number
+  w?: number
+  h?: number
+  // For polygon
+  points?: [number, number][]
+  score?: number
 }
 
 export interface TrainingStats {
@@ -33,12 +51,12 @@ export interface TrainingStats {
 export interface TrainingState {
   imageId: string | null
   imageUrl: string | null
-  annotations: AnnotationBox[]
+  annotations: Annotation[]
   loading: boolean
   saving: boolean
   error: string | null
-  brushSize: number // For future paint features, keeping it simple now
-  selectedTool: 'pothole' | 'patch' | 'shadow' | 'cracks'
+  brushSize: number
+  selectedTool: DamageLabel
   manualRqi: number | null
   tags: string[]
   manualComment: string
@@ -54,17 +72,26 @@ export interface TrainingState {
   analysisTotal: number
   analysisStatus: 'idle' | 'running' | 'completed' | 'failed' | 'cancelled'
   analysisMessage: string
-  
+
   trainingStatus: 'idle' | 'running' | 'completed' | 'failed' | 'cancelled'
-  
+
   // Navigation & List Cache
   navigationIds: string[]
   items: TrainingPoint[]
-  
+
   // Pagination & Stats
   totalCount: number
   hasMore: boolean
   offset: number
   activeMode: 'pending' | 'reviewed' | 'all'
   globalStats: TrainingStats | null
+
+  // Export metadata (e.g. for Google Colab)
+  exports?: {
+    notebookPath?: string
+    datasetPath?: string
+    instructions?: string
+  } | null
+  autoDetectConf: number // Local override for magic wand sensitivity
+  autoDetectClasses: string[] // Classes to filter for auto-detection
 }

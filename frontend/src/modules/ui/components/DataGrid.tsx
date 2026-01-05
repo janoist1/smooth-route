@@ -17,14 +17,13 @@ interface DataGridProps<T> {
   emptyMessage?: ReactNode
 }
 
-export const DataGrid = <T,>({ 
-  columns, 
-  data, 
+export const DataGrid = <T,>({
+  columns,
+  data,
   onRowClick,
   loading,
-  emptyMessage = 'No data found'
+  emptyMessage = 'No data found',
 }: DataGridProps<T>) => {
-  
   if (loading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', padding: '60px' }}>
@@ -39,28 +38,40 @@ export const DataGrid = <T,>({
 
   if (data.length === 0) {
     return (
-      <div style={{ padding: '60px', textAlign: 'center', color: '#6b7280', background: 'rgba(255,255,255,0.02)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)' }}>
+      <div
+        style={{
+          padding: '60px',
+          textAlign: 'center',
+          color: '#6b7280',
+          background: 'rgba(255,255,255,0.02)',
+          borderRadius: '16px',
+          border: '1px solid rgba(255,255,255,0.05)',
+        }}>
         {emptyMessage}
       </div>
     )
   }
 
   return (
-    <div style={{ overflowX: 'auto', borderRadius: '16px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
+    <div
+      style={{
+        overflowX: 'auto',
+        borderRadius: '16px',
+        border: '1px solid rgba(255, 255, 255, 0.1)',
+      }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
         <thead>
           <tr style={{ background: 'rgba(17, 24, 39, 0.8)', color: '#9ca3af', textAlign: 'left' }}>
-            {columns.map((col) => (
-              <th 
+            {columns.map(col => (
+              <th
                 key={col.key}
-                style={{ 
-                  padding: '16px', 
-                  fontWeight: 600, 
+                style={{
+                  padding: '16px',
+                  fontWeight: 600,
                   borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
                   width: col.width,
-                  textAlign: col.align || 'left'
-                }}
-              >
+                  textAlign: col.align || 'left',
+                }}>
                 {col.header}
               </th>
             ))}
@@ -68,31 +79,30 @@ export const DataGrid = <T,>({
         </thead>
         <tbody>
           {data.map((item, index) => (
-            <tr 
+            <tr
               key={index}
               onClick={() => onRowClick && onRowClick(item)}
-              style={{ 
-                borderBottom: index === data.length - 1 ? 'none' : '1px solid rgba(255, 255, 255, 0.05)',
+              style={{
+                borderBottom:
+                  index === data.length - 1 ? 'none' : '1px solid rgba(255, 255, 255, 0.05)',
                 cursor: onRowClick ? 'pointer' : 'default',
                 background: 'rgba(17, 24, 39, 0.4)',
-                transition: 'background 0.2s'
+                transition: 'background 0.2s',
               }}
-              onMouseEnter={(e) => {
-                 if (onRowClick) e.currentTarget.style.background = 'rgba(59, 130, 246, 0.1)'
+              onMouseEnter={e => {
+                if (onRowClick) e.currentTarget.style.background = 'rgba(59, 130, 246, 0.1)'
               }}
-              onMouseLeave={(e) => {
-                 if (onRowClick) e.currentTarget.style.background = 'rgba(17, 24, 39, 0.4)'
-              }}
-            >
-              {columns.map((col) => (
-                <td 
+              onMouseLeave={e => {
+                if (onRowClick) e.currentTarget.style.background = 'rgba(17, 24, 39, 0.4)'
+              }}>
+              {columns.map(col => (
+                <td
                   key={col.key}
-                  style={{ 
+                  style={{
                     padding: '16px',
                     textAlign: col.align || 'left',
-                    color: '#e5e7eb'
-                  }}
-                >
+                    color: '#e5e7eb',
+                  }}>
                   {col.render(item)}
                 </td>
               ))}

@@ -3,6 +3,7 @@ export const ROUTES = {
   TRAINING_LIST: { path: '/training', exact: true },
   TRAINING_DETAIL: { path: '/training/:id', exact: true },
   TRAINING_REVIEW: { path: '/training/:id/review', exact: true },
+  SETTINGS: { path: '/settings', exact: true },
 } as const
 
 export const buildPath = (route: { path: string }, params?: Record<string, string | number>) => {

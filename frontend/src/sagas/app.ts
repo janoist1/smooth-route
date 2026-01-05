@@ -1,6 +1,6 @@
 import { takeLatestAsync } from 'saga-toolkit'
 import { call } from 'redux-saga/effects'
-import { actions as appActions } from '../modules/app'
+import { actions as appActions } from 'modules/app'
 
 function* handleAppStart() {
   // Real application initialization logic goes here.

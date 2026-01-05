@@ -1,3 +1,7 @@
+* {
+  box-sizing: border-box;
+}
+
 :root {
   /* HSL Colors for easier manipulation */
   --hue: 220; /* Blue-ish base */

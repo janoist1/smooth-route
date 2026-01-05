@@ -5,25 +5,56 @@ import { all } from 'redux-saga/effects'
 // Reducers
 import { reducer as mapReducer, sagas as mapSagas } from './modules/map'
 import { reducer as trainingReducer, sagas as trainingSagas } from './modules/training'
+import { reducer as settingsReducer, sagas as settingsSagas } from './modules/settings'
 import { reducer as appReducer } from './modules/app'
 
 // Sagas
 import globalSagas from './sagas'
 
 function* rootSaga() {
-  yield all([...mapSagas, ...trainingSagas, ...globalSagas])
+  const allSagas = [...mapSagas, ...trainingSagas, ...settingsSagas, ...globalSagas]
+  yield all(allSagas)
 }
 
 const rootReducer = combineReducers({
   map: mapReducer,
   training: trainingReducer,
+  settings: settingsReducer,
   app: appReducer,
 })
 
 const sagaMiddleware = createSagaMiddleware()
 
+const getPreloadedState = () => {
+  if (typeof window === 'undefined') return undefined
+
+  const params = new URLSearchParams(window.location.search)
+  const lat = params.get('lat')
+  const lng = params.get('lng')
+  const z = params.get('z')
+
+  if (lat && lng && z) {
+    return {
+      map: {
+        points: [],
+        loading: false,
+        error: null,
+        selectedPointId: null,
+        selectedPointDetail: null,
+        loadingDetail: false,
+        viewport: {
+          center: [parseFloat(lat), parseFloat(lng)] as [number, number],
+          zoom: parseInt(z, 10),
+        },
+      },
+    }
+  }
+  return undefined
+}
+
 export const store = configureStore({
   reducer: rootReducer,
+  preloadedState: getPreloadedState(),
   middleware: getDefaultMiddleware =>
     getDefaultMiddleware({ serializableCheck: false }).concat(sagaMiddleware),
   devTools: {
@@ -36,7 +67,7 @@ export const store = configureStore({
       if (action.payload && Array.isArray(action.payload) && action.payload.length > 50) {
         return {
           ...action,
-          payload: `<<LARGE_ARRAY_SANITIZED: ${action.payload.length} items>>`
+          payload: `<<LARGE_ARRAY_SANITIZED: ${action.payload.length} items>>`,
         }
       }
       return action
@@ -49,12 +80,12 @@ export const store = configureStore({
           ...state,
           map: {
             ...state.map,
-            points: `<<LARGE_POINT_ARRAY: ${state.map.points.length} items>>`
-          }
+            points: `<<LARGE_POINT_ARRAY: ${state.map.points.length} items>>`,
+          },
         }
       }
       return state
-    }
+    },
   },
 })
 

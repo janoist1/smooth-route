@@ -6,14 +6,7 @@ import PointDetailCard from './PointDetailCard'
 import MapStyleSwitcher from './MapStyleSwitcher'
 import type { MapStyle } from './MapStyleSwitcher'
 
-// Color helper
-const getRQIColor = (score?: number) => {
-  if (score === undefined) return '#888' // Gray for unknown
-  if (score <= 2.0) return '#4ade80' // Green (Good)
-  if (score <= 3.0) return '#facc15' // Yellow (Fair)
-  if (score <= 4.0) return '#f87171' // Red (Poor)
-  return '#ef4444' // Dark Red (Very Poor)
-}
+import { getRQIColor } from '../../ui/utils/colors'
 
 const TILE_LAYERS: Record<MapStyle, { url: string; attribution: string }> = {
   dark: {
@@ -61,7 +54,34 @@ const MapEvents = ({
   return null
 }
 
-const MapView: React.FC = () => {
+// Controller to sync Redux -> Map (Guard against infinite loops)
+const MapController = ({ viewport }: { viewport: { center: [number, number]; zoom: number } }) => {
+  const map = useMapEvents({})
+
+  useEffect(() => {
+    const currentCenter = map.getCenter()
+    const currentZoom = map.getZoom()
+
+    const latDiff = Math.abs(currentCenter.lat - viewport.center[0])
+    const lngDiff = Math.abs(currentCenter.lng - viewport.center[1])
+    const zoomDiff = Math.abs(currentZoom - viewport.zoom)
+
+    // Only update if difference is significant (precision issue protection)
+    // Increased tolerance to 0.0005 (~50m) to prevent fighting with URL updates
+    if (latDiff > 0.0005 || lngDiff > 0.0005 || zoomDiff > 0.5) {
+      map.setView(viewport.center, viewport.zoom)
+    }
+  }, [viewport, map])
+
+  return null
+}
+
+interface MapViewProps {
+  onTrain: (id: string | number) => void
+  onMapMove: (bbox: number[], center: [number, number], zoom: number) => void
+}
+
+const MapView: React.FC<MapViewProps> = ({ onTrain, onMapMove }) => {
   const {
     points,
     loading,
@@ -71,7 +91,6 @@ const MapView: React.FC = () => {
     loadingDetail,
     selectedPoint,
     viewport,
-    setViewport,
   } = useMap()
   const [mapStyle, setMapStyle] = useState<MapStyle>('dark')
 
@@ -79,9 +98,9 @@ const MapView: React.FC = () => {
   const handleMapMove = React.useCallback(
     (bbox: number[], center: [number, number], zoom: number) => {
       fetchPoints(bbox)
-      setViewport({ center, zoom })
+      onMapMove(bbox, center, zoom)
     },
-    [fetchPoints, setViewport],
+    [fetchPoints, onMapMove],
   )
 
   // Generate segments for traffic-like visualization
@@ -125,6 +144,7 @@ const MapView: React.FC = () => {
           url={TILE_LAYERS[mapStyle].url}
         />
         <MapEvents onMove={handleMapMove} />
+        <MapController viewport={viewport} />
 
         {/* Traffic Segments (Lines) */}
         {segments.map((seg, idx) => (
@@ -152,6 +172,7 @@ const MapView: React.FC = () => {
           detail={selectedPointDetail!}
           loading={loadingDetail}
           onClose={() => selectPoint(null)}
+          onTrain={onTrain}
         />
       )}
 

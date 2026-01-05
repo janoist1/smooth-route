@@ -1,15 +1,15 @@
 import React from 'react'
-import { useNavigate } from 'react-router-dom'
 import type { RoadPointDetail } from '../types'
 
 interface PointDetailCardProps {
   detail: RoadPointDetail
   loading: boolean
   onClose: () => void
+  onTrain: (id: string | number) => void
 }
 
-const PointDetailCard: React.FC<PointDetailCardProps> = ({ detail, loading, onClose }) => {
-  const navigate = useNavigate()
+const PointDetailCard: React.FC<PointDetailCardProps> = ({ detail, loading, onClose, onTrain }) => {
+  // Use proxy for image path directly
 
   if (loading) {
     return (
@@ -141,7 +141,7 @@ const PointDetailCard: React.FC<PointDetailCardProps> = ({ detail, loading, onCl
           Recorded:{' '}
           {detail.created_at ? new Date(detail.created_at).toLocaleDateString() : 'Unknown'}
           <button
-            onClick={() => navigate(`/training/${detail.id}`)}
+            onClick={() => onTrain(detail.id)}
             style={{
               marginTop: '10px',
               width: '100%',
