@@ -1,5 +1,5 @@
 import { createSlice, createAction } from '@reduxjs/toolkit'
-import type { PayloadAction, AnyAction } from '@reduxjs/toolkit'
+import type { PayloadAction } from '@reduxjs/toolkit'
 import { createSagaAction } from 'saga-toolkit'
 import type { TrainingState, Annotation, TrainingPoint, TrainingStats, DamageLabel } from './types'
 import { filterAnnotationsNMS } from './utils'
@@ -213,7 +213,7 @@ const trainingSlice = createSlice({
         state.loading = false
         state.annotations.push(...action.payload)
       })
-      .addCase(autoDetect.rejected, (state, action: AnyAction) => {
+      .addCase(autoDetect.rejected, (state, action: any) => {
         state.loading = false
         state.error = action.error.message || 'Auto-detect failed'
       })
@@ -254,7 +254,7 @@ const trainingSlice = createSlice({
           }
         },
       )
-      .addCase(saveAnnotations.rejected, (state, action: AnyAction) => {
+      .addCase(saveAnnotations.rejected, (state, action: any) => {
         state.saving = false
         state.error = action.error.message || 'Saving failed'
       })
@@ -267,7 +267,7 @@ const trainingSlice = createSlice({
         if (action.payload.manualComment) state.manualComment = action.payload.manualComment
         state.error = null
       })
-      .addCase(fetchImage.rejected, (state, action: AnyAction) => {
+      .addCase(fetchImage.rejected, (state, action: any) => {
         state.loading = false
         if (action.error.name !== 'AbortError' && action.error.message !== 'Aborted') {
           state.error = action.error.message || 'Failed to fetch image'
@@ -314,7 +314,7 @@ const trainingSlice = createSlice({
         ).toLowerCase() as TrainingState['activeMode']
         state.activeMode = mode
       })
-      .addCase(fetchList.rejected, (state, action: AnyAction) => {
+      .addCase(fetchList.rejected, (state, action: any) => {
         state.loading = false
         state.error = action.error.message || 'Failed to fetch list'
       })
@@ -336,7 +336,7 @@ const trainingSlice = createSlice({
         // By then, the job is likely 'completed' via updateJobProgress/jobCompleted.
         // Overwriting it here would revert the UI to running state improperly.
       })
-      .addCase(runAnalysis.rejected, (state, action: AnyAction) => {
+      .addCase(runAnalysis.rejected, (state, action: any) => {
         state.analysisStatus = 'failed'
         state.analysisMessage = action.error.message || 'Start failed'
       })
@@ -351,7 +351,7 @@ const trainingSlice = createSlice({
         state.analysisJobId = action.payload.jobId
         // Same here: Do NOT reset status to 'running'. It's already handled by pending + poller.
       })
-      .addCase(startTraining.rejected, (state, action: AnyAction) => {
+      .addCase(startTraining.rejected, (state, action: any) => {
         state.trainingStatus = 'failed'
         state.analysisStatus = 'failed'
         state.analysisMessage = action.error.message || 'Training start failed'
