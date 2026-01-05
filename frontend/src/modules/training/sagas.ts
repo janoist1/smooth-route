@@ -299,7 +299,8 @@ function* pollAnalysisJobWorker(jobId: string) {
 
       if (job.status.toLowerCase() === 'completed' || 
           job.status.toLowerCase() === 'failed' || 
-          job.status.toLowerCase() === 'cancelled') {
+          job.status.toLowerCase() === 'cancelled' ||
+          (job.total > 0 && job.progress >= job.total)) {
         break
       }
     }
@@ -331,7 +332,7 @@ function* checkFinalJobStatus(jobId: string) {
             ? (JSON.parse(job.details).error || 'Unknown error') 
             : 'Unknown error'
           yield put(actions.jobFailed(errorMsg))
-        } else if (job.status === 'completed') {
+        } else if (job.status === 'completed' || (job.total > 0 && job.progress >= job.total)) {
           // Extract exports from job result
           const jobResult = job.result ? (typeof job.result === 'string' ? JSON.parse(job.result) : job.result) : null
           
@@ -397,12 +398,12 @@ function* reconnectJobSaga() {
   if (result.data?.activeJob) {
     const job = result.data.activeJob
     
-    // Check if we already have this job running to avoid duplicate pollers?
-    // Actually, since we are reconnecting, we assume previous state is lost or we are re-initializing.
-    
-    // We can't return value easily to "pending" action here because it would resolve the async action immediately.
-    // Instead, we just trigger side effects.
-    // Since reconnectJob is void->void, returning nothing is fine (fulfilled).
+    // If backend reports job as completed, load final details (including exports) directly
+    // instead of restarting the poller which might cause race conditions or state overwrite.
+    if (job.status.toLowerCase() === 'completed' || (job.total > 0 && job.progress >= job.total)) {
+        yield call(checkFinalJobStatus, job.id)
+        return
+    }
     
     // Restore state manually since this is a "re-" connection, not a fresh start
     // We use inner actions for this part as it doesn't fit the Request/Response cleanly

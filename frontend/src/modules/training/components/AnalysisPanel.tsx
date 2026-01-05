@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Play, RefreshCw, Cpu, CheckCircle, AlertTriangle, Download, FileText, Clipboard } from 'lucide-react'
+import { Play, RefreshCw, Cpu, CheckCircle, AlertTriangle, Download, FileText } from 'lucide-react'
 import { GlassPanel, ProgressBar } from '../../ui'
 
 interface AnalysisPanelProps {
@@ -38,30 +38,7 @@ const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
   const [limit, setLimit] = useState(0)
   const [reanalyze, setReanalyze] = useState(false)
 
-  // Auto-download effect
-  React.useEffect(() => {
-    if (analysisStatus === 'completed' && exports) {
-      if (exports.notebookPath) {
-        const link = document.createElement('a')
-        link.href = exports.notebookPath
-        link.download = exports.notebookPath.split('/').pop() || 'notebook.ipynb'
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-      }
-      if (exports.datasetPath) {
-        const path = exports.datasetPath
-        setTimeout(() => {
-          const link = document.createElement('a')
-          link.href = path
-          link.download = path.split('/').pop() || 'dataset.zip'
-          document.body.appendChild(link)
-          link.click()
-          document.body.removeChild(link)
-        }, 1000)
-      }
-    }
-  }, [analysisStatus, exports])
+
 
   const isRunning = (analysisStatus === 'running' || trainingStatus === 'running') && analysisStatus !== 'completed'
 
@@ -377,67 +354,69 @@ const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
                   {exports && (
                     <div
                       style={{
-                        background: 'rgba(59, 130, 246, 0.05)',
-                        border: '1px solid rgba(59, 130, 246, 0.2)',
+                        background: 'rgba(59, 130, 246, 0.1)', // More visible blue background
+                        border: '1px solid rgba(59, 130, 246, 0.3)',
                         borderRadius: '10px',
                         padding: '16px',
                         display: 'flex',
                         flexDirection: 'column',
                         gap: '12px',
+                        marginTop: '8px',
                       }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#60a5fa' }}>
-                        <Clipboard size={16} />
-                        <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>Google Colab Export</span>
+                        <Download size={18} />
+                        <span style={{ fontSize: '0.9rem', fontWeight: 700 }}>Exportált Fájlok Letöltése</span>
                       </div>
                       
-                      <div style={{ fontSize: '0.8rem', color: '#9ca3af', lineHeight: 1.4 }}>
-                        Töltsd le a fájlokat, majd kövesd az utasításokat a Google Colab felületén a tanításhoz.
+                      <div style={{ fontSize: '0.85rem', color: '#cbd5e1', lineHeight: 1.4 }}>
+                        A tanításhoz szükséges fájlok elkészültek. Töltsd le őket az alábbi gombokkal:
                       </div>
 
                       <div style={{ display: 'flex', gap: '8px' }}>
                         <a
                           href={exports.notebookPath || '#'}
-                          download
+                          download={exports.notebookPath?.split('/').pop() || 'notebook.ipynb'}
                           style={{
                             flex: 1,
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
                             gap: '8px',
-                            padding: '10px',
+                            padding: '12px',
                             background: '#2563eb',
                             color: 'white',
                             borderRadius: '8px',
-                            fontSize: '0.8rem',
+                            fontSize: '0.85rem',
                             fontWeight: 600,
                             textDecoration: 'none',
                             transition: 'all 0.2s',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
                           }}
                           className="hover:bg-blue-600">
-                          <FileText size={14} />
-                          Notebook
+                          <FileText size={16} />
+                          Notebook Letöltése
                         </a>
                         <a
                           href={exports.datasetPath || '#'}
-                          download
+                          download={exports.datasetPath?.split('/').pop() || 'dataset.zip'}
                           style={{
                             flex: 1,
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
                             gap: '8px',
-                            padding: '10px',
-                            background: 'rgba(255,255,255,0.1)',
+                            padding: '12px',
+                            background: '#059669', // Green for dataset
                             color: 'white',
                             borderRadius: '8px',
-                            fontSize: '0.8rem',
+                            fontSize: '0.85rem',
                             fontWeight: 600,
                             textDecoration: 'none',
-                            border: '1px solid rgba(255,255,255,0.1)',
                             transition: 'all 0.2s',
+                             boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
                           }}
-                          className="hover:bg-white/20">
-                          <Download size={14} />
+                          className="hover:bg-emerald-600">
+                          <Download size={16} />
                           Dataset (.zip)
                         </a>
                       </div>
