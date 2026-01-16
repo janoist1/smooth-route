@@ -1,7 +1,7 @@
 [
     {
         "key": "ai_model",
-        "value": "yolov8s-seg-best-20260105.pt",
+        "value": "yolov8m-seg-best-20260105.pt",
         "description": "Aktív AI Modell",
         "example": "yolov8m-seg.pt",
         "category": "AI & Modell",
@@ -136,24 +136,8 @@
         "explanation": "A kritikus pontszám, ami felett az út állapota nem elfogadható."
     },
     {
-        "key": "road_region_height_ratio",
-        "value": 0.4,
-        "description": "Keresési Tartomány",
-        "example": null,
-        "category": "Képfeldolgozás",
-        "explanation": "A kép aljától számított rész, ahol az AI hibákat keres."
-    },
-    {
-        "key": "markings_filter_threshold",
-        "value": 0.15,
-        "description": "Felfestések Szűrése",
-        "example": null,
-        "category": "Szűrők",
-        "explanation": "A fehér vonalak kiszűrése a téves riasztások elkerülése végett."
-    },
-    {
         "key": "google_maps_pitch",
-        "value": -20.0,
+        "value": -20,
         "description": "Kamera Szöge",
         "example": "-20",
         "category": "Google Street View",

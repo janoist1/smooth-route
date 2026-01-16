@@ -11,6 +11,16 @@ app = FastAPI(
     version="0.1.0"
 )
 
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://localhost:8000", "*"], # Added * for dev flexibility, restrict in prod
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 from app.core.database import engine
 from app.models.models import Base
 from app.api.routes import router as api_router
@@ -66,29 +76,35 @@ async def settings_page():
 async def health_check():
     return {"status": "healthy"}
 
-@app.get("/api/v1/images/{filename}")
+@app.get("/images/{filename}")
 async def get_image(filename: str):
-    """Serve images from the data/images directory."""
+    """Serve images from data directory (checking all locations)"""
     import os
     from fastapi import HTTPException
     
-    data_dir = settings.DATA_DIR
-    if not os.path.isabs(data_dir):
-        # __file__ is /backend/app/main.py
-        backend_dir = os.path.dirname(os.path.dirname(__file__))
-        project_root = os.path.dirname(backend_dir)
-        data_dir = os.path.join(project_root, data_dir)
+    # Check multiple possible locations to handle split datasets (legacy vs new)
+    backend_app_dir = os.path.dirname(os.path.abspath(__file__))
+    backend_dir = os.path.dirname(backend_app_dir)
+    project_root = os.path.dirname(backend_dir)
     
-    image_path = os.path.join(data_dir, "images", filename)
+    candidates = [
+        settings.resolve_data_dir(),          # 1. Configured preference
+        os.path.join(project_root, "data"),   # 2. Legacy root data
+        os.path.join(backend_dir, "data")     # 3. Backend local data
+    ]
     
-    # Security: prevent directory traversal
-    if not os.path.abspath(image_path).startswith(os.path.abspath(os.path.join(data_dir, "images"))):
-        raise HTTPException(status_code=403, detail="Access denied")
+    for base_dir in candidates:
+        image_path = os.path.join(base_dir, "images", filename)
+        # Security check to ensure we stay within intended dirs could go here, 
+        # but filename is simple string from URL usually basic. 
+        # Adding basic traversal check:
+        if ".." in filename or "/" in filename:
+             continue
+             
+        if os.path.exists(image_path):
+            return FileResponse(image_path, media_type="image/jpeg")
     
-    if not os.path.exists(image_path):
-        raise HTTPException(status_code=404, detail="Image not found")
-    
-    return FileResponse(image_path, media_type="image/jpeg")
+    raise HTTPException(status_code=404, detail="Image not found")
 
 @app.get("/api/v1/exports/{filename}")
 async def get_export_file(filename: str):
@@ -96,12 +112,7 @@ async def get_export_file(filename: str):
     import os
     from fastapi import HTTPException
     
-    # __file__ is /backend/app/main.py, so parent is /backend/app, and its parent is /backend
-    backend_dir = os.path.dirname(os.path.dirname(__file__))
-    
-    data_dir = settings.DATA_DIR
-    if not os.path.isabs(data_dir):
-        data_dir = os.path.join(backend_dir, data_dir)
+    data_dir = settings.resolve_data_dir()
     
     export_path = os.path.join(data_dir, "exports", filename)
     

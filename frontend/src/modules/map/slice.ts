@@ -2,6 +2,9 @@ import { createSlice } from '@reduxjs/toolkit'
 import type { PayloadAction } from '@reduxjs/toolkit'
 import { createSagaAction } from 'saga-toolkit'
 import type { MapState, RoadPoint, RoadPointDetail } from './types'
+import type { SerializedError } from '@reduxjs/toolkit'
+
+type SagaRejectedAction = PayloadAction<unknown, string, never, SerializedError>
 
 const initialState: MapState = {
   points: [],
@@ -14,10 +17,20 @@ const initialState: MapState = {
     center: [47.4979, 19.0402], // Default Budapest
     zoom: 13,
   },
+  routePoints: null,
+  isPlanningRoute: false,
+  isAnalyzingRoute: false,
+  routeAnalysisJobId: null,
+  origin: 'Budapest, Aulich utca 1.',
+  destination: 'Székesfehérvár',
+  pickingLocationFor: null,
 }
 
 export const fetchPoints = createSagaAction<number[] | undefined, RoadPoint[]>('map/fetchPoints')
 export const fetchPointDetail = createSagaAction<number, RoadPointDetail>('map/fetchPointDetail')
+
+export const planRoute = createSagaAction<{ origin: string; destination: string }, [number, number][]>('map/planRoute')
+export const analyzeRoute = createSagaAction<{ origin: string; destination: string }, string>('map/analyzeRoute')
 
 const mapSlice = createSlice({
   name: 'map',
@@ -32,6 +45,38 @@ const mapSlice = createSlice({
     setViewport(state, action: PayloadAction<{ center: [number, number]; zoom: number }>) {
       state.viewport = action.payload
     },
+    
+    // Route & Picking Logic
+    setRouteForm(state, action: PayloadAction<{ field: 'origin' | 'destination'; value: string }>) {
+      state[action.payload.field] = action.payload.value
+    },
+    startPickingLocation(state, action: PayloadAction<'origin' | 'destination'>) {
+      state.pickingLocationFor = action.payload
+      // Optionally deselect point to avoid clutter
+      state.selectedPointId = null 
+      state.selectedPointDetail = null
+    },
+    cancelPickingLocation(state) {
+      state.pickingLocationFor = null
+    },
+    updatePickedLocation(state, action: PayloadAction<{ lat: number; lng: number }>) {
+       if (state.pickingLocationFor) {
+           // Simple "Lat, Lng" format for now
+           const val = `${action.payload.lat.toFixed(6)}, ${action.payload.lng.toFixed(6)}`
+           state[state.pickingLocationFor] = val
+           state.pickingLocationFor = null
+       }
+    },
+
+    finishAnalysis(state) {
+      state.isAnalyzingRoute = false
+    },
+                   
+    clearRoute(state) {
+      state.routePoints = null
+      state.routeAnalysisJobId = null
+      state.isAnalyzingRoute = false
+    },
   },
   extraReducers: builder => {
     builder
@@ -43,10 +88,13 @@ const mapSlice = createSlice({
         state.loading = false
         state.points = action.payload
       })
-      .addCase(fetchPoints.rejected, (state, action) => {
+      .addCase(fetchPoints.rejected, (state, _action) => {
         state.loading = false
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        state.error = (action as any).error?.message || 'Failed to fetch points'
+        const action = _action as SagaRejectedAction
+        // Ignore AbortErrors (cancelled requests)
+        if (action.error.name !== 'AbortError' && action.error.message !== 'Aborted') {
+          state.error = action.error.message || 'Failed to fetch points'
+        }
       })
       .addCase(fetchPointDetail.pending, state => {
         state.loadingDetail = true
@@ -59,8 +107,39 @@ const mapSlice = createSlice({
       .addCase(fetchPointDetail.rejected, state => {
         state.loadingDetail = false
       })
+
+      // Route Planner
+      .addCase(planRoute.pending, state => {
+        state.isPlanningRoute = true
+        state.error = null
+        state.routePoints = null
+      })
+      .addCase(planRoute.fulfilled, (state, action: PayloadAction<[number, number][]>) => {
+        state.isPlanningRoute = false
+        state.routePoints = action.payload
+      })
+      .addCase(planRoute.rejected, (state, _action) => {
+        state.isPlanningRoute = false
+        const action = _action as SagaRejectedAction
+        state.error = action.error.message || 'Route planning failed'
+      })
+
+      // Route Analysis
+      .addCase(analyzeRoute.pending, state => {
+        state.isAnalyzingRoute = true
+        state.error = null
+        state.routeAnalysisJobId = null
+      })
+      .addCase(analyzeRoute.fulfilled, (state, action: PayloadAction<string>) => {
+        state.routeAnalysisJobId = action.payload
+      })
+      .addCase(analyzeRoute.rejected, (state, _action) => {
+        state.isAnalyzingRoute = false
+        const action = _action as SagaRejectedAction
+        state.error = action.error.message || 'Analysis start failed'
+      })
   },
 })
 
-export const actions = { ...mapSlice.actions, fetchPoints, fetchPointDetail }
+export const actions = { ...mapSlice.actions, fetchPoints, fetchPointDetail, planRoute, analyzeRoute }
 export default mapSlice.reducer

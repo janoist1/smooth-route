@@ -62,6 +62,11 @@ analyze-calibration:
 verify-real:
 	$(PYTHON) verify_real_images.py
 
+clean-orphans:
+	@echo "🧹 Cleaning orphaned points..."
+	DATABASE_URL=postgresql://postgres:postgres@localhost:5433/smooth_route \
+	$(PYTHON) scripts/clean_orphaned_points.py
+
 lint:
 	@echo "🧹 Linting..."
 	cd frontend && npm run lint

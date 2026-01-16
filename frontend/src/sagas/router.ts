@@ -2,7 +2,7 @@ import type { SagaIterator } from 'redux-saga'
 import { takeLatest, put, call, select } from 'redux-saga/effects'
 import { matchPath } from 'react-router-dom'
 import { actions as trainingActions, selectors as trainingSelectors } from 'modules/training'
-import { actions as mapActions } from 'modules/map'
+import { actions as mapActions, selectors as mapSelectors } from 'modules/map'
 import { actions as settingsActions } from 'modules/settings'
 import { actions as routingActions } from 'modules/routing'
 import { waitForAppStart } from 'modules/app'
@@ -66,7 +66,6 @@ function* handleLocationChange(action: {
     yield put(settingsActions.fetchSettings())
   } else if (matchPath({ path: ROUTES.HOME.path, end: ROUTES.HOME.exact }, pathname)) {
     // Entered Map View
-    yield put(trainingActions.unmount()) // Ensure training state is cleaned
 
     // SYNC MAP URL -> REDUX
     const lat = searchParams.get('lat')
@@ -81,6 +80,28 @@ function* handleLocationChange(action: {
         }),
       )
     }
+
+    // Fetch Points (Router-driven)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const viewport: any = yield select(mapSelectors.selectViewport)
+    const { center, zoom } = viewport
+
+    // Approximate BBox calculation
+    const width = typeof window !== 'undefined' ? window.innerWidth : 1024
+    const height = typeof window !== 'undefined' ? window.innerHeight : 768
+
+    const degPerPixel = 360 / (Math.pow(2, zoom) * 256)
+    const lngDelta = (width / 2) * degPerPixel
+    const latDelta = (height / 2) * degPerPixel
+
+    // [West, South, East, North]
+    const bbox = [
+      center[1] - lngDelta,
+      center[0] - latDelta,
+      center[1] + lngDelta,
+      center[0] + latDelta,
+    ]
+    yield put(mapActions.fetchPoints(bbox))
   } else if (matchPath({ path: ROUTES.SETTINGS.path, end: ROUTES.SETTINGS.exact }, pathname)) {
     // ENTERED SETTINGS
     yield put(settingsActions.fetchSettings())

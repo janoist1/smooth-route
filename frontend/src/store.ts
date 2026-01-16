@@ -7,12 +7,13 @@ import { reducer as mapReducer, sagas as mapSagas } from './modules/map'
 import { reducer as trainingReducer, sagas as trainingSagas } from './modules/training'
 import { reducer as settingsReducer, sagas as settingsSagas } from './modules/settings'
 import { reducer as appReducer } from './modules/app'
+import { reducer as apiReducer, sagas as apiSagas } from './modules/api'
 
 // Sagas
 import globalSagas from './sagas'
 
 function* rootSaga() {
-  const allSagas = [...mapSagas, ...trainingSagas, ...settingsSagas, ...globalSagas]
+  const allSagas = [...mapSagas, ...trainingSagas, ...settingsSagas, ...globalSagas, ...apiSagas]
   yield all(allSagas)
 }
 
@@ -21,6 +22,7 @@ const rootReducer = combineReducers({
   training: trainingReducer,
   settings: settingsReducer,
   app: appReducer,
+  api: apiReducer,
 })
 
 const sagaMiddleware = createSagaMiddleware()

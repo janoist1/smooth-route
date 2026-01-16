@@ -15,6 +15,15 @@ from app.core.settings_manager import settings_manager
 
 from .types import Point, Job, TrainingData, ProcessRouteInput, TrainingDataInput, RunAnalysisInput, TrainingStats, TrainingPointsResponse, FilterMode, Setting, UpdateSettingInput, DetectInput, DetectPrediction
 
+@strawberry.type
+class RouteStep:
+    lat: float
+    lng: float
+
+@strawberry.type
+class RouteData:
+    points: List[RouteStep]
+
 def get_db_session():
     return SessionLocal()
 
@@ -23,6 +32,21 @@ class Query:
     @strawberry.field
     def config(self) -> str:
         return settings.GOOGLE_MAPS_API_KEY or ""
+
+    @strawberry.field
+    def get_route(self, origin: str, destination: str) -> Optional[RouteData]:
+        from app.services.google_maps import google_maps_service
+        try:
+            # google_maps_service.get_route returns list of dicts {'lat': float, 'lng': float}
+            polyline_points = google_maps_service.get_route(origin, destination)
+            return RouteData(
+                points=[RouteStep(lat=p['lat'], lng=p['lng']) for p in polyline_points]
+            )
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"Error fetching route: {e}")
+            return None
     
     @strawberry.field
     def settings(self) -> List[Setting]:
@@ -428,12 +452,10 @@ class Mutation:
     @strawberry.mutation
     def process_route(self, input: ProcessRouteInput) -> Job:
         job_id = create_job()
-        origin = f"{input.origin_lat},{input.origin_lng}"
-        destination = f"{input.destination_lat},{input.destination_lng}"
-
+        
         # Start background thread
         thread = threading.Thread(
-            target=run_route_processing, args=(job_id, origin, destination), daemon=True
+            target=run_route_processing, args=(job_id, input.origin, input.destination), daemon=True
         )
         thread.start()
         
@@ -518,18 +540,28 @@ class Mutation:
         import os
         from app.core.config import settings
 
-        # Robust path resolution matching main.py
-        data_dir = settings.DATA_DIR
-        if not os.path.isabs(data_dir):
-            # backend/app/graphql/schema.py -> backend/app/graphql -> backend/app -> backend
-            backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-            # backend -> project_root
-            project_root = os.path.dirname(backend_dir)
-            data_dir = os.path.join(project_root, data_dir)
+        # Robust path resolution matching main.py and routes.py
+        # backend/app/graphql/schema.py -> backend/app/graphql -> backend/app -> backend
+        backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        project_root = os.path.dirname(backend_dir)
         
-        image_path = os.path.join(data_dir, "images", input.filename)
+        candidates = [
+            settings.resolve_data_dir(),          # 1. Configured preference
+            os.path.join(project_root, "data"),   # 2. Legacy root data
+            os.path.join(backend_dir, "data")     # 3. Backend local data
+        ]
         
-        # Call inference - let InferenceService handle missing files with logs
+        image_path = None
+        for base_dir in candidates:
+            cand = os.path.join(base_dir, "images", input.filename)
+            if os.path.exists(cand):
+                 image_path = cand
+                 break
+        
+        if not image_path:
+            raise Exception(f"Image {input.filename} not found in any data directory")
+        
+        # Call inference
         results = inference_service.detect_objects(
             image_path, 
             conf_threshold=input.conf_threshold,

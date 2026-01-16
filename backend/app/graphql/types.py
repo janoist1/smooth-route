@@ -92,10 +92,8 @@ class RunAnalysisInput:
 
 @strawberry.input
 class ProcessRouteInput:
-    origin_lat: float
-    origin_lng: float
-    destination_lat: float
-    destination_lng: float
+    origin: str
+    destination: str
 
 @strawberry.input
 class TrainingDataInput:

@@ -65,13 +65,9 @@ export interface TrainingState {
     comment: string
   } | null
 
-  // Job Tracking
+  // Job Tracking - Reference to generic job
   analysisJobId: string | null
-  analysisProgress: number
-  analysisTotal: number
-  analysisStatus: 'idle' | 'running' | 'completed' | 'failed' | 'cancelled'
-  analysisMessage: string
-
+  
   trainingStatus: 'idle' | 'running' | 'completed' | 'failed' | 'cancelled'
 
   // Navigation & List Cache

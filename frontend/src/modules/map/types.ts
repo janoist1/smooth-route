@@ -27,4 +27,13 @@ export interface MapState {
     center: [number, number]
     zoom: number
   }
+  // Route Planner
+  routePoints: [number, number][] | null
+  isPlanningRoute: boolean
+  isAnalyzingRoute: boolean
+  routeAnalysisJobId: string | null
+  // Form State
+  origin: string
+  destination: string
+  pickingLocationFor: 'origin' | 'destination' | null
 }

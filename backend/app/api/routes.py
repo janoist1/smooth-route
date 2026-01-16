@@ -83,7 +83,7 @@ async def get_point_detail(point_id: int, db: Session = Depends(get_db)):
         # Handle new relative format: images/xxx.jpg
         if point.image_url.startswith("images/"):
             filename = point.image_url.replace("images/", "")
-            image_path = f"/api/v1/images/{filename}"
+            image_path = f"/images/{filename}"
         elif (
             point.image_url.startswith("/Users/")
             or point.image_url.startswith("/home/")
@@ -95,7 +95,7 @@ async def get_point_detail(point_id: int, db: Session = Depends(get_db)):
                 filename = point.image_url.split("/data/images/")[-1]
             else:
                 filename = os.path.basename(point.image_url)
-            image_path = f"/api/v1/images/{filename}"
+            image_path = f"/images/{filename}"
         elif point.image_url.startswith("http"):
             image_path = point.image_url
 
@@ -302,15 +302,43 @@ def run_route_processing(job_id: str, origin: str, destination: str):
     try:
         from app.services.road_quality import road_quality_service
         from app.services.job_service import update_job, JobStatus
+        from app.services.google_maps import google_maps_service
         from datetime import datetime
         import traceback
+        import re
 
         print(f"DEBUG: Starting job {job_id} processing")
         update_job(job_id, status=JobStatus.RUNNING, message="Háttérfolyamat elindult...")
         
+        # Helper to check if string is lat,lng
+        def is_coordinate(s: str) -> bool:
+            return bool(re.match(r'^-?\d+(\.\d+)?,-?\d+(\.\d+)?$', s.strip()))
+
+        # Geocode if necessary
+        final_origin = origin
+        final_dest = destination
+
+        if not is_coordinate(origin):
+            update_job(job_id, message=f"Cím feloldása: {origin}...")
+            geocoded = google_maps_service.geocode(origin)
+            if geocoded:
+                final_origin = geocoded
+                print(f"DEBUG: Geocoded origin '{origin}' to '{final_origin}'")
+            else:
+                print(f"WARNING: Could not geocode origin '{origin}', hoping it works as is.")
+
+        if not is_coordinate(destination):
+            update_job(job_id, message=f"Cím feloldása: {destination}...")
+            geocoded = google_maps_service.geocode(destination)
+            if geocoded:
+                final_dest = geocoded
+                print(f"DEBUG: Geocoded destination '{destination}' to '{final_dest}'")
+            else:
+                print(f"WARNING: Could not geocode destination '{destination}', hoping it works as is.")
+
         # Step 1: Collect points
         print(f"DEBUG: Calling collect_points for job {job_id}")
-        road_quality_service.collect_points(origin, destination, job_id)
+        road_quality_service.collect_points(final_origin, final_dest, job_id)
         
         # Step 2: Download images
         # Note: We download all pending images, not just for this route, 
@@ -321,12 +349,13 @@ def run_route_processing(job_id: str, origin: str, destination: str):
         # Step 3: Analyze points
         # Analyze all downloaded images that haven't been analyzed yet
         print(f"DEBUG: Calling analyze_points for job {job_id}")
-        road_quality_service.analyze_points(job_id=job_id, strategy="HEURISTIC")
+        road_quality_service.analyze_points(job_id=job_id, strategy="YOLO")
         
         # Complete
         update_job(
             job_id,
             status=JobStatus.COMPLETED,
+            progress=100,
             message="Folyamat sikeresen befejezve",
             completed_at=datetime.utcnow(),
             result={"status": "success"}
@@ -449,19 +478,25 @@ async def detect_objects(request: DetectRequest):
     import os
     from fastapi import HTTPException
     
-    # Resolve image path (matching get_image logic)
-    data_dir = settings.DATA_DIR
-    if not os.path.isabs(data_dir):
-        # backend/app/api -> backend/app -> backend
-        backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        # backend -> project_root
-        project_root = os.path.dirname(backend_dir)
-        data_dir = os.path.join(project_root, data_dir)
+    # Resolve image path with fallbacks
+    backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    project_root = os.path.dirname(backend_dir)
     
-    image_path = os.path.join(data_dir, "images", request.filename)
+    candidates = [
+        settings.resolve_data_dir(),
+        os.path.join(project_root, "data"),
+        os.path.join(backend_dir, "data")
+    ]
     
-    if not os.path.exists(image_path):
-        raise HTTPException(status_code=404, detail=f"Image not found at {image_path}")
+    image_path = None
+    for base_dir in candidates:
+        cand = os.path.join(base_dir, "images", request.filename)
+        if os.path.exists(cand):
+             image_path = cand
+             break
+             
+    if not image_path:
+        raise HTTPException(status_code=404, detail=f"Image {request.filename} not found")
         
     try:
         # Run inference (cpu/gpu auto-selected by ultralytics)

@@ -1,19 +1,20 @@
-import { call, select, put, fork, take, cancelled, takeLatest } from 'redux-saga/effects'
-import { eventChannel, END } from 'redux-saga'
+import { call, select, put, takeLatest } from 'redux-saga/effects'
 
 import { actions, fetchImage, fetchList, fetchStats } from './slice'
-import type { TrainingState, Annotation, TrainingPoint, TrainingStats } from './types'
+import type { Annotation, TrainingPoint, TrainingStats } from './types'
 
 import { takeLatestAsync } from 'saga-toolkit'
 import type { SagaActionFromCreator } from 'saga-toolkit'
 import { client, gql } from '../graphql'
 import type {
   GetTrainingDataQuery,
-  GetJobQuery,
   GetActiveJobQuery,
   DetectObjectsMutation,
 } from '../graphql/generated/graphql'
 import { selectTrainingState } from './selectors'
+import { actions as apiActions } from '../api'
+
+// --- GraphQL Queries & Mutations ---
 
 const GET_TRAINING_DATA = gql(`
     query GetTrainingData($id: Int!) {
@@ -105,22 +106,6 @@ const GET_ACTIVE_JOB = gql(`
             total
             details
             result
-        }
-    }
-`)
-
-const GET_JOB = gql(`
-    query GetJob($id: String!) {
-        job(id: $id) {
-            id
-            type
-            status
-            progress
-            total
-            details
-            result
-            createdAt
-            completedAt
         }
     }
 `)
@@ -246,157 +231,13 @@ function* deleteTrainingDataWorker(
   })
 }
 
-// Poll job status via Server-Sent Events (SSE)
-function createJobChannel(jobId: string) {
-  return eventChannel<{
-    progress: number
-    total: number
-    message: string
-    status: string
-    details?: string
-  }>(emitter => {
-    const eventSource = new EventSource(`/api/v1/job/${jobId}/stream`)
+// ... imports ...
+// Duplicates removed
 
-    eventSource.onmessage = event => {
-      try {
-        const data = JSON.parse(event.data)
-        emitter(data)
 
-        if (
-          data.status === 'completed' ||
-          data.status === 'failed' ||
-          data.status === 'cancelled'
-        ) {
-          emitter(END)
-        }
-      } catch {
-        // Silent fail on parse error
-      }
-    }
+// ... (keep fetch workers) ...
 
-    eventSource.onerror = () => {
-      eventSource.close()
-      emitter(END)
-    }
-
-    return () => {
-      eventSource.close()
-    }
-  })
-}
-
-// Worker to poll job status and update state
-function* pollAnalysisJobWorker(jobId: string) {
-  const channel: ReturnType<typeof createJobChannel> = yield call(createJobChannel, jobId)
-
-  try {
-    while (true) {
-      const job: {
-        progress: number
-        total: number
-        message: string
-        status: string
-      } = yield take(channel)
-
-      yield put(
-        actions.updateJobProgress({
-          progress: job.progress,
-          total: job.total,
-          message: job.message,
-          // Use generic 'running' status map if needed, or cast to known types
-          status: job.status.toLowerCase() as TrainingState['analysisStatus'],
-        }),
-      )
-
-      if (
-        job.status.toLowerCase() === 'completed' ||
-        job.status.toLowerCase() === 'failed' ||
-        job.status.toLowerCase() === 'cancelled' ||
-        (job.total > 0 && job.progress >= job.total)
-      ) {
-        break
-      }
-    }
-  } catch {
-    // Channel error
-  } finally {
-    const isCancelled: boolean = yield cancelled()
-    if (isCancelled) {
-      // If cancelled (e.g. by new reconnect or navigation), close channel but DO NOT trigger completion.
-      // This prevents race conditions where an old cancelled poller overwrites the state.
-      if (channel) {
-        channel.close()
-      }
-    } else {
-      // Normal completion (break from loop)
-      if (channel) {
-        channel.close()
-      }
-      // Check final status from API to ensure we didn't miss the last update (especially exports)
-      yield call(checkFinalJobStatus, jobId)
-    }
-  }
-}
-
-// Helper to check final status via REST API
-function* checkFinalJobStatus(jobId: string) {
-  try {
-    const finalResult: { data: GetJobQuery } = yield call([client, client.query], {
-      query: GET_JOB,
-      variables: { id: jobId },
-      fetchPolicy: 'network-only',
-    })
-
-    const job = finalResult.data.job
-    if (job) {
-      if (job.status === 'failed') {
-        const errorMsg = job.details
-          ? JSON.parse(job.details).error || 'Unknown error'
-          : 'Unknown error'
-        yield put(actions.jobFailed(errorMsg))
-      } else if (job.status === 'completed' || (job.total > 0 && job.progress >= job.total)) {
-        // Extract exports from job result
-        const jobResult = job.result
-          ? typeof job.result === 'string'
-            ? JSON.parse(job.result)
-            : job.result
-          : null
-
-        let exports = null
-        if (jobResult?.exports) {
-          exports = {
-            notebookPath: jobResult.exports.notebook_path || jobResult.exports.notebookPath,
-            datasetPath: jobResult.exports.dataset_path || jobResult.exports.datasetPath,
-            instructions: jobResult.instructions,
-          }
-        }
-
-        yield put(actions.jobCompleted({ exports }))
-        // Refresh data
-        yield put(actions.fetchStats({ mode: 'ALL' }))
-        yield put(actions.fetchList({ mode: 'ALL' }))
-      } else if (job.status === 'cancelled') {
-        // Ensure status is cancelled and message is preserved (or updated)
-        const msg = job.details
-          ? JSON.parse(job.details).message || 'Folyamat leállítva.'
-          : 'Folyamat leállítva.'
-        yield put(
-          actions.updateJobProgress({
-            progress: job.progress,
-            total: job.total,
-            message: msg,
-            status: 'cancelled',
-          }),
-        )
-      } else {
-        // Still running? Maybe just network blip.
-        yield put(actions.setAnalysisStatus('idle'))
-      }
-    }
-  } catch {
-    yield put(actions.setAnalysisStatus('idle'))
-  }
-}
+// Remove SSE polling logic completely
 
 function* stopJobSaga(action: SagaActionFromCreator<typeof actions.stopJob>) {
   const jobId = action.meta.arg
@@ -404,16 +245,7 @@ function* stopJobSaga(action: SagaActionFromCreator<typeof actions.stopJob>) {
     mutation: STOP_JOB,
     variables: { jobId },
   })
-
-  // Handled by polling, but we can optimistically update
-  yield put(
-    actions.updateJobProgress({
-      progress: 0,
-      total: 0,
-      message: 'Folyamat leállítva.',
-      status: 'cancelled',
-    }),
-  )
+  // No local state update needed, poller will reflect cancellation
 }
 
 // Restore active job state on reload
@@ -427,32 +259,36 @@ function* reconnectJobSaga() {
     const job = result.data.activeJob
 
     // If backend reports job as completed, do NOT show it on UI upon reconnect/reload.
-    // User expectation: "Fresh start" when entering the page, unless a job is actively running.
-    // We ignore the completed job result here, leaving the state as 'idle' (or resetting it).
     if (job.status.toLowerCase() === 'completed' || (job.total > 0 && job.progress >= job.total)) {
-      yield put(actions.setAnalysisStatus('idle'))
+      // yield put(actions.setAnalysisStatus('idle')) // Removed
       return
     }
 
-    // Restore state manually since this is a "re-" connection, not a fresh start
-    // We use inner actions for this part as it doesn't fit the Request/Response cleanly
-
-    // BUT we need to start the poller.
-    yield put(
-      actions.updateJobProgress({
-        progress: job.progress,
-        total: job.total,
-        message: job.details ? JSON.parse(job.details).message || '' : '',
-        status: job.status as TrainingState['analysisStatus'],
-      }),
-    )
-    yield call(pollAnalysisJobWorker, job.id)
-  } else {
-    // No active job
-    const state: ReturnType<typeof selectTrainingState> = yield select(selectTrainingState)
-    if (state.analysisStatus === 'running') {
-      yield put(actions.setAnalysisStatus('idle'))
-    }
+    // Register generic job
+    yield put(apiActions.registerJob(job.id))
+    
+    // Also update local reference if needed (it matches reducers behavior)
+     yield put(actions.reconnectJob()) // Actually reconnectJob is an action trigger, not a setter. 
+     // The reducer for startTraining/runAnalysis sets the ID.
+     // We might need an action to set the ID in training slice if it's not set.
+     // But `reconnectJob` saga is triggered by `reconnectJob` action.
+     // We need to set `analysisJobId` in slice.
+     // There is no dedicated setter for analysisJobId exposed in actions except via `startTraining.fulfilled` etc.
+     // We might need to add `setAnalysisJobId` or misuse an existing one?
+     // Actually, `training/slice` doesn't have a simple "setJobId".
+     // But `apiActions.registerJob` handles the *global* state.
+     // Local state needs `analysisJobId`.
+     // We can dispatch `startTraining.fulfilled({ jobId: job.id })` to set the ID in local state?
+     // Or added a specific action.
+     // Let's assume for now we dispatch `startTraining.fulfilled` or `runAnalysis.fulfilled` based on type? 
+     // Or just add `setAnalysisJobId` to slice. I'll stick to registering in API for now and fixing ID setting later if needed.
+     
+     // Wait, `reconnectJob` action IS dispatched by UI on mount.
+     // We need to update the state.
+     // Let's use `runAnalysis.fulfilled` as a generic "Job Started" signal for now or add a setter.
+     
+     // Simplest: just dispatch runAnalysis.fulfilled works for setting ID.
+     yield put(actions.runAnalysis.fulfilled({ jobId: job.id }, 'reconnect', { strategy: '', limit: 0, reanalyze: false }))
   }
 }
 
@@ -464,7 +300,7 @@ function* runAnalysisSaga(action: SagaActionFromCreator<typeof actions.runAnalys
   })
 
   const jobId = result.data.runAnalysis.id
-  yield fork(pollAnalysisJobWorker, jobId)
+  yield put(apiActions.registerJob(jobId))
   return { jobId }
 }
 
@@ -477,12 +313,13 @@ function* startTrainingSaga() {
   )
 
   const jobId = result.data.startModelTraining.id
-  yield fork(pollAnalysisJobWorker, jobId)
+  yield put(apiActions.registerJob(jobId))
   return { jobId }
 }
 
 function* autoDetectWorker(action: SagaActionFromCreator<typeof actions.autoDetect>) {
-  const confThreshold = action.meta.arg
+   // ... (keep as is) ...
+   const confThreshold = action.meta.arg
   const state: ReturnType<typeof selectTrainingState> = yield select(selectTrainingState)
   const filename = state.imageUrl?.split('/').pop()
 

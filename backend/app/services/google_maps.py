@@ -18,25 +18,53 @@ class GoogleMapsService:
         if not self.client:
             raise ValueError("Google Maps API Key not configured")
 
-        directions_result = self.client.directions(
-            origin,
-            destination,
-            mode="driving",
-            alternatives=False
-        )
+        try:
+            directions_result = self.client.directions(
+                origin,
+                destination,
+                mode="driving",
+                alternatives=False
+            )
+        except Exception as e:
+            print(f"DEBUG: Error in initial directions call: {e}")
+            directions_result = None
 
         if not directions_result:
+            # Try to geocode inputs and retry if they weren't coordinates
+            print(f"DEBUG: No route found for raw inputs. Attempting geocoding for {origin} -> {destination}")
+            
+            # Simple check if they look like coords (can use implicit knowledge or simple logic)
+            geo_origin = self.geocode(origin)
+            geo_dest = self.geocode(destination)
+            
+            if geo_origin and geo_dest:
+                 print(f"DEBUG: Retrying route with geocoded coords: {geo_origin} -> {geo_dest}")
+                 try:
+                     directions_result = self.client.directions(
+                        geo_origin,
+                        geo_dest,
+                        mode="driving",
+                        alternatives=False
+                    )
+                 except Exception as e:
+                     print(f"DEBUG: Error in retry directions call: {e}")
+                     import traceback
+                     traceback.print_exc()
+                     directions_result = None
+
+        if not directions_result:
+            print("DEBUG: Still no route found after geocoding.", flush=True)
             return []
 
         # Extract the polyline from the first route's first leg
-        # In a real app, we might want to handle multiple legs/routes
-        route = directions_result[0]
-        leg = route['legs'][0]
-        
-        # We can use the 'overview_polyline' for the whole route, 
-        # or iterate through steps for more detail. 
-        # Overview polyline is usually sufficient for geometry.
-        return route['overview_polyline']['points']
+        try:
+             route = directions_result[0]
+             encoded_polyline = route['overview_polyline']['points']
+             decoded_points = googlemaps.convert.decode_polyline(encoded_polyline)
+             return decoded_points
+        except Exception as e:
+             print(f"DEBUG: Error parsing route result: {e}")
+             return []
 
     def decode_polyline(self, polyline_str: str) -> List[Tuple[float, float]]:
         """
@@ -125,35 +153,103 @@ class GoogleMapsService:
         
         return compass_bearing
 
+    def get_panorama_metadata(self, lat: float, lng: float, radius: int = 50) -> Optional[Dict]:
+        """
+        Check if Street View is available at location and return metadata (pano_id, exact lat/lng).
+        """
+        import requests
+        if not settings.GOOGLE_MAPS_API_KEY:
+            return None
+            
+        url = "https://maps.googleapis.com/maps/api/streetview/metadata"
+        params = {
+            "location": f"{lat},{lng}",
+            "radius": radius,
+            "key": settings.GOOGLE_MAPS_API_KEY
+        }
+        
+        try:
+            resp = requests.get(url, params=params, timeout=5)
+            data = resp.json()
+            if data.get("status") == "OK":
+                return {
+                    "pano_id": data.get("pano_id"),
+                    "lat": data["location"]["lat"],
+                    "lng": data["location"]["lng"],
+                    "date": data.get("date")
+                }
+            return None
+        except Exception as e:
+            print(f"SV Metadata error: {e}")
+            return None
+
     def generate_street_view_metadata(self, points: List[Tuple[float, float]]) -> List[Dict]:
         """
         Generates metadata for Street View images along the route.
-        Calculates heading based on the path.
+        Validates availability with Street View API and snaps to exact location.
         """
         metadata = []
+        seen_panos = set()
+        
+        print(f"DEBUG: Validating {len(points)} points with Street View API...", flush=True)
+
         for i in range(len(points)):
-            current_point = points[i]
+            current_interpolated_point = points[i]
             
-            # Calculate heading
+            # calculate heading from route path (more stable to use original path direction)
             if i < len(points) - 1:
                 next_point = points[i+1]
-                heading = self.calculate_heading(current_point, next_point)
+                heading = self.calculate_heading(current_interpolated_point, next_point)
             elif i > 0:
-                # For the last point, use the heading from the previous point
                 prev_point = points[i-1]
-                heading = self.calculate_heading(prev_point, current_point)
+                heading = self.calculate_heading(prev_point, current_interpolated_point)
             else:
                 heading = 0.0
 
-            url = self.get_street_view_url(current_point[0], current_point[1], heading=heading, pitch=-20.0)
+            # Check Street View
+            sv_meta = self.get_panorama_metadata(current_interpolated_point[0], current_interpolated_point[1])
             
-            metadata.append({
-                "latitude": current_point[0],
-                "longitude": current_point[1],
-                "heading": heading,
-                "pitch": -20.0,
-                "image_url": url
-            })
+            if sv_meta:
+                pano_id = sv_meta['pano_id']
+                if pano_id in seen_panos:
+                     continue # Skip duplicate panoramas (snapped to same spot)
+                
+                seen_panos.add(pano_id)
+                
+                # Use EXACT coordinates from Street View
+                final_lat = sv_meta['lat']
+                final_lng = sv_meta['lng']
+                
+                # Re-generate URL with exact coords
+                url = self.get_street_view_url(final_lat, final_lng, heading=heading, pitch=-20.0)
+                
+                metadata.append({
+                    "latitude": final_lat,
+                    "longitude": final_lng,
+                    "heading": heading,
+                    "pitch": -20.0,
+                    "image_url": url,
+                    "pano_id": pano_id
+                })
             
         return metadata
+
+    def geocode(self, address: str) -> Optional[str]:
+        """
+        Geocodes an address string to 'lat,lng' format.
+        Returns None if geocoding fails.
+        """
+        if not self.client:
+            return None
+        
+        try:
+            result = self.client.geocode(address)
+            if result:
+                location = result[0]['geometry']['location']
+                return f"{location['lat']},{location['lng']}"
+            return None
+        except Exception as e:
+            print(f"Geocoding error: {e}")
+            return None
+
 google_maps_service = GoogleMapsService()

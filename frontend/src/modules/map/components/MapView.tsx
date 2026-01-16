@@ -1,9 +1,10 @@
-import React, { useEffect, useState, useMemo } from 'react'
-import { MapContainer, TileLayer, Polyline, useMapEvents } from 'react-leaflet'
+import React, { useEffect, useState } from 'react'
+import { MapContainer, TileLayer, CircleMarker, Polyline, useMapEvents } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useMap } from '../hooks'
 import PointDetailCard from './PointDetailCard'
 import MapStyleSwitcher from './MapStyleSwitcher'
+import RoutePlanner from './RoutePlanner'
 import type { MapStyle } from './MapStyleSwitcher'
 
 import { getRQIColor } from '../../ui/utils/colors'
@@ -43,13 +44,7 @@ const MapEvents = ({
     },
   })
 
-  // Initial initialization (if needed for fetch)
-  useEffect(() => {
-    const bounds = map.getBounds()
-    const bbox = [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()]
-    const center = map.getCenter()
-    onMove(bbox, [center.lat, center.lng], map.getZoom())
-  }, [map, onMove])
+
 
   return null
 }
@@ -76,6 +71,27 @@ const MapController = ({ viewport }: { viewport: { center: [number, number]; zoo
   return null
 }
 
+const MapClickHandler = () => {
+    const { pickingLocationFor, updatePickedLocation } = useMap()
+    const map = useMapEvents({
+        click: (e) => {
+            if (pickingLocationFor) {
+                updatePickedLocation({ lat: e.latlng.lat, lng: e.latlng.lng })
+            }
+        }
+    })
+    
+    useEffect(() => {
+        if (pickingLocationFor) {
+            map.getContainer().style.cursor = 'crosshair'
+        } else {
+            map.getContainer().style.cursor = ''
+        }
+    }, [pickingLocationFor, map])
+    
+    return null
+}
+
 interface MapViewProps {
   onTrain: (id: string | number) => void
   onMapMove: (bbox: number[], center: [number, number], zoom: number) => void
@@ -85,53 +101,23 @@ const MapView: React.FC<MapViewProps> = ({ onTrain, onMapMove }) => {
   const {
     points,
     loading,
-    fetchPoints,
     selectPoint,
     selectedPointDetail,
     loadingDetail,
     selectedPoint,
     viewport,
+    routePoints,
+    pickingLocationFor, // New field
   } = useMap()
   const [mapStyle, setMapStyle] = useState<MapStyle>('dark')
 
   // Unified handler for map moves
   const handleMapMove = React.useCallback(
     (bbox: number[], center: [number, number], zoom: number) => {
-      fetchPoints(bbox)
       onMapMove(bbox, center, zoom)
     },
-    [fetchPoints, onMapMove],
+    [onMapMove],
   )
-
-  // Generate segments for traffic-like visualization
-  const segments = useMemo(() => {
-    const segs = []
-    // Sort by ID to ensure order (assuming ID correlates with capture time/route)
-    const sortedPoints = [...points].sort((a, b) => a.id - b.id)
-
-    for (let i = 0; i < sortedPoints.length - 1; i++) {
-      const p1 = sortedPoints[i]
-      const p2 = sortedPoints[i + 1]
-
-      // Simple distance check to avoid cross-map lines (0.01 deg ~= 1km)
-      const dist = Math.sqrt(
-        Math.pow(p1.latitude - p2.latitude, 2) + Math.pow(p1.longitude - p2.longitude, 2),
-      )
-
-      if (dist < 0.01) {
-        // ~1km threshold to allow slightly sparser data connection
-        segs.push({
-          positions: [
-            [p1.latitude, p1.longitude],
-            [p2.latitude, p2.longitude],
-          ] as [number, number][],
-          color: getRQIColor(p1.rqi_score),
-          point: p1, // Attach point data for click handler
-        })
-      }
-    }
-    return segs
-  }, [points])
 
   return (
     <div style={{ height: '100vh', width: '100vw', position: 'relative' }}>
@@ -145,24 +131,45 @@ const MapView: React.FC<MapViewProps> = ({ onTrain, onMapMove }) => {
         />
         <MapEvents onMove={handleMapMove} />
         <MapController viewport={viewport} />
+        <MapClickHandler />
 
-        {/* Traffic Segments (Lines) */}
-        {segments.map((seg, idx) => (
+        {/* Route Visualization */}
+        {routePoints && (
           <Polyline
-            key={`seg-${idx}`}
-            positions={seg.positions}
+            positions={routePoints}
             pathOptions={{
-              color: seg.color,
-              weight: 8, // Slightly thicker for better visibility
-              opacity: 0.9,
+              color: '#3b82f6', // blue-500
+              weight: 6,
+              opacity: 0.6,
               lineCap: 'round',
             }}
+          />
+        )}
+
+        {/* Data Points (Markers) */}
+        {points.map((point) => (
+          <CircleMarker
+            key={point.id}
+            center={[point.latitude, point.longitude]}
+            radius={6}
+            pathOptions={{
+              color: getRQIColor(point.rqi_score),
+              fillColor: getRQIColor(point.rqi_score),
+              fillOpacity: 0.7,
+              weight: 1
+            }}
             eventHandlers={{
-              click: () => selectPoint(seg.point.id),
+              click: () => {
+                  if (!pickingLocationFor) {
+                      selectPoint(point.id)
+                  }
+              },
             }}
           />
         ))}
       </MapContainer>
+
+      <RoutePlanner />
 
       <MapStyleSwitcher currentStyle={mapStyle} onChange={setMapStyle} />
 
