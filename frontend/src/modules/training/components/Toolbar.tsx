@@ -22,7 +22,7 @@ interface ToolbarProps {
   onSave: () => void
   onDelete?: () => void
   onApplyPrevious?: () => void
-  onAutoDetect?: () => void
+  onRunAction?: (action: string, params?: Record<string, unknown>) => void
   loading?: boolean
   autoDetectConf?: number
   onConfChange?: (v: number) => void
@@ -120,7 +120,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
   onSave,
   onDelete,
   onApplyPrevious,
-  onAutoDetect,
+  onRunAction,
   loading,
   autoDetectConf = 0.25,
   onConfChange,
@@ -234,7 +234,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
           alignItems: 'center',
           gap: '12px',
         }}>
-        {onAutoDetect && (
+        {onRunAction && (
           <div
             style={{ position: 'relative' }}
             onMouseEnter={() => setShowConfSlider(true)}
@@ -255,7 +255,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
             )}
 
             <button
-              onClick={loading ? undefined : () => onAutoDetect()}
+              onClick={loading ? undefined : () => onRunAction('auto_detect', { confThreshold: autoDetectConf, classes: autoDetectClasses })}
               title={loading ? 'Processing...' : 'AI Auto-Detect (Magic Wand)'}
               style={{
                 width: '40px',
@@ -391,7 +391,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
                             border: isSelected
                               ? '1px solid rgba(168, 85, 247, 0.4)'
                               : '1px solid transparent',
-                            transition: 'all 0.1s',
+                              transition: 'all 0.1s',
                           }}>
                           {opt.label}
                         </div>

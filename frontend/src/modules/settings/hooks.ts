@@ -24,3 +24,6 @@ export const useSettings = () => {
     ...boundActions,
   }
 }
+
+/** Read-only access to the configured RQI display source ('yolo' | 'dino' | 'both'). */
+export const useRqiDisplaySource = () => useSelector(selectors.selectRqiDisplaySource)

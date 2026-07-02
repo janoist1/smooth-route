@@ -35,8 +35,8 @@ class InferenceService:
     def load_model(self, force_reload: bool = False):
         """Load or reload the models if settings changed."""
         from app.core.settings_manager import settings_manager
-        target_model_name = settings_manager.get_setting("ai_model", "yolov12s-seg.pt")
-        target_cleaner_name = settings_manager.get_setting("cleaner_model", "yolov8n.pt")
+        target_model_name = settings_manager.get_setting("yolo_model", "yolov12s-seg.pt")
+        target_cleaner_name = settings_manager.get_setting("yolo_cleaner_model", "yolov8n.pt")
         
         # Load main defect model
         if self.model is None or self.current_model_path != target_model_name or force_reload:
@@ -87,9 +87,9 @@ class InferenceService:
         
         from app.core.settings_manager import settings_manager
         if conf_threshold is None:
-            conf_threshold = settings_manager.get_setting("ai_inference_conf", 0.25)
+            conf_threshold = settings_manager.get_setting("yolo_inference_conf", 0.25)
             
-        cleaner_conf = settings_manager.get_setting("cleaner_conf", 0.25)
+        cleaner_conf = settings_manager.get_setting("yolo_cleaner_conf", 0.25)
             
         print(f"DEBUG: Inference on {image_path} with conf={conf_threshold} using model {self.current_model_path}")
         if classes:

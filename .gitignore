@@ -17,3 +17,12 @@ backend/data/
 # Build artifacts
 frontend/dist/
 node_modules/
+
+# ML regenerable feature caches (keep the small trained model + dataset.csv)
+ml/cache/*.npz
+
+# Local debug / scratch artifacts
+debug_preprocessed/
+backend/debug_*.jpg
+/package.json
+/package-lock.json

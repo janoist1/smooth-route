@@ -1,4 +1,4 @@
-import { createSlice } from '@reduxjs/toolkit'
+import { createSlice, createAction } from '@reduxjs/toolkit'
 import type { PayloadAction } from '@reduxjs/toolkit'
 import { createSagaAction } from 'saga-toolkit'
 import type { MapState, RoadPoint, RoadPointDetail } from './types'
@@ -31,6 +31,9 @@ export const fetchPointDetail = createSagaAction<number, RoadPointDetail>('map/f
 
 export const planRoute = createSagaAction<{ origin: string; destination: string }, [number, number][]>('map/planRoute')
 export const analyzeRoute = createSagaAction<{ origin: string; destination: string }, string>('map/analyzeRoute')
+
+// Dispatched on map page load to restore a running route job from the backend.
+export const reconnectRouteJob = createAction('map/reconnectRouteJob')
 
 const mapSlice = createSlice({
   name: 'map',
@@ -70,6 +73,13 @@ const mapSlice = createSlice({
 
     finishAnalysis(state) {
       state.isAnalyzingRoute = false
+    },
+
+    // Re-attach the progress UI to a route job still running on the backend
+    // (e.g. after a page reload, when routeAnalysisJobId was lost from memory).
+    restoreRouteJob(state, action: PayloadAction<string>) {
+      state.routeAnalysisJobId = action.payload
+      state.isAnalyzingRoute = true
     },
                    
     clearRoute(state) {
@@ -141,5 +151,5 @@ const mapSlice = createSlice({
   },
 })
 
-export const actions = { ...mapSlice.actions, fetchPoints, fetchPointDetail, planRoute, analyzeRoute }
+export const actions = { ...mapSlice.actions, fetchPoints, fetchPointDetail, planRoute, analyzeRoute, reconnectRouteJob }
 export default mapSlice.reducer

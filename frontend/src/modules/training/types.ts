@@ -2,6 +2,7 @@ export interface TrainingPoint {
   id: number
   imageUrl?: string
   rqiScore?: number
+  dinoRqiScore?: number
   manualRqi?: number
   manualTags?: string[]
   createdAt: string
@@ -45,6 +46,12 @@ export interface TrainingStats {
   fairCount: number
   poorCount: number
   pendingAnalysis: number
+  // Classification specific (DINO)
+  rqi1Count: number
+  rqi2Count: number
+  rqi3Count: number
+  rqi4Count: number
+  rqi5Count: number
 }
 
 export interface TrainingState {
@@ -68,7 +75,7 @@ export interface TrainingState {
   // Job Tracking - Reference to generic job
   analysisJobId: string | null
   
-  trainingStatus: 'idle' | 'running' | 'completed' | 'failed' | 'cancelled'
+  trainingStatus: 'idle' | 'starting' | 'running' | 'completed' | 'failed' | 'cancelled'
 
   // Navigation & List Cache
   navigationIds: string[]
@@ -89,4 +96,8 @@ export interface TrainingState {
   } | null
   autoDetectConf: number // Local override for magic wand sensitivity
   autoDetectClasses: string[] // Classes to filter for auto-detection
+
+  // Unified Review Action State
+  loadingAction: string | null
+  previewUrl: string | null
 }

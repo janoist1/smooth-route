@@ -7,7 +7,8 @@ import MapStyleSwitcher from './MapStyleSwitcher'
 import RoutePlanner from './RoutePlanner'
 import type { MapStyle } from './MapStyleSwitcher'
 
-import { getRQIColor } from '../../ui/utils/colors'
+import { getRQIColor, resolveRqi } from '../../ui'
+import { useRqiDisplaySource } from '../../settings'
 
 const TILE_LAYERS: Record<MapStyle, { url: string; attribution: string }> = {
   dark: {
@@ -93,7 +94,7 @@ const MapClickHandler = () => {
 }
 
 interface MapViewProps {
-  onTrain: (id: string | number) => void
+  onTrain: (id: string | number, model?: 'yolo' | 'dino') => void
   onMapMove: (bbox: number[], center: [number, number], zoom: number) => void
 }
 
@@ -107,9 +108,11 @@ const MapView: React.FC<MapViewProps> = ({ onTrain, onMapMove }) => {
     selectedPoint,
     viewport,
     routePoints,
-    pickingLocationFor, // New field
+    pickingLocationFor, 
   } = useMap()
   const [mapStyle, setMapStyle] = useState<MapStyle>('dark')
+
+  const displaySource = useRqiDisplaySource()
 
   // Unified handler for map moves
   const handleMapMove = React.useCallback(
@@ -147,14 +150,17 @@ const MapView: React.FC<MapViewProps> = ({ onTrain, onMapMove }) => {
         )}
 
         {/* Data Points (Markers) */}
-        {points.map((point) => (
+        {points.map((point) => {
+          const { score } = resolveRqi(point, displaySource)
+
+          return (
           <CircleMarker
             key={point.id}
             center={[point.latitude, point.longitude]}
             radius={6}
             pathOptions={{
-              color: getRQIColor(point.rqi_score),
-              fillColor: getRQIColor(point.rqi_score),
+              color: getRQIColor(score),
+              fillColor: getRQIColor(score),
               fillOpacity: 0.7,
               weight: 1
             }}
@@ -166,7 +172,7 @@ const MapView: React.FC<MapViewProps> = ({ onTrain, onMapMove }) => {
               },
             }}
           />
-        ))}
+        )})}
       </MapContainer>
 
       <RoutePlanner />

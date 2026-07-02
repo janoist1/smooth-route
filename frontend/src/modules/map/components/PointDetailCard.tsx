@@ -1,19 +1,37 @@
 import React from 'react'
 import type { RoadPointDetail } from '../types'
+import { getRQIColor, getRQILabel, resolveRqi } from '../../ui'
+import { useRqiDisplaySource } from '../../settings'
 
 interface PointDetailCardProps {
   detail: RoadPointDetail
   loading: boolean
   onClose: () => void
-  onTrain: (id: string | number) => void
+  onTrain: (id: string | number, model?: 'yolo' | 'dino') => void
 }
 
 const PointDetailCard: React.FC<PointDetailCardProps> = ({ detail, loading, onClose, onTrain }) => {
-  // Use proxy for image path directly
+  const displaySource = useRqiDisplaySource()
+  const { score: displayScore, model: targetModel, label: sourceLabel } = resolveRqi(
+    detail ?? {},
+    displaySource,
+  )
 
+  // Loading State
   if (loading) {
     return (
-      <div className="glass-panel" style={{ padding: '20px', minWidth: '300px' }}>
+      <div className="glass-panel" style={{ 
+          position: 'absolute',
+          bottom: '180px',
+          left: '30px',
+          padding: '20px', 
+          minWidth: '300px',
+          background: 'var(--bg-panel)',
+          backdropFilter: 'blur(12px)',
+          borderRadius: '16px',
+          border: 'var(--glass-border)',
+          zIndex: 1000
+      }}>
         <p>Loading details...</p>
       </div>
     )
@@ -24,22 +42,12 @@ const PointDetailCard: React.FC<PointDetailCardProps> = ({ detail, loading, onCl
   // Use proxy for image path directly (it already includes /api prefix from backend)
   const imgUrl = detail.image_path || detail.image_url
 
-  // Helper for text label
-  const getQualityLabel = (score?: number) => {
-    if (score === undefined) return 'Unknown'
-    if (score <= 1.5) return 'Excellent'
-    if (score <= 2.5) return 'Good'
-    if (score <= 3.5) return 'Fair'
-    if (score <= 4.5) return 'Poor'
-    return 'Critical'
-  }
-
   return (
     <div
       className="glass-panel"
       style={{
         position: 'absolute',
-        bottom: '100px',
+        bottom: '180px', // Moved up to avoid overlap
         left: '30px',
         width: '300px',
         padding: '0',
@@ -112,22 +120,27 @@ const PointDetailCard: React.FC<PointDetailCardProps> = ({ detail, loading, onCl
           <span style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>Road Conditions</span>
           <span
             style={{
-              background: getRQIColor(detail.rqi_score),
+              background: getRQIColor(displayScore),
               color: '#000',
               padding: '4px 12px',
               borderRadius: '20px',
               fontWeight: 'bold',
               fontSize: '0.85rem',
             }}>
-            {getQualityLabel(detail.rqi_score)}
+            {getRQILabel(displayScore)}
           </span>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
           <span style={{ fontSize: '2.5rem', fontWeight: '800', lineHeight: 1 }}>
-            {detail.rqi_score ? detail.rqi_score.toFixed(1) : '-'}
+            {displayScore !== undefined ? displayScore.toFixed(1) : '-'}
           </span>
-          <span style={{ color: 'var(--text-dim)', fontSize: '0.9rem' }}>/ 5.0 RQI Score</span>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+             <span style={{ color: 'var(--text-dim)', fontSize: '0.9rem' }}>/ 5.0 RQI Score</span>
+             <span style={{ color: targetModel === 'dino' ? '#34d399' : '#60a5fa', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase' }}>
+                {sourceLabel} AI
+             </span>
+          </div>
         </div>
 
         <div
@@ -141,7 +154,7 @@ const PointDetailCard: React.FC<PointDetailCardProps> = ({ detail, loading, onCl
           Recorded:{' '}
           {detail.created_at ? new Date(detail.created_at).toLocaleDateString() : 'Unknown'}
           <button
-            onClick={() => onTrain(detail.id)}
+            onClick={() => onTrain(detail.id, targetModel)}
             style={{
               marginTop: '10px',
               width: '100%',
@@ -163,14 +176,6 @@ const PointDetailCard: React.FC<PointDetailCardProps> = ({ detail, loading, onCl
       </div>
     </div>
   )
-}
-
-const getRQIColor = (score?: number) => {
-  if (score === undefined) return '#888'
-  if (score <= 2.0) return '#4ade80'
-  if (score <= 3.0) return '#facc15'
-  if (score <= 4.0) return '#f87171'
-  return '#ef4444'
 }
 
 export default PointDetailCard

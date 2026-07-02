@@ -78,7 +78,10 @@ function* applyPresetWorker(
 }
 
 export default [
-  takeLatestAsync(fetchSettings.type, fetchSettingsWorker),
-  takeLatestAsync(updateSetting.type, updateSettingWorker),
-  takeLatestAsync(applyPreset.type, applyPresetWorker),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  takeLatestAsync((fetchSettings as any).type, fetchSettingsWorker),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  takeLatestAsync((updateSetting as any).type, updateSettingWorker),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  takeLatestAsync((applyPreset as any).type, applyPresetWorker),
 ]

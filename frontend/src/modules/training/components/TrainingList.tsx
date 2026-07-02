@@ -1,8 +1,8 @@
 import React from 'react'
-import { Check } from 'lucide-react'
 import { DataGrid, type ColumnDef, Pagination } from '../../ui'
 import { getRQIColor } from '../../ui'
 import type { TrainingPoint } from '../types'
+import { useRqiDisplaySource } from '../../settings'
 
 interface TrainingListProps {
   items: TrainingPoint[]
@@ -25,8 +25,10 @@ export const TrainingList: React.FC<TrainingListProps> = ({
   onPageChange,
   onRetry,
 }) => {
+  const displaySource = useRqiDisplaySource()
+
   // --- Table Configuration ---
-  const columns: ColumnDef<TrainingPoint>[] = [
+  const allColumns: ColumnDef<TrainingPoint>[] = [
     {
       key: 'image',
       header: 'Image',
@@ -58,7 +60,7 @@ export const TrainingList: React.FC<TrainingListProps> = ({
     },
     {
       key: 'rqi',
-      header: 'AI RQI (1=Best)',
+      header: 'YOLO AI',
       render: (item: TrainingPoint) => {
         const val = item.rqiScore
         if (val === undefined || val === null) return <span style={{ color: '#6b7280' }}>-</span>
@@ -67,18 +69,25 @@ export const TrainingList: React.FC<TrainingListProps> = ({
       },
     },
     {
-      key: 'manual',
-      header: 'Ground Truth (1=Best)',
+      key: 'dino_rqi',
+      header: 'DINO AI',
+      render: (item: TrainingPoint) => {
+        const val = item.dinoRqiScore
+        if (val === undefined || val === null) return <span style={{ color: '#6b7280' }}>-</span>
+        const color = getRQIColor(val)
+        return <span style={{ fontWeight: 'bold', color }}>{val.toFixed(1)}</span>
+      },
+    },
+    {
+      key: 'dino_manual',
+      header: 'Ground Truth',
       render: (item: TrainingPoint) => {
         if (item.manualRqi || item.manualRqi === 0) {
           return (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Check size={14} style={{ color: '#4ade80' }} />
-              <span style={{ color: '#e5e7eb', fontWeight: 500 }}>{item.manualRqi.toFixed(1)}</span>
-            </div>
+            <span style={{ color: '#e5e7eb', fontWeight: 500 }}>{item.manualRqi.toFixed(0)}</span>
           )
         }
-        return <span style={{ color: '#6b7280', fontStyle: 'italic' }}>Pending</span>
+        return <span style={{ color: '#6b7280', fontStyle: 'italic', fontSize: '11px' }}>Pending</span>
       },
     },
     {
@@ -105,6 +114,12 @@ export const TrainingList: React.FC<TrainingListProps> = ({
       ),
     },
   ]
+
+  const columns = allColumns.filter(col => {
+      if (col.key === 'rqi') return displaySource === 'yolo' || displaySource === 'both'
+      if (col.key === 'dino_rqi') return displaySource === 'dino' || displaySource === 'both'
+      return true
+  })
 
   if (error) {
     return (

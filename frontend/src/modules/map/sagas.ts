@@ -1,9 +1,19 @@
 import { call, put, takeLatest, select, takeEvery } from 'redux-saga/effects'
+import type { SagaIterator } from 'redux-saga'
+import { takeLatestAsync } from 'saga-toolkit'
+import type { SagaActionFromCreator } from 'saga-toolkit'
 import { actions } from './slice'
+import { actions as apiActions } from '../api'
 import { client, gql } from '../graphql'
 import type { RootState } from '../../store'
 import * as selectors from './selectors'
-import type { GetPointsQuery, GetPointDetailQuery, GetRouteQuery, ProcessRouteMutation } from '../graphql/generated/graphql'
+import type {
+  GetPointsQuery,
+  GetPointDetailQuery,
+  GetRouteQuery,
+  ProcessRouteMutation,
+  GetActiveJobQuery,
+} from '../graphql/generated/graphql'
 
 // Fragment Colocation: Define what we need
 // Inlined for simplicity to satisfy linter
@@ -14,6 +24,8 @@ const GET_POINTS = gql(`
       latitude
       longitude
       rqiScore
+      dinoRqiScore
+      rqiSource
       heading
     }
   }
@@ -26,6 +38,8 @@ const GET_POINT_DETAIL = gql(`
       latitude
       longitude
       rqiScore
+      dinoRqiScore
+      rqiSource
       heading
       pitch
       imageUrl
@@ -33,6 +47,7 @@ const GET_POINT_DETAIL = gql(`
       manualRqi
       manualTags
       manualAnnotations
+# ...
       # analysis
       damageCount
       damageTypes
@@ -63,8 +78,21 @@ const PROCESS_ROUTE = gql(`
   }
 `)
 
-import { takeLatestAsync } from 'saga-toolkit'
-import type { SagaActionFromCreator } from 'saga-toolkit'
+// Reuse the already-generated GetActiveJob document (identical string) so the
+// typed gql resolves without a codegen run.
+const GET_ACTIVE_JOB = gql(`
+    query GetActiveJob {
+        activeJob {
+            id
+            type
+            status
+            progress
+            total
+            details
+            result
+        }
+    }
+`)
 
 // Backend endpoint: GET /api/v1/points
 function* fetchPointsWorker(action: SagaActionFromCreator<typeof actions.fetchPoints>) {
@@ -81,6 +109,7 @@ function* fetchPointsWorker(action: SagaActionFromCreator<typeof actions.fetchPo
     longitude: p.longitude,
     heading: p.heading,
     rqi_score: p.rqiScore ?? undefined,
+    rqi_source: p.rqiSource,
   }))
 }
 
@@ -101,6 +130,8 @@ function* fetchPointDetailWorker(action: SagaActionFromCreator<typeof actions.fe
     heading: pt.heading,
     pitch: pt.pitch,
     rqi_score: pt.rqiScore,
+    dino_rqi_score: pt.dinoRqiScore,
+    rqi_source: pt.rqiSource,
     damage_count: pt.damageCount,
     damage_types: pt.damageTypes,
     analysis_metadata: pt.analysisMetadata,
@@ -146,15 +177,35 @@ function* analyzeRouteWorker(action: SagaActionFromCreator<typeof actions.analyz
   return result.data.processRoute.id
 }
 
-import { actions as apiActions } from '../api'
-
-// ...
-
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function* watchJobStart(action: any) {
     const jobId = action.payload
     // Register the job in the global API module, which will start the polling loop
     yield put(apiActions.registerJob(jobId))
+}
+
+// On map load, re-attach to a route job still running on the backend so the
+// progress UI survives a page reload (routeAnalysisJobId lives only in memory).
+function* reconnectRouteJobSaga(): SagaIterator {
+  try {
+    const result: { data: GetActiveJobQuery } = yield call([client, client.query], {
+      query: GET_ACTIVE_JOB,
+      fetchPolicy: 'network-only',
+    })
+
+    const job = result.data?.activeJob
+    if (!job) return
+
+    const status = String(job.status).toLowerCase()
+    const done = status === 'completed' || status === 'failed' || status === 'cancelled'
+    if (done) return
+    if (job.total > 0 && job.progress >= job.total) return
+
+    yield put(actions.restoreRouteJob(job.id))
+    yield put(apiActions.registerJob(job.id))
+  } catch (err) {
+    console.error('Failed to reconnect route job:', err)
+  }
 }
 
 
@@ -204,5 +255,6 @@ export default [
   takeLatestAsync(actions.analyzeRoute.type, analyzeRouteWorker),
   // Use toString() to be safe if it's an action creator or string
   takeLatest(actions.analyzeRoute.fulfilled.toString(), watchJobStart),
+  takeLatest(actions.reconnectRouteJob.type, reconnectRouteJobSaga),
   takeEvery(apiActions.updateJob.type, watchJobUpdates),
 ]

@@ -38,7 +38,7 @@ const TrainingView: React.FC<TrainingViewProps> = ({ allIds, onNext, onPrev, onC
     setComment,
     setSettings,
     lastSavedSettings,
-    autoDetect,
+    performReviewAction,
     autoDetectConf,
     setAutoDetectConf,
     autoDetectClasses,
@@ -142,7 +142,7 @@ const TrainingView: React.FC<TrainingViewProps> = ({ allIds, onNext, onPrev, onC
           handleNext()
           break
         case 'w':
-          autoDetect(autoDetectConf)
+          performReviewAction({ actionType: 'auto_detect', params: { confThreshold: autoDetectConf, classes: autoDetectClasses } })
           break
         case 'f':
           filterCurrentAnnotations(filterThreshold)
@@ -211,8 +211,9 @@ const TrainingView: React.FC<TrainingViewProps> = ({ allIds, onNext, onPrev, onC
     handleApplyPrevious,
     hasNext,
     setTool,
-    autoDetect,
+    performReviewAction,
     autoDetectConf,
+    autoDetectClasses,
     filterCurrentAnnotations,
     filterThreshold,
   ])
@@ -244,7 +245,7 @@ const TrainingView: React.FC<TrainingViewProps> = ({ allIds, onNext, onPrev, onC
         onSave={handleSave}
         onDelete={handleDelete}
         onApplyPrevious={lastSavedSettings ? handleApplyPrevious : undefined}
-        onAutoDetect={() => autoDetect(autoDetectConf)}
+        onRunAction={(action, params) => performReviewAction({ actionType: action, params: params || {} })}
         autoDetectConf={autoDetectConf}
         onConfChange={setAutoDetectConf}
         autoDetectClasses={autoDetectClasses}

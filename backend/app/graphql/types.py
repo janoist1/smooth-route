@@ -22,7 +22,9 @@ class Point:
     damage_count: int
     damage_types: Optional[JSON]
     analysis_metadata: Optional[JSON]
+    dino_rqi_score: Optional[float] = None
     created_at: datetime.datetime
+    rqi_source: str = "yolo" 
     
     # Manual Data (Joined)
     manual_rqi: Optional[float] = None
@@ -72,11 +74,16 @@ class TrainingStats:
     total: int
     pending: int
     annotated: int
-    avg_rqi: float
-    good_count: int
-    fair_count: int
-    poor_count: int
-    pending_analysis: int
+    avg_rqi: float = strawberry.field(name="avgRqi")
+    good_count: int = strawberry.field(name="goodCount")
+    fair_count: int = strawberry.field(name="fairCount")
+    poor_count: int = strawberry.field(name="poorCount")
+    rqi1_count: int = strawberry.field(name="rqi1Count")
+    rqi2_count: int = strawberry.field(name="rqi2Count")
+    rqi3_count: int = strawberry.field(name="rqi3Count")
+    rqi4_count: int = strawberry.field(name="rqi4Count")
+    rqi5_count: int = strawberry.field(name="rqi5Count")
+    pending_analysis: int = strawberry.field(name="pendingAnalysis")
 
 @strawberry.type
 class TrainingPointsResponse:
@@ -129,3 +136,23 @@ class DetectInput:
     filename: str
     conf_threshold: Optional[float] = None
     classes: Optional[List[str]] = None
+
+@strawberry.type
+class Annotation:
+    id: str
+    label: str
+    score: float
+    type: str  # 'box' or 'polygon'
+    points: JSON # List of [x, y]
+
+@strawberry.input
+class ReviewActionInput:
+    action_type: str
+    parameters: JSON # Flexible params (filename, options, etc.)
+
+@strawberry.type
+class ReviewActionResult:
+    success: bool
+    message: Optional[str] = None
+    processed_image_url: Optional[str] = None
+    annotations: Optional[List[Annotation]] = None

@@ -1,10 +1,10 @@
 
-import { call, put, take } from 'redux-saga/effects'
+import { call, put, take, cancelled, fork, cancel } from 'redux-saga/effects'
+import type { Task, EventChannel, SagaIterator } from 'redux-saga'
 import { eventChannel, END } from 'redux-saga'
-import { SagaActionFromCreator, takeLatestAsync } from 'saga-toolkit'
+import { type SagaActionFromCreator, takeLatestAsync } from 'saga-toolkit'
 import { actions } from './slice'
 import { client, gql } from '../graphql'
-import { takeEvery, cancelled } from 'redux-saga/effects'
 
 const GET_JOB = gql(`
   query GetJob($id: String!) {
@@ -51,7 +51,23 @@ function* pollJobWorker(action: SagaActionFromCreator<typeof actions.pollJob>) {
 function createJobChannel(jobId: string) {
   return eventChannel(emit => {
     console.log(`[API] Opening SSE connection for job ${jobId}`)
-    const es = new EventSource(`http://localhost:8000/api/v1/job/${jobId}/stream`)
+    const es = new EventSource(`/api/v1/job/${jobId}/stream`)
+
+    es.onerror = (error) => {
+      console.error('SSE Error', error)
+      if (es.readyState === 2) {
+          emit(END)
+      }
+    }
+
+    es.addEventListener('error', (e: Event) => {
+        // Backend sends yield {"event": "error", "data": "Job not found"}
+        // Casting e to any to access data if it exists, or just log
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        console.error("SSE Custom Error Event:", (e as any).data)
+        emit(END) 
+        es.close()
+    })
 
     es.onmessage = (event) => {
       try {
@@ -67,13 +83,6 @@ function createJobChannel(jobId: string) {
       }
     }
 
-    es.onerror = (error) => {
-      console.error('SSE Error', error)
-      if (es.readyState === 2) {
-          emit(END)
-      }
-    }
-
     return () => {
       console.log(`[API] Closing SSE connection for job ${jobId}`)
       es.close()
@@ -81,23 +90,27 @@ function createJobChannel(jobId: string) {
   })
 }
 
-
-function* watchRegisterJob(action: ReturnType<typeof actions.registerJob>) {
-    const jobId = action.payload
-    yield call(sseJobWorker, jobId)
+interface JobEventData {
+  job_id: string
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'unknown'
+  progress: number
+  total: number
+  message: string
+  result?: unknown
+  error?: string | null
 }
 
-function* sseJobWorker(jobId: string) {
-    let channel
+// Fixed Sagas with correct typing
+
+function* sseJobWorker(jobId: string): SagaIterator {
+    let channel: EventChannel<JobEventData> | undefined
     try {
-        channel = yield call(createJobChannel, jobId)
+        channel = (yield call(createJobChannel, jobId)) as EventChannel<JobEventData>
         
         while (true) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const data: any = yield take(channel as any)
+            const data: JobEventData = yield take(channel)
             
             // Map SSE data to store format
-            // Backend sends: { job_id, status, progress, total, message, ... }
             yield put(actions.updateJob({
                 id: jobId,
                 status: data.status,
@@ -105,7 +118,7 @@ function* sseJobWorker(jobId: string) {
                 total: data.total,
                 message: data.message,
                 result: data.result,
-                error: data.error
+                error: data.error || null
             }))
         }
     } catch (err) {
@@ -117,7 +130,25 @@ function* sseJobWorker(jobId: string) {
     }
 }
 
+// Replaces takeEvery/takeLatest with a specific deduplication logic per Job ID
+function* watchRegisterJob(): SagaIterator {
+    const tasks: Record<string, Task> = {}
+
+    while (true) {
+        const action: ReturnType<typeof actions.registerJob> = yield take(actions.registerJob.type)
+        const jobId = action.payload
+
+        // If we are already monitoring this job, cancel the old worker to allow restart/refresh
+        if (tasks[jobId]) {
+            yield cancel(tasks[jobId])
+        }
+
+        // Start new worker
+        tasks[jobId] = yield fork(sseJobWorker, jobId)
+    }
+}
+
 export default [
     takeLatestAsync(actions.pollJob.type, pollJobWorker),
-    takeEvery(actions.registerJob.type, watchRegisterJob),
+    fork(watchRegisterJob),
 ]

@@ -30,6 +30,10 @@ export default defineConfig({
         target: 'http://localhost:8000',
         changeOrigin: true,
       },
+      '/previews': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
     },
   },
   optimizeDeps: {

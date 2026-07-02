@@ -33,7 +33,8 @@ class StreetViewImage(Base):
     analysis_metadata = Column(
         JSON, nullable=True
     )  # Detailed analysis info (edge_density, variance, damage_score, etc.)
-
+    # DINO Analysis
+    dino_rqi_score = Column(Float, nullable=True, index=True)
 
 class Job(Base):
     """

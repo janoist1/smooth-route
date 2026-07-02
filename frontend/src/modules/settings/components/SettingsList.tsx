@@ -259,6 +259,16 @@ const SettingsList: React.FC<SettingsListProps> = ({
                             ]}
                             onChange={val => handleLocalUpdate(item.key, val)}
                           />
+                        ) : item.key === 'rqi_display_source' ? (
+                          <Select
+                            value={String(localValues[item.key] ?? 'both')}
+                            options={[
+                              { value: 'yolo', label: 'YOLO (Objektum Detektálás)' },
+                              { value: 'dino', label: 'DINO (Osztályozás)' },
+                              { value: 'both', label: 'Mindkettő' },
+                            ]}
+                            onChange={val => handleLocalUpdate(item.key, val)}
+                          />
                         ) : typeof item.value === 'string' ? (
                           <TextInput
                             value={String(localValues[item.key] ?? '')}

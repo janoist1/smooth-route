@@ -3,6 +3,8 @@ export const ROUTES = {
   TRAINING_LIST: { path: '/training', exact: true },
   TRAINING_DETAIL: { path: '/training/:id', exact: true },
   TRAINING_REVIEW: { path: '/training/:id/review', exact: true },
+  TRAINING_DINO_LIST: { path: '/training/dino', exact: true },
+  TRAINING_DINO_REVIEW: { path: '/training/dino/:id/review', exact: true },
   SETTINGS: { path: '/settings', exact: true },
 } as const
 

@@ -3,7 +3,10 @@ export interface RoadPoint {
   latitude: number
   longitude: number
   rqi_score?: number
-  heading: number
+  dino_rqi_score?: number
+  manual_rqi?: number
+  rqi_source?: string
+  heading?: number
 }
 
 export interface RoadPointDetail extends RoadPoint {

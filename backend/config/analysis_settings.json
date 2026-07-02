@@ -1,50 +1,90 @@
 [
     {
-        "key": "ai_model",
+        "key": "yolo_model",
         "value": "yolov8m-seg-best-20260105.pt",
-        "description": "Aktív AI Modell",
+        "description": "Aktív YOLO Modell",
         "example": "yolov8m-seg.pt",
-        "category": "AI & Modell",
-        "explanation": "Az úthibák felismeréséért és elemzéséért felelős mesterséges intelligencia modell."
+        "category": "YOLO (Objektum Detektálás)",
+        "explanation": "Az úthibák felismeréséért felelős YOLO objektum detektáló modell útvonala."
     },
     {
-        "key": "cleaner_model",
+        "key": "yolo_cleaner_model",
         "value": "yolov8m-seg.pt",
-        "description": "Tisztító AI Modell",
+        "description": "Tisztító YOLO Modell",
         "example": "yolov8n.pt",
-        "category": "AI & Modell",
-        "explanation": "A képek előfeldolgozásáért és a zavaró elemek eltávolításáért felelős mesterséges intelligencia modell."
+        "category": "YOLO (Objektum Detektálás)",
+        "explanation": "A képek előfeldolgozásáért és a zavaró elemek (pl. autók) eltávolításáért felelős modell."
     },
     {
-        "key": "cleaner_conf",
+        "key": "yolo_cleaner_conf",
         "value": 0.25,
-        "description": "Tisztító AI Biztonsági Szint",
+        "description": "Tisztító YOLO Biztonsági Szint",
         "example": "0.25",
-        "category": "AI & Modell",
+        "category": "YOLO (Objektum Detektálás)",
         "explanation": "Meghatározza, milyen magabiztosnak kell lennie a tisztító modellnek a zavaró elemek azonosításához."
     },
     {
-        "key": "ai_inference_conf",
+        "key": "yolo_inference_conf",
         "value": 0.15,
-        "description": "AI Észlelési Küszöb",
+        "description": "YOLO Észlelési Küszöb",
         "example": "0.25",
-        "category": "AI & Modell",
-        "explanation": "Meghatározza a minimális magabiztossági szintet minden AI alapú észlelésnél (Varázspálca és kötegelt elemzés)."
+        "category": "YOLO (Objektum Detektálás)",
+        "explanation": "Meghatározza a minimális magabiztossági szintet minden YOLO alapú észlelésnél."
     },
     {
-        "key": "training_epochs",
-        "value": 150,
-        "description": "Tanulási Időtartam",
-        "example": "10-20",
-        "category": "Tanítás",
-        "explanation": "Hányszor fusson át az AI a teljes tanító adatbázison."
+        "key": "yolo_training_epochs",
+        "value": 50,
+        "description": "YOLO Epochok Száma",
+        "example": "50",
+        "category": "Tanítás - YOLO",
+        "explanation": "Hányszor fusson át a tanítás a YOLO adathalmazon."
+    },
+    {
+        "key": "yolo_training_batch_size",
+        "value": 16,
+        "description": "YOLO Batch Size",
+        "example": "16",
+        "category": "Tanítás - YOLO",
+        "explanation": "Egyszerre feldolgozott képek száma (YOLO)."
+    },
+    {
+        "key": "yolo_training_patience",
+        "value": 50,
+        "description": "YOLO Türelem (Patience)",
+        "example": "50",
+        "category": "Tanítás - YOLO",
+        "explanation": "Korai leállás (Early Stopping): Hány epoch javulás nélkül, mielőtt leáll a tanítás."
+    },
+    {
+        "key": "dino_model_name",
+        "value": "dinov2_vits14",
+        "description": "Aktív DINO Modell",
+        "example": "dinov2_vits14",
+        "category": "DINO (Osztályozás)",
+        "explanation": "A Meta AI DINOv2 modellje, amelyet általános útosztályozásra (RQI) használunk."
+    },
+    {
+        "key": "dino_training_epochs",
+        "value": 20,
+        "description": "DINO Epochok Száma",
+        "example": "20",
+        "category": "Tanítás - DINO",
+        "explanation": "Hányszor fusson át a tanítás a DINO osztályozó fejen (Linear Head)."
+    },
+    {
+        "key": "dino_training_batch_size",
+        "value": 32,
+        "description": "DINO Batch Size",
+        "example": "32",
+        "category": "Tanítás - DINO",
+        "explanation": "Egyszerre feldolgozott képek száma (DINO Features)."
     },
     {
         "key": "training_provider",
-        "value": "google_colab",
+        "value": "local",
         "description": "Tanítási Platform",
         "example": "local",
-        "category": "Tanítás",
+        "category": "Tanítás - Általános",
         "explanation": "Hol fusson a tanítás: lokálisan (helyi gépen) vagy Google Colab felhőben."
     },
     {
@@ -52,24 +92,8 @@
         "value": 4,
         "description": "Adatbetöltő Szálak",
         "example": "4",
-        "category": "Tanítás",
-        "explanation": "Párhuzamos adatbetöltő processzek száma a gyorsabb tanításhoz."
-    },
-    {
-        "key": "training_batch_size",
-        "value": 16,
-        "description": "Adagolási Méret",
-        "example": "16",
-        "category": "Tanítás",
-        "explanation": "Az egyszerre feldolgozott képek száma a tanítás alatt."
-    },
-    {
-        "key": "training_patience",
-        "value": 50,
-        "description": "Türelem (Patience)",
-        "example": "50",
-        "category": "Tanítás",
-        "explanation": "Hány epoch-ot várjon a rendszer javulás nélkül, mielőtt leállítja a tanítást. 0 a kikapcsoláshoz."
+        "category": "Tanítás - Általános",
+        "explanation": "Párhuzamos adatbetöltő processzek száma (mindkét modellnél használva)."
     },
     {
         "key": "repair_score_weight",
@@ -150,5 +174,13 @@
         "example": null,
         "category": "Súlyok",
         "explanation": "Az aszfalt érdességének hatása a végső minősítésre."
+    },
+    {
+        "key": "rqi_display_source",
+        "value": "dino",
+        "description": "RQI Megjelenítés Forrása",
+        "example": "yolo, dino, both",
+        "category": "Megjelenítés",
+        "explanation": "Kiválaszthatja, hogy melyik AI erdeményei jelenjenek meg a listákban (YOLO, DINO vagy Mindkettő)."
     }
 ]

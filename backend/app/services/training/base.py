@@ -26,6 +26,9 @@ class TrainingConfig:
     # Paths
     base_dir: str
     output_dir: str
+    
+    # Options with defaults
+    model_type: str = "YOLO" # "YOLO" or "DINO"
     patience: int = 50
     
     # Callbacks

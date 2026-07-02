@@ -21,28 +21,48 @@ interface FetchListSuccess {
   hasMore: boolean
 }
 
-export const fetchImage = createSagaAction<number, FetchImageSuccess>('training/fetchImage')
-export const fetchList = createSagaAction<{ mode: string; offset?: number }, FetchListSuccess>(
+export const fetchImage = createSagaAction<FetchImageSuccess, number>('training/fetchImage')
+export const fetchList = createSagaAction<FetchListSuccess, { mode: string; offset?: number; model?: string }>(
   'training/fetchList',
 )
-export const fetchStats = createSagaAction<{ mode: string }, TrainingStats>('training/fetchStats')
+export const fetchStats = createSagaAction<TrainingStats, { mode: string; model?: string }>('training/fetchStats')
 export const saveAnnotations = createSagaAction<
-  void,
-  { rqi: number | null; tags: string[]; comment: string }
+  { rqi: number | null; tags: string[]; comment: string },
+  void
 >('training/saveAnnotations')
-export const deleteTrainingData = createSagaAction<string, void>('training/deleteTrainingData')
+export const deleteTrainingData = createSagaAction<void, string>('training/deleteTrainingData')
 
-export const autoDetect = createSagaAction<number | undefined, Annotation[]>('training/autoDetect')
+// Unified Review Action
+export const performReviewAction = createSagaAction<
+  { annotations?: Annotation[]; processedImageUrl?: string; message?: string },
+  { actionType: string; params: Record<string, unknown> }
+>('training/performReviewAction')
+
+
+// DINO Classification Actions
+export const fetchDinoList = createSagaAction<
+  { items: TrainingPoint[]; totalCount: number; offset: number; hasMore: boolean },
+  { offset: number; mode?: string }
+>('training/fetchDinoList')
+// fetchDinoStats removed - use fetchStats({ model: 'dino' })
+export const fetchDinoImage = createSagaAction<
+  { id: string; url: string; manualRqi: number | null },
+  number
+>('training/fetchDinoImage')
+export const saveDinoRqi = createSagaAction<{ nextId: number | null }, void>(
+  'training/saveDinoRqi',
+)
+export const predictDinoRqi = createSagaAction<number | null, void>('training/predictDinoRqi')
 
 // Job Actions
 // Job Actions
 export const reconnectJob = createAction('training/reconnectJob')
 export const runAnalysis = createSagaAction<
-  { strategy: string; limit: number; reanalyze: boolean },
-  { jobId: string }
+  { jobId: string },
+  { strategy: string; limit: number; reanalyze: boolean }
 >('training/runAnalysis')
-export const startTraining = createSagaAction<void, { jobId: string }>('training/startTraining')
-export const stopJob = createSagaAction<string, void>('training/stopJob')
+export const startTraining = createSagaAction<{ jobId: string }, { modelType?: string } | void>('training/startTraining')
+export const stopJob = createSagaAction<void, string>('training/stopJob')
 
 const initialState: TrainingState = {
   imageId: null,
@@ -60,8 +80,7 @@ const initialState: TrainingState = {
 
   // Job Tracking
   analysisJobId: null,
-  // analysisProgress etc. removed - use API slice
-
+  
   trainingStatus: 'idle',
   navigationIds: [],
   items: [],
@@ -73,7 +92,22 @@ const initialState: TrainingState = {
   activeMode: 'all',
   globalStats: null,
   autoDetectConf: 0.25,
-  autoDetectClasses: [],
+  autoDetectClasses: [
+    'long_crack',
+    'trans_crack',
+    'alligator_crack',
+    'pothole',
+    'patch',
+    'degradation',
+    'shadow',
+    'manhole',
+    'marking',
+    'ignore',
+  ],
+  
+  // New: Track specific action loading
+  loadingAction: null,
+  previewUrl: null, // For preprocessing preview
 }
 
 const trainingSlice = createSlice({
@@ -95,6 +129,7 @@ const trainingSlice = createSlice({
     //   state.loading = false
     //   state.lastSavedSettings = null
     //   state.exports = null
+    //   state.loadingAction = null
     // },
 
     // Annotation Actions
@@ -161,21 +196,39 @@ const trainingSlice = createSlice({
       state.exports = null
       state.trainingStatus = 'idle'
     },
+    setAnalysisJobId(state, action: PayloadAction<string>) {
+      state.analysisJobId = action.payload
+    },
+    clearPreview(state) {
+        state.previewUrl = null
+    }
   },
   extraReducers: builder => {
     builder
-      .addCase(autoDetect.pending, state => {
-        state.loading = true
+      .addCase(performReviewAction.pending, (state, action) => {
+          // Track which action is running for granular spinners
+          // action.meta.arg contains { actionType, params }
+          const arg = action.meta.arg as { actionType: string } | undefined
+          state.loadingAction = arg?.actionType || 'unknown'
+          state.error = null
       })
-      .addCase(autoDetect.fulfilled, (state, action: PayloadAction<Annotation[]>) => {
-        state.loading = false
-        state.annotations.push(...action.payload)
+      .addCase(performReviewAction.fulfilled, (state, action) => {
+          state.loadingAction = null
+          const result = action.payload
+          
+          if (result.annotations) {
+              state.annotations.push(...result.annotations)
+          }
+          if (result.processedImageUrl) {
+              state.previewUrl = result.processedImageUrl
+          }
       })
-      .addCase(autoDetect.rejected, (state, _action) => {
-        const action = _action as SagaRejectedAction
-        state.loading = false
-        state.error = action.error.message || 'Auto-detect failed'
+      .addCase(performReviewAction.rejected, (state, action) => {
+          state.loadingAction = null
+          const rej = action as SagaRejectedAction
+          state.error = rej.error.message || 'Action failed'
       })
+      
       .addCase(fetchImage.pending, (state, action) => {
         // Safe access to meta.arg via types
         const payloadAction = action as unknown as PayloadAction<undefined, string, { arg: number }>
@@ -187,6 +240,7 @@ const trainingSlice = createSlice({
           state.manualRqi = null
           state.tags = []
           state.manualComment = ''
+          state.previewUrl = null // Clear preview on new image
         }
         state.loading = true
         state.error = null
@@ -241,7 +295,7 @@ const trainingSlice = createSlice({
         const payloadAction = action as unknown as PayloadAction<
           undefined,
           string,
-          { arg: { mode: string; offset?: number } }
+          { arg: { mode: string; offset?: number; model?: string } }
         >
         const offset = payloadAction.meta.arg.offset || 0
         if (offset === 0) {
@@ -258,15 +312,16 @@ const trainingSlice = createSlice({
         const payloadAction = action as unknown as PayloadAction<
           FetchListSuccess,
           string,
-          { arg: { mode: string; offset?: number } }
+          { arg: { mode: string; offset?: number; model?: string } }
         >
 
         const offset = payloadAction.meta.arg.offset || 0
         state.items = payloadAction.payload.items
-
         state.totalCount = payloadAction.payload.totalCount
         state.hasMore = payloadAction.payload.hasMore
-        state.offset = offset + state.items.length
+        
+        // Update offset to the current page's start offset
+        state.offset = offset
 
         state.navigationIds = state.items.map(i => String(i.id))
 
@@ -304,7 +359,69 @@ const trainingSlice = createSlice({
       .addCase(startTraining.rejected, (state) => {
         state.trainingStatus = 'failed'
       })
+      // DINO Classification Reducers
+      .addCase(fetchDinoList.pending, (state) => {
+        state.loading = true
+        state.error = null
+      })
+      .addCase(fetchDinoList.fulfilled, (state, action: PayloadAction<{ items: TrainingPoint[]; totalCount: number; offset: number }>) => {
+        state.loading = false
+        state.items = action.payload.offset === 0 
+          ? action.payload.items 
+          : [...state.items, ...action.payload.items]
+        state.totalCount = action.payload.totalCount
+        state.offset = action.payload.offset + action.payload.items.length
+      })
+      .addCase(fetchDinoList.rejected, (state, _action) => {
+        const action = _action as SagaRejectedAction
+        state.loading = false
+        if (action.error.name !== 'AbortError' && action.error.message !== 'Aborted') {
+          state.error = action.error?.message || 'Failed to fetch DINO list'
+        }
+      })
 
+      .addCase(fetchDinoImage.pending, (state) => {
+        state.loading = true
+        state.error = null
+      })
+      .addCase(fetchDinoImage.fulfilled, (state, action: PayloadAction<{ id: string; url: string; manualRqi: number | null }>) => {
+        state.loading = false
+        state.imageId = action.payload.id
+        state.imageUrl = action.payload.url
+        state.manualRqi = action.payload.manualRqi
+      })
+      .addCase(fetchDinoImage.rejected, (state, _action) => {
+        const action = _action as SagaRejectedAction
+        state.loading = false
+        if (action.error.name !== 'AbortError' && action.error.message !== 'Aborted') {
+          state.error = action.error?.message || 'Failed to fetch DINO image'
+        }
+      })
+      .addCase(saveDinoRqi.pending, (state) => {
+        state.saving = true
+      })
+      .addCase(saveDinoRqi.fulfilled, (state) => {
+        state.saving = false
+      })
+      .addCase(saveDinoRqi.rejected, (state, _action) => {
+        const action = _action as SagaRejectedAction
+        state.saving = false
+        state.error = action.error?.message || 'Failed to save DINO RQI'
+      })
+      .addCase(predictDinoRqi.pending, (state) => {
+        state.loading = true
+      })
+      .addCase(predictDinoRqi.fulfilled, (state, action) => {
+        state.loading = false
+        if (action.payload) {
+          state.manualRqi = action.payload
+        }
+      })
+      .addCase(predictDinoRqi.rejected, (state, _action) => {
+          const action = _action as SagaRejectedAction
+          state.loading = false
+          state.error = action.error?.message || 'Failed to predict DINO RQI'
+      })
   },
 })
 
@@ -315,10 +432,15 @@ export const actions = {
   fetchStats,
   saveAnnotations,
   deleteTrainingData,
-  autoDetect,
+  performReviewAction,
   reconnectJob,
   runAnalysis,
   startTraining,
   stopJob,
+  fetchDinoList,
+
+  fetchDinoImage,
+  saveDinoRqi,
+  predictDinoRqi,
 }
 export default trainingSlice.reducer

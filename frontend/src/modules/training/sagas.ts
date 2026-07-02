@@ -9,12 +9,18 @@ import { client, gql } from '../graphql'
 import type {
   GetTrainingDataQuery,
   GetActiveJobQuery,
-  DetectObjectsMutation,
 } from '../graphql/generated/graphql'
 import { selectTrainingState } from './selectors'
 import { actions as apiActions } from '../api'
 
 // --- GraphQL Queries & Mutations ---
+
+interface ReviewActionResult {
+    success: boolean
+    message?: string
+    processedImageUrl?: string
+    annotations?: Annotation[]
+}
 
 const GET_TRAINING_DATA = gql(`
     query GetTrainingData($id: Int!) {
@@ -41,17 +47,16 @@ const DELETE_TRAINING_DATA = gql(`
 `)
 
 const GET_TRAINING_POINTS = gql(`
-  query GetTrainingPoints($mode: FilterMode, $limit: Int, $offset: Int) {
-    trainingPoints(mode: $mode, limit: $limit, offset: $offset) {
+  query GetTrainingPoints($mode: FilterMode, $limit: Int, $offset: Int, $model: String) {
+    trainingPoints(mode: $mode, limit: $limit, offset: $offset, model: $model) {
       items {
         id
         latitude
         longitude
         imageUrl
         rqiScore
+        dinoRqiScore
         manualRqi
-        manualTags
-        createdAt
       }
       totalCount
       hasMore
@@ -60,8 +65,8 @@ const GET_TRAINING_POINTS = gql(`
 `)
 
 const GET_TRAINING_STATS = gql(`
-  query GetTrainingStats($mode: FilterMode) {
-    trainingStats(mode: $mode) {
+  query GetTrainingStats($mode: FilterMode, $isDino: Boolean) {
+    trainingStats(mode: $mode, isDino: $isDino) {
       total
       pending
       annotated
@@ -70,6 +75,11 @@ const GET_TRAINING_STATS = gql(`
       fairCount
       poorCount
       pendingAnalysis
+      rqi1Count
+      rqi2Count
+      rqi3Count
+      rqi4Count
+      rqi5Count
     }
   }
 `)
@@ -83,8 +93,8 @@ const RUN_ANALYSIS = gql(`
 `)
 
 const START_MODEL_TRAINING = gql(`
-    mutation StartModelTraining {
-        startModelTraining {
+    mutation StartModelTraining($modelType: String) {
+        startModelTraining(modelType: $modelType) {
             id
         }
     }
@@ -110,13 +120,28 @@ const GET_ACTIVE_JOB = gql(`
     }
 `)
 
-const DETECT_OBJECTS = gql(`
-    mutation DetectObjects($input: DetectInput!) {
-        detectObjects(input: $input) {
-            label
-            confidence
-            points
+
+
+
+
+const GET_DINO_TRAINING_DATA = gql(`
+    query GetDinoTrainingData($id: Int!) {
+        point(id: $id) {
+            id
+            imageUrl
+            dinoRqiScore
+            manualRqi
         }
+    }
+`)
+
+
+
+
+
+const SAVE_DINO_RQI = gql(`
+    mutation SaveDinoRqi($input: TrainingDataInput!) {
+        saveTrainingData(input: $input)
     }
 `)
 
@@ -147,13 +172,13 @@ function* fetchImageWorker(action: SagaActionFromCreator<typeof actions.fetchIma
 }
 
 function* fetchListWorker(action: SagaActionFromCreator<typeof actions.fetchList>) {
-  const { mode, offset = 0 } = action.meta.arg
+  const { mode, offset = 0, model = 'yolo' } = action.meta.arg
 
   const result: {
     data: { trainingPoints: { items: TrainingPoint[]; totalCount: number; hasMore: boolean } }
   } = yield call([client, client.query], {
     query: GET_TRAINING_POINTS,
-    variables: { mode: mode.toUpperCase(), offset, limit: 20 },
+    variables: { mode: mode.toUpperCase(), offset, limit: 20, model },
     fetchPolicy: 'network-only',
   })
 
@@ -167,11 +192,12 @@ function* fetchListWorker(action: SagaActionFromCreator<typeof actions.fetchList
 }
 
 function* fetchStatsWorker(action: SagaActionFromCreator<typeof actions.fetchStats>) {
-  const { mode } = action.meta.arg
+  const { mode, model } = action.meta.arg
+  const isDino = model === 'dino'
 
   const result: { data: { trainingStats: TrainingStats } } = yield call([client, client.query], {
     query: GET_TRAINING_STATS,
-    variables: { mode: mode.toUpperCase() },
+    variables: { mode: mode.toUpperCase(), isDino },
     fetchPolicy: 'network-only',
   })
 
@@ -267,28 +293,8 @@ function* reconnectJobSaga() {
     // Register generic job
     yield put(apiActions.registerJob(job.id))
     
-    // Also update local reference if needed (it matches reducers behavior)
-     yield put(actions.reconnectJob()) // Actually reconnectJob is an action trigger, not a setter. 
-     // The reducer for startTraining/runAnalysis sets the ID.
-     // We might need an action to set the ID in training slice if it's not set.
-     // But `reconnectJob` saga is triggered by `reconnectJob` action.
-     // We need to set `analysisJobId` in slice.
-     // There is no dedicated setter for analysisJobId exposed in actions except via `startTraining.fulfilled` etc.
-     // We might need to add `setAnalysisJobId` or misuse an existing one?
-     // Actually, `training/slice` doesn't have a simple "setJobId".
-     // But `apiActions.registerJob` handles the *global* state.
-     // Local state needs `analysisJobId`.
-     // We can dispatch `startTraining.fulfilled({ jobId: job.id })` to set the ID in local state?
-     // Or added a specific action.
-     // Let's assume for now we dispatch `startTraining.fulfilled` or `runAnalysis.fulfilled` based on type? 
-     // Or just add `setAnalysisJobId` to slice. I'll stick to registering in API for now and fixing ID setting later if needed.
-     
-     // Wait, `reconnectJob` action IS dispatched by UI on mount.
-     // We need to update the state.
-     // Let's use `runAnalysis.fulfilled` as a generic "Job Started" signal for now or add a setter.
-     
-     // Simplest: just dispatch runAnalysis.fulfilled works for setting ID.
-     yield put(actions.runAnalysis.fulfilled({ jobId: job.id }, 'reconnect', { strategy: '', limit: 0, reanalyze: false }))
+    // Update local state with the found Job ID
+    yield put(actions.setAnalysisJobId(job.id))
   }
 }
 
@@ -304,11 +310,15 @@ function* runAnalysisSaga(action: SagaActionFromCreator<typeof actions.runAnalys
   return { jobId }
 }
 
-function* startTrainingSaga() {
+function* startTrainingSaga(action: SagaActionFromCreator<typeof actions.startTraining>) {
+  const payload = action.meta.arg
+  const modelType = payload && typeof payload === 'object' ? payload.modelType : undefined
+
   const result: { data: { startModelTraining: { id: string } } } = yield call(
     [client, client.mutate],
     {
       mutation: START_MODEL_TRAINING,
+      variables: { modelType }
     },
   )
 
@@ -317,51 +327,167 @@ function* startTrainingSaga() {
   return { jobId }
 }
 
-function* autoDetectWorker(action: SagaActionFromCreator<typeof actions.autoDetect>) {
-   // ... (keep as is) ...
-   const confThreshold = action.meta.arg
+const PERFORM_REVIEW_ACTION = gql(`
+    mutation PerformReviewAction($input: ReviewActionInput!) {
+        performReviewAction(input: $input) {
+            success
+            message
+            processedImageUrl
+            annotations {
+                id
+                label
+                score
+                type
+                points
+            }
+        }
+    }
+`)
+
+function* reviewActionWorker(action: SagaActionFromCreator<typeof actions.performReviewAction>) {
+  const { actionType, params } = action.meta.arg
   const state: ReturnType<typeof selectTrainingState> = yield select(selectTrainingState)
+  
+  // Ensure we have a filename
   const filename = state.imageUrl?.split('/').pop()
+  const finalParams = { ...params }
+  
+  if (!finalParams.filename && filename) {
+      finalParams.filename = filename
+  }
 
-  if (!filename) return []
-
-  const result: { data: DetectObjectsMutation } = yield call([client, client.mutate], {
-    mutation: DETECT_OBJECTS,
+  const result: { data: { performReviewAction: ReviewActionResult } } = yield call([client, client.mutate], {
+    mutation: PERFORM_REVIEW_ACTION,
     variables: {
       input: {
-        filename,
-        confThreshold,
-        classes: state.autoDetectClasses.length > 0 ? state.autoDetectClasses : undefined,
+        actionType,
+        parameters: finalParams,
       },
     },
   })
 
-  const predictions = result.data.detectObjects
-
-  if (predictions && predictions.length > 0) {
-    const annotations = predictions.map(p => ({
-      id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2),
-      points: p.points,
-      label: p.label,
-      type: (p.points.length > 2 ? 'polygon' : 'box') as 'polygon' | 'box',
-      score: p.confidence,
-    }))
-
-    return annotations
+  const response = result.data.performReviewAction
+  
+  if (!response.success) {
+      throw new Error(response.message || 'Review action failed')
   }
 
-  return []
+  return {
+      annotations: response.annotations,
+      processedImageUrl: response.processedImageUrl,
+      message: response.message
+  }
+}
+
+function* fetchDinoImageWorker(action: SagaActionFromCreator<typeof actions.fetchDinoImage>) {
+  const pointId = action.meta.arg
+  const result: { data: { point: { id: string; imageUrl: string; manualRqi: number | null } } } = yield call([client, client.query], {
+    query: GET_DINO_TRAINING_DATA,
+    variables: { id: pointId },
+    fetchPolicy: 'network-only',
+  })
+
+  const pt = result.data.point
+  if (!pt) throw new Error('Point not found')
+
+  return {
+    id: String(pt.id),
+    url: pt.imageUrl,
+    manualRqi: pt.manualRqi || null,
+  }
+}
+
+function* saveDinoRqiWorker() {
+  const state: ReturnType<typeof selectTrainingState> = yield select(selectTrainingState)
+
+  if (!state.imageId || !state.imageUrl || state.manualRqi === null || state.manualRqi === undefined) {
+    return
+  }
+
+  const filename = state.imageUrl.split('/').pop() || ''
+  
+  yield call([client, client.mutate], {
+    mutation: SAVE_DINO_RQI,
+    variables: {
+      input: {
+        imageFilename: filename,
+        manualRqi: state.manualRqi,
+        metaData: { source: 'training-dino' }
+      }
+    }
+  })
+
+  // Fetch NEXT ID for seamless server-side navigation
+  const mode = state.activeMode || 'ALL'
+  try {
+    const nextResult: { data: { nextTrainingPoint: number | null } } = yield call([client, client.query], {
+      query: gql(`
+        query GetNextTrainingPoint($currentId: Int!, $mode: FilterMode!, $model: String!) {
+          nextTrainingPoint(currentId: $currentId, mode: $mode, model: $model)
+        }
+      `),
+      variables: { 
+        currentId: parseInt(state.imageId || '0'), 
+        mode: mode.toUpperCase(), 
+        model: 'dino' 
+      },
+      fetchPolicy: 'network-only'
+    })
+    
+    // Return the next ID to the caller (DinoTrainingView)
+    return { nextId: nextResult.data.nextTrainingPoint }
+  } catch (err) {
+    console.error("Failed to fetch next training point:", err)
+    return { nextId: null }
+  }
 }
 
 export default [
-  takeLatestAsync(fetchImage.type, fetchImageWorker),
-  takeLatestAsync(fetchList.type, fetchListWorker),
-  takeLatestAsync(fetchStats.type, fetchStatsWorker),
-  takeLatestAsync(actions.saveAnnotations.type, saveAnnotationsWorker),
-  takeLatestAsync(actions.deleteTrainingData.type, deleteTrainingDataWorker),
-  takeLatestAsync(actions.autoDetect.type, autoDetectWorker),
-  takeLatestAsync(actions.runAnalysis.type, runAnalysisSaga),
-  takeLatestAsync(actions.startTraining.type, startTrainingSaga),
-  takeLatestAsync(actions.stopJob.type, stopJobSaga),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  takeLatestAsync((fetchImage as any).type || fetchImage, fetchImageWorker),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  takeLatestAsync((fetchList as any).type || fetchList, fetchListWorker),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  takeLatestAsync((fetchStats as any).type || fetchStats, fetchStatsWorker),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  takeLatestAsync((actions.saveAnnotations as any).type || actions.saveAnnotations, saveAnnotationsWorker),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  takeLatestAsync((actions.deleteTrainingData as any).type || actions.deleteTrainingData, deleteTrainingDataWorker),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  takeLatestAsync((actions.performReviewAction as any).type || actions.performReviewAction, reviewActionWorker),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  takeLatestAsync((actions.runAnalysis as any).type || actions.runAnalysis, runAnalysisSaga),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  takeLatestAsync((actions.startTraining as any).type || actions.startTraining, startTrainingSaga),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  takeLatestAsync((actions.stopJob as any).type || actions.stopJob, stopJobSaga),
   takeLatest(actions.reconnectJob.type, reconnectJobSaga),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  takeLatestAsync((actions.fetchDinoImage as any).type || actions.fetchDinoImage, fetchDinoImageWorker),
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  takeLatestAsync((actions.saveDinoRqi as any).type || actions.saveDinoRqi, saveDinoRqiWorker),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  takeLatestAsync((actions.predictDinoRqi as any).type || actions.predictDinoRqi, predictDinoRqiWorker),
 ]
+
+const PREDICT_DINO_RQI = gql(`
+  mutation PredictDinoRqi($imageFilename: String!) {
+    predictDinoRqi(imageFilename: $imageFilename)
+  }
+`)
+
+function* predictDinoRqiWorker() {
+  const state: ReturnType<typeof selectTrainingState> = yield select(selectTrainingState)
+  
+  if (!state.imageUrl) return null
+  const filename = state.imageUrl.split('/').pop()
+  if (!filename) return null
+
+  const result: { data: { predictDinoRqi: number | null } } = yield call([client, client.mutate], {
+    mutation: PREDICT_DINO_RQI,
+    variables: { imageFilename: filename },
+  })
+
+  return result.data.predictDinoRqi
+}

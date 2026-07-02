@@ -8,4 +8,5 @@ function* handleAppStart() {
   yield call(console.log, 'App initialized')
 }
 
-export default [takeLatestAsync(appActions.start.type, handleAppStart)]
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export default [takeLatestAsync((appActions.start as any).type, handleAppStart)]

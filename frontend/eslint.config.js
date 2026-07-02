@@ -20,4 +20,26 @@ export default defineConfig([
       globals: globals.browser,
     },
   },
+  // Module-boundary enforcement (see frontend/ARCHITECTURE.md):
+  // components are the "dumb" view layer and must reach state / side-effects
+  // only through a module's public API (hooks.ts / index.ts), never its slice,
+  // sagas or selectors directly.
+  {
+    files: ['src/components/**/*.{ts,tsx}', 'src/modules/*/components/**/*.{ts,tsx}'],
+    ignores: ['**/*.{test,spec}.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/slice', '**/sagas', '**/selectors'],
+              message:
+                'Components must use a module hook or its index (public API), not slice/sagas/selectors directly. See frontend/ARCHITECTURE.md.',
+            },
+          ],
+        },
+      ],
+    },
+  },
 ])

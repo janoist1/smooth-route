@@ -17,11 +17,13 @@ const initialState: SettingsState = {
   saveLoading: false,
 }
 
-export const fetchSettings = createSagaAction<void>('settings/fetchSettings')
-export const updateSetting = createSagaAction<{ key: string; value: unknown }>(
+export const fetchSettings = createSagaAction<SystemSetting[]>('settings/fetchSettings')
+export const updateSetting = createSagaAction<SystemSetting, { key: string; value: unknown }>(
   'settings/updateSetting',
 )
-export const applyPreset = createSagaAction<Record<string, unknown>>('settings/applyPreset')
+export const applyPreset = createSagaAction<SystemSetting[], Record<string, unknown>>(
+  'settings/applyPreset',
+)
 
 const settingsSlice = createSlice({
   name: 'settings',
