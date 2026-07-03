@@ -22,20 +22,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from app.core.database import engine
-from app.models.models import Base
 from app.api.routes import router as api_router
+from app.core.migrations import ensure_database_schema
 
-# Create tables on startup
-Base.metadata.create_all(bind=engine)
+# Schema is owned by Alembic; pre-Alembic databases get stamped automatically.
+if settings.RUN_MIGRATIONS_ON_STARTUP:
+    ensure_database_schema()
 
 # Include API router
 app.include_router(api_router)
 
-# GraphQL
-from strawberry.asgi import GraphQL
+# GraphQL — AuthGraphQL resolves the caller identity into the context.
+from app.graphql.context import AuthGraphQL
 from app.graphql.schema import schema
-graphql_app = GraphQL(schema)
+graphql_app = AuthGraphQL(schema)
 app.add_route("/graphql", graphql_app)
 app.add_websocket_route("/graphql", graphql_app)
 

@@ -1,9 +1,33 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, JSON
+import uuid
+
+from sqlalchemy import CheckConstraint, Column, Integer, String, Float, DateTime, JSON, Uuid, func
 from sqlalchemy.ext.declarative import declarative_base
 from geoalchemy2 import Geometry
 from datetime import datetime
 
 Base = declarative_base()
+
+ROLE_USER = "user"
+ROLE_ADMIN = "admin"
+
+
+class User(Base):
+    """
+    Application user, provisioned just-in-time from a verified Clerk JWT.
+    Identity lives in Clerk; this row anchors role and future quota/job FKs.
+    Roles: 'user' (default) or 'admin' (promoted manually via SQL).
+    """
+
+    __tablename__ = "users"
+    __table_args__ = (
+        CheckConstraint("role IN ('user', 'admin')", name="ck_users_role"),
+    )
+
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    clerk_id = Column(String, unique=True, nullable=False, index=True)
+    email = Column(String, nullable=True)
+    role = Column(String, nullable=False, default=ROLE_USER, server_default=ROLE_USER)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
 class StreetViewImage(Base):

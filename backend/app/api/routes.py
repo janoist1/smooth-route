@@ -5,6 +5,7 @@ API endpoints for web interface.
 from fastapi import APIRouter, Depends, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import List, Optional
+from app.core.auth import Identity, require_user
 from app.core.database import SessionLocal
 from app.models.models import StreetViewImage
 from app.core.config import settings
@@ -178,11 +179,13 @@ class ProcessRouteResponse(BaseModel):
 
 @router.post("/api/v1/process-route", response_model=ProcessRouteResponse)
 async def process_route(
-    request: ProcessRouteRequest, background_tasks: BackgroundTasks
+    request: ProcessRouteRequest,
+    background_tasks: BackgroundTasks,
+    identity: Identity = Depends(require_user),
 ):
     """
     Start processing a route: collect points, download images, analyze.
-    Returns a job ID for tracking progress.
+    Returns a job ID for tracking progress. Requires an authenticated user.
     """
     from app.services.job_runner import job_runner
     from app.services.tasks import run_route_processing
@@ -268,8 +271,8 @@ async def stream_job_status(job_id: str):
 
 
 @router.post("/api/v1/job/{job_id}/stop")
-async def stop_job(job_id: str):
-    """Stop/cancel a running job."""
+async def stop_job(job_id: str, identity: Identity = Depends(require_user)):
+    """Stop/cancel a running job. Requires an authenticated user."""
     job = get_job(job_id)
     if not job:
         from fastapi import HTTPException

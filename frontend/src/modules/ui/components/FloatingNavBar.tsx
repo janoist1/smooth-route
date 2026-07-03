@@ -10,12 +10,15 @@ interface FloatingNavBarProps {
   items: NavItem[]
   currentPath: string
   onNavigate: (path: string) => void
+  /** Extra content rendered after the nav pills (e.g. user menu). */
+  trailing?: ReactNode
 }
 
 export const FloatingNavBar: React.FC<FloatingNavBarProps> = ({
   items,
   currentPath,
   onNavigate,
+  trailing,
 }) => {
   return (
     <div
@@ -74,6 +77,7 @@ export const FloatingNavBar: React.FC<FloatingNavBarProps> = ({
           </button>
         )
       })}
+      {trailing}
     </div>
   )
 }

@@ -15,11 +15,12 @@ from app.core.settings_manager import settings_manager
 from .types import Point, Job, TrainingData, ProcessRouteInput, TrainingDataInput, RunAnalysisInput, TrainingStats, TrainingPointsResponse, FilterMode, Setting, UpdateSettingInput, DetectInput, DetectPrediction, ReviewActionInput, ReviewActionResult
 
 from app.graphql.resolver_helpers import get_db_session
+from app.graphql.permissions import IsAdmin, IsAuthenticated
 
 
 @strawberry.type
 class Mutation:
-    @strawberry.mutation
+    @strawberry.mutation(permission_classes=[IsAdmin])
     def update_setting(self, input: UpdateSettingInput) -> Setting:
         from app.core.settings_manager import settings_manager
         updated = settings_manager.update_setting(input.key, input.value)
@@ -34,7 +35,7 @@ class Mutation:
             explanation=updated.explanation
         )
 
-    @strawberry.mutation
+    @strawberry.mutation(permission_classes=[IsAdmin])
     def apply_preset(self, values: strawberry.scalars.JSON) -> List[Setting]:
         from app.core.settings_manager import settings_manager
         updated_settings = []
@@ -51,7 +52,7 @@ class Mutation:
                 ))
         return updated_settings
 
-    @strawberry.mutation
+    @strawberry.mutation(permission_classes=[IsAdmin])
     def run_analysis(self, input: RunAnalysisInput) -> Job:
         from app.services.job_runner import job_runner
         from app.services.tasks import run_analysis_job
@@ -77,7 +78,7 @@ class Mutation:
             completed_at=None
         )
 
-    @strawberry.mutation
+    @strawberry.mutation(permission_classes=[IsAdmin])
     def start_model_training(self) -> Job:
         from app.services.job_runner import job_runner
         from app.services.tasks import run_training_job
@@ -104,7 +105,7 @@ class Mutation:
             completed_at=None
         )
 
-    @strawberry.mutation
+    @strawberry.mutation(permission_classes=[IsAuthenticated])
     def process_route(self, input: ProcessRouteInput) -> Job:
         from app.services.job_runner import job_runner
         from app.services.tasks import run_route_processing
@@ -131,7 +132,7 @@ class Mutation:
             completed_at=None
         )
 
-    @strawberry.mutation
+    @strawberry.mutation(permission_classes=[IsAdmin])
     def save_training_data(self, input: TrainingDataInput) -> str:
         db = get_db_session()
         try:
@@ -166,7 +167,7 @@ class Mutation:
         finally:
             db.close()
 
-    @strawberry.mutation
+    @strawberry.mutation(permission_classes=[IsAdmin])
     def delete_training_data(self, image_filename: str) -> bool:
         db = get_db_session()
         try:
@@ -186,13 +187,13 @@ class Mutation:
         finally:
             db.close()
 
-    @strawberry.mutation
+    @strawberry.mutation(permission_classes=[IsAuthenticated])
     def stop_job(self, job_id: str) -> bool:
         from app.services.job_service import update_job
         update_job(job_id, status="cancelled", message="Folyamat leállítva a felhasználó által.", error="Job stopped by user")
         return True
     
-    @strawberry.mutation
+    @strawberry.mutation(permission_classes=[IsAdmin])
     def detect_objects(self, input: DetectInput) -> List[DetectPrediction]:
         from app.services.inference import inference_service
 
@@ -215,7 +216,7 @@ class Mutation:
              ))
         return predictions
 
-    @strawberry.mutation
+    @strawberry.mutation(permission_classes=[IsAdmin])
     def perform_review_action(self, input: ReviewActionInput) -> ReviewActionResult:
         from app.services.review_service import review_service
         
@@ -254,7 +255,7 @@ class Mutation:
             annotations=annot_objs
         )
 
-    @strawberry.mutation
+    @strawberry.mutation(permission_classes=[IsAdmin])
     def predict_dino_rqi(self, image_filename: str) -> Optional[int]:
         from app.services.dino_service import dino_service
 

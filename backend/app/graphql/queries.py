@@ -15,6 +15,7 @@ from app.core.settings_manager import settings_manager
 from .types import Point, Job, TrainingData, ProcessRouteInput, TrainingDataInput, RunAnalysisInput, TrainingStats, TrainingPointsResponse, FilterMode, Setting, UpdateSettingInput, DetectInput, DetectPrediction, ReviewActionInput, ReviewActionResult, RqiModelInfo
 
 from app.graphql.resolver_helpers import get_db_session, image_filename_from_url as get_filename
+from app.graphql.permissions import IsAdmin, IsAuthenticated
 
 @strawberry.type
 class RouteStep:
@@ -28,12 +29,29 @@ class RouteData:
 
 
 @strawberry.type
+class Viewer:
+    """The authenticated caller, as provisioned in the users table."""
+    clerk_id: str
+    email: Optional[str]
+    role: str
+
+
+@strawberry.type
 class Query:
     @strawberry.field
     def config(self) -> str:
         return settings.GOOGLE_MAPS_API_KEY or ""
 
     @strawberry.field
+    def me(self, info: strawberry.Info) -> Optional[Viewer]:
+        """Viewer info for the frontend (role drives admin-only UI)."""
+        identity = info.context.get("identity")
+        if identity is None:
+            return None
+        return Viewer(clerk_id=identity.clerk_id, email=identity.email, role=identity.role)
+
+    # Costs a Google Directions API call per invocation — never anonymous.
+    @strawberry.field(permission_classes=[IsAuthenticated])
     def get_route(self, origin: str, destination: str) -> Optional[RouteData]:
         from app.services.google_maps import google_maps_service
         try:
@@ -48,7 +66,7 @@ class Query:
             print(f"Error fetching route: {e}")
             return None
     
-    @strawberry.field
+    @strawberry.field(permission_classes=[IsAdmin])
     def settings(self) -> List[Setting]:
         from app.core.settings_manager import settings_manager
         return [
@@ -62,7 +80,7 @@ class Query:
             ) for s in settings_manager.get_all_settings()
         ]
 
-    @strawberry.field
+    @strawberry.field(permission_classes=[IsAdmin])
     def available_models(self) -> List[str]:
         from app.core.paths import data_path
 
@@ -71,7 +89,7 @@ class Query:
             return []
         return sorted(path.name for path in models_dir.glob("*.pt"))
 
-    @strawberry.field
+    @strawberry.field(permission_classes=[IsAdmin])
     def rqi_model_info(self) -> RqiModelInfo:
         """Read-only card for the live RQI (DINO) artifact — for the settings UI."""
         from app.services.dino_service import dino_service
@@ -225,7 +243,7 @@ class Query:
         finally:
             db.close()
     
-    @strawberry.field
+    @strawberry.field(permission_classes=[IsAdmin])
     def training_points(self, mode: FilterMode = FilterMode.ALL, limit: int = 20, offset: int = 0, model: str = "yolo") -> TrainingPointsResponse:
         db = get_db_session()
         try:
@@ -319,7 +337,7 @@ class Query:
         finally:
             db.close()
 
-    @strawberry.field
+    @strawberry.field(permission_classes=[IsAdmin])
     def training_stats(self, mode: FilterMode = FilterMode.ALL, is_dino: bool = False) -> TrainingStats:
         db = get_db_session()
         try:
@@ -453,7 +471,7 @@ class Query:
         )
 
 
-    @strawberry.field
+    @strawberry.field(permission_classes=[IsAdmin])
     def next_training_point(self, current_id: int, mode: FilterMode = FilterMode.ALL, model: str = "yolo") -> Optional[int]:
         db = get_db_session()
         try:
