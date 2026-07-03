@@ -5,8 +5,36 @@ Kátyúőr is an innovative route planning application that considers road quali
 
 **Architecture**: Point-based data storage. Routes are only used as tools to collect road points efficiently. All images and data are stored point-based (location + heading), not route-based.
 
+## Documentation
+
+Start here depending on what you need:
+
+- **[AGENTS.md](AGENTS.md)** — entrypoint for developers and AI agents: how to run,
+  test, the ML promotion gate, and known pitfalls. Read this first.
+- **[docs/MODEL_EXPERIMENTS.md](docs/MODEL_EXPERIMENTS.md)** — the road-quality AI
+  story in plain language: what was tried, what shipped, and why.
+- **[docs/IMPROVEMENT_PLAN.md](docs/IMPROVEMENT_PLAN.md)** — architecture audit and
+  the phased refactor/improvement plan.
+- **[ml/README.md](ml/README.md)** — the RQI model pipeline, its CV results, and the
+  ship gate (`ml/evaluate_artifact.py`).
+- **[docs/API_SURFACE.md](docs/API_SURFACE.md)** — GraphQL/REST surface inventory.
+- **[frontend/ARCHITECTURE.md](frontend/ARCHITECTURE.md)** — frontend module boundaries.
+- **[docs/TrainingGuide.md](docs/TrainingGuide.md)** — how to produce good manual
+  labels (applies to the YOLO damage-annotation branch).
+
+## The road-quality AI (RQI)
+
+The road quality score shown on the map (RQI 1 = excellent … 4 = poor) comes from
+the **v2 model** in `ml/` — a frozen DINOv2-small backbone + SVR head, 5-fold CV
+QWK 0.89. It is trained and shipped from the `ml/` pipeline, **not** from the web
+UI. YOLO damage detection is a separate concern (it produces the damage polygons
+on the detail card, not the RQI). See [docs/MODEL_EXPERIMENTS.md](docs/MODEL_EXPERIMENTS.md).
+
 ## Project Structure
-- `backend/`: FastAPI application handling route generation and image extraction.
+- `backend/`: FastAPI + Strawberry GraphQL app (route/point collection, image
+  download, YOLO + DINO analysis).
+- `frontend/`: Vite/React map & training UI (talks to `/graphql`).
+- `ml/`: the RQI model pipeline (feature extraction, experiments, artifact + gate).
 - `docker-compose.yml`: Orchestrates the backend and PostGIS database.
 
 ## Setup
@@ -22,26 +50,33 @@ Kátyúőr is an innovative route planning application that considers road quali
     ```
 
 3.  **Run the application**:
-    
-    **Option A: Docker (Recommended for easy setup)**
+
+    **Recommended: local dev (venv + Vite)**
     ```bash
-    docker-compose up --build
+    # One-time setup
+    python3 -m venv .venv && source .venv/bin/activate
+    pip install -e backend/
+    (cd frontend && npm ci)
+
+    # PostGIS database (Docker) — serves on :5433
+    docker compose up -d db
+
+    # Start backend (:8000) + frontend (:5173) together
+    make dev
+    ```
+    Then open the React app at `http://localhost:5173` (GraphQL at
+    `http://localhost:8000/graphql`). A Google Maps API key in the root `.env`
+    is required for route → image fetching.
+
+    **Alternative: full Docker**
+    ```bash
+    docker compose up --build
     ```
 
-    **Option B: Local Development (venv)**
+    **Tests / gates** (see AGENTS.md):
     ```bash
-    # Create virtual environment
-    python3 -m venv .venv
-    source .venv/bin/activate
-    
-    # Install dependencies
-    pip install -e backend/
-    
-    # Run DB (still need PostGIS)
-    docker-compose up -d db
-    
-    # Run Backend
-    uvicorn app.main:app --reload --app-dir backend
+    cd backend && ../.venv/bin/python -m pytest -q
+    cd frontend && npm run typecheck && npm run lint && npm test
     ```
 
 4.  **CLI Usage** (Point-Based):

@@ -1,5 +1,11 @@
 # Road Quality AI: Training Data Guide
 
+> **Scope:** this guide is about producing good **manual labels** (1–5 ratings and
+> damage annotations). The RQI scoring model itself is trained and shipped from the
+> `ml/` pipeline (see [ml/README.md](../ml/README.md) and
+> [MODEL_EXPERIMENTS.md](MODEL_EXPERIMENTS.md)) — **not** from a web button. The
+> DINO "training" web flow was retired; only the review/labelling screen remains.
+
 To improve the AI's judgment and make it align better with your manual ratings, we need a high-quality dataset. Here are the recommendations for effective training.
 
 ## 1. Data Quantity
