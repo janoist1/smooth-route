@@ -78,7 +78,8 @@ def tune_thresholds(y_true, pred):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--backbone", choices=["small", "base"], default="small")
+    ap.add_argument("--backbone",
+                    choices=["small", "base", "v3small", "v3base"], default="small")
     args = ap.parse_args()
 
     variants, df = load(args.backbone)
@@ -87,7 +88,7 @@ def main():
     is_bad = (yc >= BAD_FROM).astype(int)
     skf = StratifiedKFold(n_splits=N_SPLITS, shuffle=True, random_state=SEED)
     folds = list(skf.split(np.zeros(len(yc)), yc))
-    print(f"backbone=dinov2-{args.backbone}  n={len(df)}\n")
+    print(f"backbone={args.backbone}  n={len(df)}\n")
 
     grid = list(itertools.product([1, 3, 10, 30], ["scale", 3e-4, 1e-3],
                                   [0.05, 0.1, 0.2]))

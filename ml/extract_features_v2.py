@@ -16,8 +16,10 @@ Outputs:
   ml/cache/clip_v2.npz              CLIP embeddings + road prob
 
 Usage:
-  .venv/bin/python ml/extract_features_v2.py                 # dinov2-small
-  .venv/bin/python ml/extract_features_v2.py --backbone base # dinov2-base
+  .venv/bin/python ml/extract_features_v2.py                    # dinov2-small
+  .venv/bin/python ml/extract_features_v2.py --backbone base    # dinov2-base
+  .venv/bin/python ml/extract_features_v2.py --backbone v3small # dinov3 ViT-S/16
+  .venv/bin/python ml/extract_features_v2.py --backbone v3base  # dinov3 ViT-B/16
 """
 import argparse
 import os
@@ -49,6 +51,13 @@ CROP_TOP = 0.35  # bottom crop keeps lower 65% of the image (road surface)
 BACKBONES = {
     "small": "facebook/dinov2-small",
     "base": "facebook/dinov2-base",
+    # DINOv3 (HF gated: accept the licence on the model page first). Same CLS +
+    # patch-mean recipe and same 384/768 dims as dinov2-small, so the downstream
+    # grid/tuning/artifact all consume it unchanged. Note: DINOv3 prepends 4
+    # register tokens after CLS -> the patch-mean slice must skip them (handled
+    # generically below via config.num_register_tokens).
+    "v3small": "facebook/dinov3-vits16-pretrain-lvd1689m",
+    "v3base": "facebook/dinov3-vitb16-pretrain-lvd1689m",
 }
 
 ROAD_PROMPTS = [
@@ -90,6 +99,12 @@ def extract_dinov2(paths, model_name):
     proc = AutoImageProcessor.from_pretrained(model_name)
     model = AutoModel.from_pretrained(model_name).to(DEVICE).eval()
 
+    # dinov2-small/base have no register tokens (n_reg=0 -> patches start at 1);
+    # dinov3 inserts num_register_tokens after CLS, so patches start at 1+n_reg.
+    n_reg = getattr(model.config, "num_register_tokens", 0) or 0
+    patch_start = 1 + n_reg
+    print(f"   register tokens: {n_reg}  -> patch tokens start at index {patch_start}")
+
     out = {k: [] for k in ("cls", "patch", "cls_flip", "patch_flip",
                            "cls_crop", "patch_crop")}
     for i, batch in batches(paths):
@@ -105,8 +120,8 @@ def extract_dinov2(paths, model_name):
         ):
             inp = proc(images=pack, return_tensors="pt").to(DEVICE)
             o = model(**inp)
-            cls = o.pooler_output                     # [B, D]
-            patch = o.last_hidden_state[:, 1:].mean(1)  # mean of patch tokens
+            cls = o.pooler_output                          # [B, D]
+            patch = o.last_hidden_state[:, patch_start:].mean(1)  # patch-token mean
             out[name_cls].append(cls.float().cpu().numpy())
             out[name_patch].append(patch.float().cpu().numpy())
         print(f"   dinov2 {i + len(batch)}/{len(paths)}", end="\r")

@@ -49,8 +49,13 @@ TOL = {"qwk": 0.005, "mae": 0.005, "bad_auc": 0.005}  # allow tiny CV noise
 
 
 def _backbone_key(name: str) -> str:
-    # "facebook/dinov2-small" -> "small"
-    return "base" if name.endswith("base") else "small"
+    # full HF backbone name -> feats_v2_<key>.npz cache key.
+    return {
+        "facebook/dinov2-small": "small",
+        "facebook/dinov2-base": "base",
+        "facebook/dinov3-vits16-pretrain-lvd1689m": "v3small",
+        "facebook/dinov3-vitb16-pretrain-lvd1689m": "v3base",
+    }.get(name, "small")
 
 
 def _head_from_artifact(pipe):
@@ -75,7 +80,7 @@ def main(argv):
     thresholds = art.get("thresholds")
 
     print(f"Artifact : {os.path.relpath(path, ROOT)}")
-    print(f"Recipe   : {recipe}  |  backbone: dinov2-{backbone}  |  head: "
+    print(f"Recipe   : {recipe}  |  backbone: {backbone}  |  head: "
           f"{type(head).__name__}")
     print(f"CV       : {N_SPLITS}-fold stratified, seed={SEED} "
           f"(same folds as experiments.py)\n")

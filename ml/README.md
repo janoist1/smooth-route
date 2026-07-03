@@ -69,6 +69,9 @@ forward pass), StandardScaler + **SVR-RBF** (C=1, eps=0.05), plusz a kerekítés
 helyett **hangolt ordinális vágópontok** (a 3|4 határ 3.18-ra csúszott → jobb
 rossz-út recall). A számok beágyazott (nested) CV-ből jönnek, szivárgásmentesek.
 A dinov2-base ugyanennyit tud (QWK 0.8886) 2× költségért → marad a small.
+A DINOv3 ViT-S/16 backbone-t is kipróbáltuk (2026-07-03): a fix 5-fold CV-n
+QWK 0.8825 / MAE 0.215 / AUC 0.967 — minden fejmetrikán kicsit gyengébb, a
+kapun FAIL, tehát **marad a DINOv2-small v2 recept** (részletek: [../docs/MODEL_EXPERIMENTS.md](../docs/MODEL_EXPERIMENTS.md)).
 Az artifact **izotonikus P(rossz út) kalibrátort** és megbízhatósági táblát is
 tartalmaz: ha a modell 4-est mond, 80%-ban tényleg 4-es és <1%-ban jó út (1–2).
 
@@ -166,7 +169,9 @@ vezess be, hogy a validáció és a modellkártya konzisztens maradjon.
 - [x] Friss (nem látott) budapesti útvonalakon ellenőrizve: Keleti→Örs vezér tere
       (457 pont) és Csepel (442 pont) — a pontszámok szemre is stimmelnek, a
       `dino_score` + `dino_p_bad` az `analysis_metadata`-ba kerül
-- [ ] Opcionális: DINOv3 backbone kipróbálása (HF-en kapuzott, licenc-elfogadás kell)
+- [x] DINOv3 backbone kipróbálva (`--backbone v3small`, HF licenc elfogadva):
+      QWK 0.8825 / MAE 0.215 / AUC 0.967 a fix 5-fold CV-n → **nem veri a v2-t**,
+      a kapun (`evaluate_artifact.py`) FAIL, ezért maradt a v2 (ld. MODEL_EXPERIMENTS.md)
 - [ ] Opcionális: több címkézett adat a 3↔4 határ élesítéséhez (a hibák zöme ott van)
 - [ ] Opcionális: P(rossz út) megjelenítése a frontend részletkártyán
 

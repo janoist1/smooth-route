@@ -59,6 +59,15 @@ HEADS = {
     "svr-rbf": lambda: SVR(C=1.0, gamma="scale", epsilon=0.05),
 }
 
+# backbone key -> full HF name written into the artifact (the backend loads this
+# name). Must stay in sync with extract_features_v2.BACKBONES.
+BACKBONE_NAMES = {
+    "small": "facebook/dinov2-small",
+    "base": "facebook/dinov2-base",
+    "v3small": "facebook/dinov3-vits16-pretrain-lvd1689m",
+    "v3base": "facebook/dinov3-vitb16-pretrain-lvd1689m",
+}
+
 
 def tune_thresholds(y_true, pred):
     """Greedy per-boundary search for the 3 ordinal cut-points, maximising QWK."""
@@ -94,7 +103,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--recipe", choices=list(RECIPES), default="cls+patch")
     ap.add_argument("--head", choices=list(HEADS), default="svr-rbf")
-    ap.add_argument("--backbone", choices=["small", "base"], default="small")
+    ap.add_argument("--backbone", choices=list(BACKBONE_NAMES), default="small")
+    ap.add_argument("--out", default="rqi_model.joblib",
+                    help="artifact filename under ml/cache/ (use a side name to "
+                         "build a gate candidate without clobbering the champion)")
     args = ap.parse_args()
 
     df = pd.read_csv(os.path.join(CACHE, "dataset_v2.csv"))
@@ -151,7 +163,7 @@ def main():
         "version": 2,
         "pipeline": pipe,
         "p_bad_calibrator": iso,
-        "backbone": f"facebook/dinov2-{args.backbone}",
+        "backbone": BACKBONE_NAMES[args.backbone],
         "feature_recipe": {"name": args.recipe, "keys": keys,
                            "needs_clip": needs_clip,
                            "crop_top": 0.35},
@@ -165,7 +177,7 @@ def main():
         "cv_metrics": cv,
         "reliability": reliability,
     }
-    out = os.path.join(CACHE, "rqi_model.joblib")
+    out = os.path.join(CACHE, args.out)
     joblib.dump(artifact, out)
     print(f"Trained on {len(df)} images -> {out}")
     print(json.dumps({k: v for k, v in artifact.items()

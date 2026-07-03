@@ -116,7 +116,8 @@ def run_cell(X, y, yc, classes, head_fn, folds):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--backbone", choices=["small", "base"], default="small")
+    ap.add_argument("--backbone",
+                    choices=["small", "base", "v3small", "v3base"], default="small")
     ap.add_argument("--quick", action="store_true", help="ridge+huber only")
     args = ap.parse_args()
 
@@ -126,7 +127,7 @@ def main():
     classes = np.unique(yc)
     print(f"Dataset: {len(df)} images  classes={list(classes)}  "
           f"counts={dict(pd.Series(yc).value_counts().sort_index())}")
-    print(f"Backbone: dinov2-{args.backbone}   CV: {N_SPLITS}-fold stratified "
+    print(f"Backbone: {args.backbone}   CV: {N_SPLITS}-fold stratified "
           f"(seed {SEED})\n")
 
     skf = StratifiedKFold(n_splits=N_SPLITS, shuffle=True, random_state=SEED)
