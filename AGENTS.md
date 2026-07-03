@@ -69,10 +69,12 @@ szkripteket használd — azok referencia/zsákutca. Fogalmak: [docs/GLOSSARY.md
 
 ## Állapot (2026-07-03)
 
-A javítási terv **A–D fázisa kész és commitolva**; a working tree tiszta, a kapuk
-zöldek. A **publikálásból kész: F1** (Clerk auth + szerepek, élő dev-instance-szal
-E2E-tesztelve) és az **F0 Alembic-része** (baseline + users migráció). Ami hátravan:
-az **E fázis** (opcionális — ld. IMPROVEMENT_PLAN), az F0 maradéka (prod-konfig,
-Dockerfile, logging) és F2–F6 — ld. [docs/PUBLISH_PLAN.md](docs/PUBLISH_PLAN.md).
-Commit/push csak explicit kérésre; ha commitolatlan munkát találsz, előbb tisztázd
-az emberrel.
+A javítási terv **A–D fázisa kész**. A publikálás **átteljezve kétkörösre**
+(ld. [docs/PUBLISH_PLAN.md](docs/PUBLISH_PLAN.md)): az elemzés lokálisan, kérésre
+fut, így **round 1 = read-only publikálás** (Vercel + Neon + Street View
+deep-linkek). Kész és commitolva: **F1** (Clerk auth), **F1.5** (térkép
+minőség-rács + admin stats/monitoring oldal), az **F0 Alembic-része**, plusz
+SSE-progress és pont-limit fixek. **Soron következő: Round 1 (R1.1–R1.5)** —
+pano_id + Street View link, torch-mentes read-backend Vercelre, Neon +
+publish-script, deploy `simaut.hu`-ra. A round-2 (auth/queue/kvóta, F0–F6) a
+user-beküldésig vár. Commit/push csak explicit kérésre.

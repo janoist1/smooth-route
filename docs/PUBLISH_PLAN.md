@@ -1,11 +1,57 @@
-# Publikálási terv — auth, jobok, kvóták, deploy
+# Publikálási terv — kétkörös: read-only publikálás, majd user-beküldés
 
-*Állapot: **ELFOGADVA** (2026-07-03). Végrehajtási sorrend: az **F1 (user-modul)
-előrehozva** — publikálás előtt lokálisan kifejlesztve derülnek ki a valós
-szükségletek; az F0-ból csak az Alembic-baseline jön vele (séma-változás miatt).
-Az árak/limitek ellenőrizve: **2026-07-03**, források a dokumentum végén.
-Fázisok: [F0–F6](#fázisok--megvalósítható-lépések); session-promptok:
-[docs/SESSION_PROMPTS.md](SESSION_PROMPTS.md).*
+*Állapot: **ÁTTERVEZVE (2026-07-03).** Kulcsdöntés: az elemzést első körben
+**lokálisan, kérésre** futtatjuk → a publikus oldalnak nincs szüksége futó
+backendre. Ezért **round 1 = read-only publikálás** (Vercel + Neon + Street
+View deep-linkek; se torch, se worker, se prod-auth), és a korábban tervezett
+auth/queue/kvóta átkerül **round 2-be** (user-beküldés). A már kész F1 (Clerk
+auth) és F1.5 (minőség-rács) a repóban marad, round 2-ig a prod-on inaktív.
+Árak ellenőrizve: 2026-07-03, források a végén.*
+
+## Publikálási stratégia — két kör
+
+**Round 1 — read-only publikálás (most).** Te futtatod az elemzést a saját
+gépeden (a meglévő teljes pipeline: Google-letöltés + DINO-RQI), kérésre. Az
+eredményt (pont-paraméterek + RQI-score-ok) egy `publish` scripttel feltöltöd
+egy hostolt read-only DB-be. A publikus oldal csak **olvas**: térkép,
+minőség-rács, útvonal-megjelenítés. **Kép nem kerül a felhőbe** — a
+részletnézet egy ingyenes Google Maps Street View deep-linket ad (lásd
+[Adatmodell](#adatmodell-változások-vázlat) + [ToS](#-google-tos-megjegyzés-őszintén)).
+Nincs publikus user-akció → **nincs prod-auth, queue, kvóta.**
+
+**Round 2 — user-beküldés (később).** Amikor kinyitod, hogy user is kérhessen
+A→B elemzést: reaktiválod a kész **F1 Clerk-autht** + a **kérvény-flow-t**
+(admin jóváhagyás → job → email) + **kvótákat**. Ehhez kell egy always-on
+backend (torch + worker) — az alábbi Hetzner/Procrastinate/Clerk/R2 elemzés
+**erre a körre** vonatkozik.
+
+## Round 1 architektúra (TL;DR)
+
+```
+ [A Mac-ed: teljes pipeline]                (lokális, kérésre, Google-ingyenkeret alatt)
+  Google-letöltés + DINO-RQI  ──publish──▶  [Neon Postgres]  (read-only adat)
+  (a képek a gépeden maradnak)                    ▲
+                                                  │ olvasás
+                            ┌─────────────────────┴────────────┐
+  böngésző ────────────────▶│ Vercel                           │
+                            │ frontend (Vite) + read-only       │
+                            │ /graphql serverless (torch-mentes)│
+                            └───────────────────────────────────┘
+  részletnézet ──▶ ingyenes Google Maps Street View deep-link (nincs tárolt kép)
+```
+
+| Réteg (round 1) | Választás | Havi költség |
+|---|---|---|
+| Frontend + read-API | Vercel (Hobby) | 0 $ |
+| Read-only DB | Neon (free tier, PostGIS, scale-to-zero) | 0 $ |
+| Compute (elemzés) | a saját géped, kérésre | 0 $ |
+| Képek | **nincs tárolás** — Street View deep-link | 0 $ |
+| Google Maps | ingyenkeret alatt (letöltés lokálisan; Directions proxyzva) | 0 $ |
+| Domain | `simaut.hu` | ~1 €/hó |
+| **Összesen** | | **~1 €/hó** |
+
+A korábbi always-on stack (Hetzner + Procrastinate + Clerk + R2) **round 2-re**
+marad — az alábbi részletes indoklás arra a körre érvényes.
 
 ## Cél
 
@@ -22,7 +68,10 @@ nem lehet költséget robbantani). Ami ehhez most hiányzik:
 | Letöltési limit / költségvédelem | nincs | user-kvóta + globális havi keret + GCP-oldali kemény plafon |
 | Éles infrastruktúra | lokális `make dev` / dev-Docker | VPS + CDN + objektumtár + CI-deploy |
 
-## A kiválasztott architektúra (TL;DR)
+## Round 2 architektúra (always-on backend — user-beküldéshez)
+
+*Ez a felállás a **round 2**-re kell (amikor user is indíthat elemzést). Round
+1-hez NEM — ott a fenti Vercel + Neon read-only stack fut.*
 
 ```
                 ┌─────────────────────┐
@@ -189,15 +238,24 @@ usage_events(id bigserial PK, user_id uuid FK, kind text, qty int,
              job_id text NULL, created_at timestamptz)  -- index: (user_id, created_at)
 
 -- bővítés
-jobs        + user_id FK, job_type text, params jsonb   -- meglévő tábla marad
+jobs        + user_id FK, job_type text, params jsonb   -- round 2 (userhez kötés)
 street_view_images
-            + pano_id text (index), heading_bucket smallint,
+            + pano_id text (index)          -- ROUND 1: a Street View deep-linkhez
+            + heading_bucket smallint        -- round 2 (dedup)
             + model_version text
-            + UNIQUE (pano_id, heading_bucket)
+            + UNIQUE (pano_id, heading_bucket)  -- round 2 (dedup)
 ```
 
-A séma ma `create_all`-lal jön létre (`backend/app/main.py:30`) — ez éles DB-nél
-nem elég: **Alembic** kell (F0), első lépésként a mostani állapot baseline-jával.
+**Round 1 — Street View kép helyett link.** A `pano_id`-t előrehozzuk (a
+metadata-hívás úgyis visszaadja, csak eddig nem mentettük). A publikus DB-be
+**nem kerül kép**; a részletnézet egy ingyenes Google Maps deep-linket épít:
+`https://www.google.com/maps/@?api=1&map_action=pano&pano=<pano_id>&heading=<h>&pitch=<p>`
+(fallback `viewpoint=<lat>,<lng>`). Fontos: a Street View **Static URL-t NEM**
+tesszük `<img>`-be — az megtekintésenként számlázna és a kulcsot is kiadná. A
+lokális elemzés továbbra is letölti a képet a pixelhez, de az a gépeden marad.
+
+A séma Alembic-migrációkkal jön (`backend/alembic/`, F1-gyel bevezetve); a
+`create_all` már kikerült.
 
 ## Biztonsági hardening (publikálás előtt kötelező)
 
@@ -218,21 +276,75 @@ nem elég: **Alembic** kell (F0), első lépésként a mostani állapot baseline
 ## ⚠️ Google ToS-megjegyzés (őszintén)
 
 A Google Maps Platform ToS a Street View-tartalom **tartós tárolását/cache-elését
-korlátozza**. A pipeline ma is tárol képeket (ez a training alapja) — publikálva
-ez láthatóbbá válik. Javasolt kockázatcsökkentés:
+korlátozza**. A round-1 redesign ezt **elegánsan megkerüli**: a publikus oldalra
+**nem kerül tárolt kép** — a részletnézet egy ingyenes Google Maps Street View
+**deep-linket** ad (a user a Google saját felületén nézi). Így:
 
-1. a tárolt képek **privátban maradnak** (R2 privát bucket, rövid életű presigned
-   URL csak bejelentkezett usernek) — nincs publikus képgaléria;
-2. a részletkártyán opcionálisan **élő Street View embed** a tárolt kép helyett;
-3. a publikus felület a **származtatott adatot** (RQI-szín, statisztika) mutatja.
+1. a publikus felület a **származtatott adatot** (RQI-szín, minőség-rács,
+   statisztika) mutatja + linket a Street View-ra — nincs tárolt/újraterjesztett
+   Google-kép;
+2. a Street View **Static URL nem megy `<img>`-be** (az megtekintésenként
+   számlázna + kulcsot szivárogtatna);
+3. a lokálisan letöltött képek (a training alapja) a **saját gépeden** maradnak,
+   nem publikusak.
 
-Ez termékdöntés — a terv az 1+3 kombinációval számol.
+Round 2-ben, ha inline kép/pano kell: a hivatalos **Street View embed** (Maps JS
+`StreetViewPanorama`, ingyen ≤ 5k megnyitás/hó) a ToS-tiszta út — nem a tárolt
+kép újraterjesztése.
 
 ## Fázisok — megvalósítható lépések
 
 Minden fázis önállóan shippelhető, a végén zöld kapukkal
 (`pytest` + `typecheck/lint/test`, ld. [AGENTS.md](../AGENTS.md)). Egy fázis =
 egy-két AI-session (promptok: [SESSION_PROMPTS.md](SESSION_PROMPTS.md)).
+
+> **Két csoport:** a **Round 1** fázisok (R1.1–R1.5) a soron következő munka
+> (read-only publikálás). Az alábbi **F0–F6** a **Round 2** (always-on backend,
+> user-beküldés) — kivéve az **F1** (Clerk auth) és **F1.5** (minőség-rács),
+> amelyek KÉSZEK és a repóban maradnak, round 2-ig a prod-on inaktívak.
+
+## Round 1 fázisok — read-only publikálás
+
+### R1.1 — Street View link a tárolt kép helyett (becslés: 0,5–1 nap)
+
+- [ ] `pano_id` oszlop (Alembic migráció) + a `collect_points` mentse
+      (a `generate_street_view_metadata` már visszaadja).
+- [ ] Publikus adat: `image_url` helyett Street View deep-link-paraméterek;
+      a `PointDetailCard` „Megnyitás Street View-ban" linket renderel
+      (`api=1&map_action=pano&pano=…`), nem `<img>`-et.
+- **Elfogadás:** a részletnézet linkje a helyes panorámára visz; nincs tárolt
+      kép a publikus úton; kapuk zöldek.
+
+### R1.2 — Read-only, torch-mentes backend-szelet (becslés: 1 nap)
+
+- [ ] Torch-mentes `requirements` a read-deployhoz (csak fastapi, strawberry,
+      sqlalchemy, psycopg, geoalchemy2, httpx) — a mutációk/torch nem deployolva.
+- [ ] Vercel Python serverless entrypoint (`api/index.py`, ASGI) + `/graphql`
+      rewrite; csak a read-query-k (`points`, `roadQualityGrid`, `point`) + a
+      `getRoute` Directions-proxy (Google-kulcs a Vercel env-ben).
+- **Elfogadás:** a `/graphql` a Vercelen kiszolgálja a térkép-lekérdezéseket
+      torch nélkül; a méret a serverless-limit alatt.
+
+### R1.3 — Neon + publish script (becslés: 1 nap)
+
+- [ ] Neon-projekt (Postgres + PostGIS); a Vercel-backend `DATABASE_URL`-je erre.
+- [ ] `scripts/publish` (egy parancs): a lokális `street_view_images` (paraméterek
+      + RQI-score-ok) upsert Neonba (`pano_id` kulcson). 17k sornál full-replace is jó.
+- **Elfogadás:** lokális elemzés után egy `publish` futtatás → a publikus térképen
+      megjelenik az új adat.
+
+### R1.4 — Prod-hardening (round-1 részhalmaz) + deploy (becslés: 0,5–1 nap)
+
+- [ ] CORS szűkítés `https://simaut.hu`-ra (`main.py` `"*"` kivétele); GraphQL
+      introspection/GraphiQL off prodban.
+- [ ] `simaut.hu` → Vercel (frontend + `/graphql`); DNS; Google-kulcs
+      IP-/referrer-restrikció + GCP budget-alert.
+- **Elfogadás:** a `simaut.hu` publikusan kiszolgálja a read-only térképet;
+      Directions a proxyn át megy; nincs kiszivárgó kulcs.
+
+*(Round 1-hez NEM kell: Dockerfile/worker/queue, Clerk a prodban, R2, kvóták.)*
+
+## Round 2 fázisok — user-beküldés (always-on backend)
 
 ### F0 — Prod-alapozás (becslés: 1–2 nap)
 
@@ -288,19 +400,79 @@ egy-két AI-session (promptok: [SESSION_PROMPTS.md](SESSION_PROMPTS.md)).
   eszközről a Clerk email-kódot kér — teszt-címen fixen 424242); Google-login
   gomb él, *egy kézi átkattintás-teszt van hátra*.
 
-### F2 — Perzisztens queue + userhez kötött jobok (becslés: 2–3 nap)
+### F1.5 — Térkép minőség-rács: „őszinte kép egyben" (KÉSZ, 2026-07-03)
 
+Termékdöntés-blokk (megbeszélve): anonim térkép-olvasás; a „kerülés" v1-ben csak
+figyelmeztetés (nincs aktív újratervezés); a lefedettség-bővítés kérvény-alapú
+(ld. F2). Ez az elem a mostani **pont-levágás bugot** (limit=2000) javítja és
+egyben a kért „őszinte kép az úthálózatról egyben" feature-t adja.
+
+**Fontos tanulság (leaflet.heat zsákutca):** először klasszikus hőtérképet
+csináltunk (leaflet.heat), de az **összeadja az egymásra eső pontok
+intenzitását** → a sűrűn mintázott (de jó) utak felizzottak, vagyis a szín a
+*lefedettséget* kódolta, nem a minőséget. A helyes megjelenítés **cellánkénti
+ÁTLAG-RQI** (sűrűségtől független): egy sűrűn mintázott jó út zöld marad.
+
+- [x] Backend: `roadQualityGrid(zoom, bbox)` GraphQL query — zoom-függő rács
+      (`floor(lat/cell), floor(lng/cell)`), cellánként az **átlag-RQI**; válasz
+      `{cell, cells: [[swLat, swLng, avgRqi], …]}` (kompakt, cella SW-sarok +
+      átlag). Effektív pont = `COALESCE(dino_rqi_score, rqi_score)`. Anonim
+      (mint a `points`). Tiszta helperek (`app/services/map_aggregation.py`),
+      unit-tesztelve. Élőben: Törökbálint (zoom 13) átlagai 1.0–1.58 → zöld.
+- [x] Frontend: egyetlen **canvas-réteg** (`QualityGridLayer`, nem additív) —
+      minden cella az átlag-RQI-ja szerint színezve (`getRQIColor`: ≤2 zöld,
+      ≤3 sárga, ≤4 piros), áttetszően. Zoom < 14 → rács, ≥ 14 → nyers
+      (kattintható) pontok; a router-saga és a job-utáni refresh zoom-tudatos.
+      A **szín = minőség, a kitöltött cellák = lefedettség** (nem a szín ereje).
+      Böngészőben igazolva: Törökbálint zöld (a heat-verzióban tévesen narancs
+      volt), Budapest-belváros piros góc (valódi rossz utak).
+- [x] Mellékesen javított latens bug: a `getPreloadedState` (store.ts) részleges
+      `map` slice-ot épített, ami elnyelte az új mezőket (crash `undefined.map`);
+      most a teljes `initialState`-et teríti, csak a viewportot írja felül.
+- [x] Ráközelített (zoom ≥ 14) pont-nézet levágás javítva: a `points` lekérés
+      limitje 2000 → 20000 (a kicsi viewport-bbox a valódi korlát; sűrű
+      belvárosi z=14 nézet ~2300 pont), és a pontok `preferCanvas`-szal
+      canvasra renderelnek (több ezer pont is gyors). Böngészőben igazolva:
+      Budapest-belváros z=14 → mind a ~2286 pont látszik, hézag nélkül.
+- **Elfogadás:** kizoomolt országnézet nem vág le pontot, minőség-színezett
+  rácsot mutat (sűrűségtől független); ráközelítve MINDEN pont látszik
+  (nincs 2000-es levágás); kapuk zöldek (backend 64, frontend
+  typecheck/lint/16). ✓
+- *Nyitott finomítás (opcionális):* a rács kissé „blokkos"; egy canvas-upscale
+  + blur simábbá tenné a minőség-felület megtartásával.
+
+### F2 — Kérvény-alapú lefedettség-bővítés + userhez kötött jobok (becslés: 3–4 nap)
+
+Modellváltás (megbeszélve): a drága lefedettség-bővítés (új A→B képgyűjtés +
+inferencia) **nem önkiszolgáló kvótával**, hanem **kérvény→admin-jóváhagyás→
+email-értesítés** folyamattal megy — kevesebb visszaélési felület, a Google-
+költség admin-kézben. A mindennapi útvonal-tervezés a *már elemzett* utakon
+önkiszolgáló marad (bejelentkezve).
+
+- [ ] `analysis_request` tábla (Alembic migráció): `user_id` FK, `origin`,
+      `destination`, `status` (`pending`/`approved`/`running`/`done`/`rejected`),
+      `note`, `job_id` NULL, `created_at`.
+- [ ] **Magyar geofence** (v1: bounding box, később országhatár-poligon):
+      a beküldés és a `getRoute` elutasítja a nem magyar A/B-t. Egyelőre a nem
+      magyar útvonal-hozzáadás tiltva (termékdöntés).
+- [ ] GraphQL: `submitAnalysisRequest(origin, destination, note)` (user, geofence-
+      elt), `myRequests` (user), `pendingRequests` + `approveRequest`/
+      `rejectRequest(reason)` (admin). Elfogadás indítja a meglévő process-route
+      jobot; a job `user_id`/`request_id`-hez kötve.
 - [ ] Procrastinate behúzása; worker belépési pont (külön konténer ugyanabból
       az image-ből, más CMD).
 - [ ] A `tasks.py`/`job_runner.py` thread-indítás lecserélése `defer`-re; a
       pipeline-lépések (collect → download → analyze) taskokként, retry-vel.
 - [ ] `jobs` tábla bővítése: `user_id`, `job_type`, `params`; a meglévő
       SSE-progress megtartása (a domain-jobs tábla frissül, mint eddig).
-- [ ] GraphQL: `myJobs` query, job-cancel mutáció; admin: minden job.
 - [ ] Egyidejűség: worker konkurencia = 1 induláskor (a torch-inferencia úgyis
       soros); a queue-séma többet is kibír később.
-- **Elfogadás:** API-restart közben futó job túléli és befejeződik; a job a
-  userhez kötve listázható; hibás task retry-ol.
+- [ ] **Email-értesítés** a kérvény elkészültekor: pluggable provider env-ből
+      (SMTP vagy pl. Resend API-kulcs; titok SOSEM a repóba), konzol-fallback
+      dev-hez. A job befejezésekor a kérelmező kap egy „kész, megnézheted" mailt.
+- **Elfogadás:** user beküld egy magyar A→B kérvényt (nem magyar → elutasítva);
+  admin jóváhagyja → job lefut; a kérvény `done`-ra vált, a kérelmező email-
+  értesítést kap (F2-email); API-restart közben futó job túléli és befejeződik.
 
 ### F3 — Központi gyűjtés: dedup + kvóták (becslés: 3–5 nap)
 
