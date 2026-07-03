@@ -16,7 +16,7 @@ from app.core.settings_manager import settings_manager
 from .types import Point, Job, TrainingData, ProcessRouteInput, TrainingDataInput, RunAnalysisInput, TrainingStats, TrainingPointsResponse, FilterMode, Setting, UpdateSettingInput, DetectInput, DetectPrediction, ReviewActionInput, ReviewActionResult, RqiModelInfo
 
 from app.graphql.resolver_helpers import get_db_session, image_filename_from_url as get_filename
-from app.graphql.permissions import IsAdmin, IsAuthenticated
+from app.graphql.permissions import IsAdmin, IsAuthenticated, IsAuthenticatedUnlessPublicRead
 
 @strawberry.type
 class RouteStep:
@@ -97,8 +97,9 @@ class Query:
             return None
         return Viewer(clerk_id=identity.clerk_id, email=identity.email, role=identity.role)
 
-    # Costs a Google Directions API call per invocation — never anonymous.
-    @strawberry.field(permission_classes=[IsAuthenticated])
+    # Costs a Google Directions API call per invocation. Authenticated in the
+    # full app; anonymous on the round-1 public read-only deploy (quota-capped).
+    @strawberry.field(permission_classes=[IsAuthenticatedUnlessPublicRead])
     def get_route(self, origin: str, destination: str) -> Optional[RouteData]:
         from app.services.google_maps import google_maps_service
         try:

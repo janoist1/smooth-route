@@ -14,9 +14,16 @@ app = FastAPI(
 
 from fastapi.middleware.cors import CORSMiddleware
 
+# Local dev is permissive; the public read-only deploy restricts to the
+# configured prod origin(s).
+if settings.PUBLIC_READ_ONLY:
+    _cors_origins = [o.strip() for o in settings.ALLOWED_ORIGINS.split(",") if o.strip()]
+else:
+    _cors_origins = ["http://localhost:5173", "http://localhost:8000", "*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:8000", "*"], # Added * for dev flexibility, restrict in prod
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -33,11 +40,13 @@ if settings.RUN_MIGRATIONS_ON_STARTUP:
 app.include_router(api_router)
 
 # GraphQL — AuthGraphQL resolves the caller identity into the context.
+# Read-only deploy serves the query-only schema (no mutations reachable).
 from app.graphql.context import AuthGraphQL
-from app.graphql.schema import schema
-graphql_app = AuthGraphQL(schema)
+from app.graphql.schema import read_schema, schema
+graphql_app = AuthGraphQL(read_schema if settings.PUBLIC_READ_ONLY else schema)
 app.add_route("/graphql", graphql_app)
-app.add_websocket_route("/graphql", graphql_app)
+if not settings.PUBLIC_READ_ONLY:
+    app.add_websocket_route("/graphql", graphql_app)
 
 # Serve static files (web interface)
 static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")

@@ -33,6 +33,13 @@ class Settings(BaseSettings):
     # Run Alembic migrations at app startup (disable when migrating explicitly).
     RUN_MIGRATIONS_ON_STARTUP: bool = True
 
+    # Public read-only deploy (round 1): serve only the read GraphQL schema (no
+    # mutations), skip the local-only pieces, and let route planning stay
+    # anonymous. Local dev keeps this False → full app unchanged.
+    PUBLIC_READ_ONLY: bool = False
+    # Comma-separated CORS origins used when PUBLIC_READ_ONLY (prod frontend).
+    ALLOWED_ORIGINS: str = "https://simaut.hu"
+
     # Quota limits
     DAILY_IMAGE_QUOTA: int = 1000  # Conservative default
 

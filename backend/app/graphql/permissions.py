@@ -24,3 +24,16 @@ class IsAdmin(BasePermission):
     def has_permission(self, source: Any, info: Info, **kwargs: Any) -> bool:
         identity = info.context.get("identity")
         return identity is not None and identity.is_admin
+
+
+class IsAuthenticatedUnlessPublicRead(IsAuthenticated):
+    """Require auth normally, but allow anonymous on the round-1 public
+    read-only deploy (no accounts there; route planning must work for anyone).
+    Cost is capped by the Google Directions free tier + a GCP daily quota."""
+
+    def has_permission(self, source: Any, info: Info, **kwargs: Any) -> bool:
+        from app.core.config import settings
+
+        if settings.PUBLIC_READ_ONLY:
+            return True
+        return super().has_permission(source, info, **kwargs)

@@ -1,0 +1,17 @@
+# Torch-free dependency set for the round-1 public READ-ONLY deploy
+# (Vercel serverless). Serves only the query schema (points, roadQualityGrid,
+# point, getRoute proxy) + the read REST endpoints — no torch, ultralytics,
+# opencv, or the worker. Keeps the function well under the serverless size cap.
+#
+# Local dev / the full backend use pyproject.toml (which pulls torch via
+# ultralytics); this file is deploy-only.
+fastapi>=0.109.0
+strawberry-graphql>=0.219.0
+sqlalchemy>=2.0.25
+geoalchemy2>=0.14.3
+psycopg2-binary>=2.9.9
+pydantic-settings>=2.1.0
+googlemaps>=4.10.0
+httpx>=0.27.0
+sse-starlette>=2.0.0
+uvicorn>=0.27.0
