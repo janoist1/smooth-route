@@ -305,42 +305,65 @@ egy-két AI-session (promptok: [SESSION_PROMPTS.md](SESSION_PROMPTS.md)).
 
 ## Round 1 fázisok — read-only publikálás
 
-### R1.1 — Street View link a tárolt kép helyett (becslés: 0,5–1 nap)
+**Deploy-topológia (eldöntve): két külön Vercel-projekt.**
 
-- [ ] `pano_id` oszlop (Alembic migráció) + a `collect_points` mentse
-      (a `generate_street_view_metadata` már visszaadja).
-- [ ] Publikus adat: `image_url` helyett Street View deep-link-paraméterek;
-      a `PointDetailCard` „Megnyitás Street View-ban" linket renderel
-      (`api=1&map_action=pano&pano=…`), nem `<img>`-et.
-- **Elfogadás:** a részletnézet linkje a helyes panorámára visz; nincs tárolt
-      kép a publikus úton; kapuk zöldek.
+```
+  simaut.hu       → Vercel projekt #1  (root: frontend/)  — Vite SPA
+  api.simaut.hu   → Vercel projekt #2  (root: backend/)   — Python, read-only
+                         │
+                         ▼
+                    [Neon Postgres]  ◀── publish script (a Mac-edről)
+```
 
-### R1.2 — Read-only, torch-mentes backend-szelet (becslés: 1 nap)
+A frontend a `VITE_API_URL`-en (`https://api.simaut.hu`) hívja a `/graphql`-t
+(dev-ben üres → relatív, Vite-proxy a :8000-re). A backend UGYANAZ a
+`app.main:app`, csak `PUBLIC_READ_ONLY=1` env-vel → query-only séma. Ez a
+kétprojektes felállás elkerüli a monorepo-import gubancot; local dev
+változatlan (a flag default `False`).
 
-- [ ] Torch-mentes `requirements` a read-deployhoz (csak fastapi, strawberry,
-      sqlalchemy, psycopg, geoalchemy2, httpx) — a mutációk/torch nem deployolva.
-- [ ] Vercel Python serverless entrypoint (`api/index.py`, ASGI) + `/graphql`
-      rewrite; csak a read-query-k (`points`, `roadQualityGrid`, `point`) + a
-      `getRoute` Directions-proxy (Google-kulcs a Vercel env-ben).
-- **Elfogadás:** a `/graphql` a Vercelen kiszolgálja a térkép-lekérdezéseket
-      torch nélkül; a méret a serverless-limit alatt.
+### R1.1 — Street View link a tárolt kép helyett (KÉSZ, `1f10b25`)
+
+- [x] `pano_id` oszlop (Alembic 0003) + a `collect_points` menti
+      (a `generate_street_view_metadata` már visszaadta).
+- [x] `Point.streetViewUrl` számított mező (`api=1&map_action=pano&pano=…`,
+      fallback `viewpoint=lat,lng`); a `PointDetailCard` „Megnyitás Street
+      View-ban" linket renderel, nem tárolt `<img>`-et.
+- **Elfogadás:** a link a helyes panorámára visz; nincs tárolt kép a publikus
+      úton; kapuk zöldek. ✓
+
+### R1.2 — Read-only mód + Vercel-csomagolás (KÉSZ kód: `63c1dd2` + deploy-artefaktumok)
+
+- [x] `PUBLIC_READ_ONLY` flag: `main.py` a `read_schema`-t (query-only) mountolja,
+      CORS `ALLOWED_ORIGINS`-ra szűkül; `getRoute` anonim read-only módban
+      (`IsAuthenticatedUnlessPublicRead`). Torch-mentes import — igazolva.
+- [x] `backend/requirements.txt` (torch-mentes), `backend/api/index.py` ASGI
+      entrypoint, `backend/vercel.json` (`@vercel/python`), `frontend/vercel.json`
+      (SPA rewrite), `VITE_API_URL` a kliensben.
+- **Deploy-env a Vercel projekt #2-n:** `PUBLIC_READ_ONLY=1`,
+      `RUN_MIGRATIONS_ON_STARTUP=false`, `DATABASE_URL=<neon>`,
+      `GOOGLE_MAPS_API_KEY=<kulcs>`, `ALLOWED_ORIGINS=https://simaut.hu`.
+- **Elfogadás:** a read-only app anonim kiszolgálja a `points`/`roadQualityGrid`/
+      `point` lekérdezéseket, mutációt elutasít, torch nélkül importál. ✓
+      *(Vercel-deploy = a te lépésed: `vercel` a `backend/`-ben és a `frontend/`-ben.)*
 
 ### R1.3 — Neon + publish script (becslés: 1 nap)
 
 - [ ] Neon-projekt (Postgres + PostGIS); a Vercel-backend `DATABASE_URL`-je erre.
 - [ ] `scripts/publish` (egy parancs): a lokális `street_view_images` (paraméterek
-      + RQI-score-ok) upsert Neonba (`pano_id` kulcson). 17k sornál full-replace is jó.
+      + RQI-score-ok, `pano_id`) upsert Neonba; `image_url` NULL-ra (a publikus
+      DB csak a Street View linkhez kell). 17k sornál full-replace is jó.
 - **Elfogadás:** lokális elemzés után egy `publish` futtatás → a publikus térképen
       megjelenik az új adat.
 
-### R1.4 — Prod-hardening (round-1 részhalmaz) + deploy (becslés: 0,5–1 nap)
+### R1.4 — DNS + deploy + hardening-zárás (becslés: 0,5–1 nap)
 
-- [ ] CORS szűkítés `https://simaut.hu`-ra (`main.py` `"*"` kivétele); GraphQL
-      introspection/GraphiQL off prodban.
-- [ ] `simaut.hu` → Vercel (frontend + `/graphql`); DNS; Google-kulcs
-      IP-/referrer-restrikció + GCP budget-alert.
+- [ ] DNS: `simaut.hu` + `www` → Vercel projekt #1; `api.simaut.hu` → Vercel
+      projekt #2 (Vercel adja a CNAME/A célt); a `sim.hu`-regisztrátornál v.
+      Cloudflare-en.
+- [ ] Google-kulcs IP-/referrer-restrikció + GCP budget-alert; GraphQL
+      introspection off prodban (round-1 nice-to-have).
 - **Elfogadás:** a `simaut.hu` publikusan kiszolgálja a read-only térképet;
-      Directions a proxyn át megy; nincs kiszivárgó kulcs.
+      a Directions az `api.simaut.hu` proxyn át megy; nincs kiszivárgó kulcs.
 
 *(Round 1-hez NEM kell: Dockerfile/worker/queue, Clerk a prodban, R2, kvóták.)*
 

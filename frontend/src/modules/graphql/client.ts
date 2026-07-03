@@ -12,8 +12,12 @@ const authLink = new SetContextLink(async prevContext => {
   }
 })
 
+// Dev: empty → relative "/graphql" (Vite proxy to :8000). Prod: the read-API
+// origin, e.g. https://api.simaut.hu (frontend and API are separate deploys).
+const API_URL = import.meta.env.VITE_API_URL ?? ''
+
 export const client = new ApolloClient({
-  link: ApolloLink.from([authLink, new HttpLink({ uri: '/graphql' })]),
+  link: ApolloLink.from([authLink, new HttpLink({ uri: `${API_URL}/graphql` })]),
   cache: new InMemoryCache(),
   defaultOptions: {
     watchQuery: {

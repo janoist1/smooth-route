@@ -69,12 +69,14 @@ szkripteket használd — azok referencia/zsákutca. Fogalmak: [docs/GLOSSARY.md
 
 ## Állapot (2026-07-03)
 
-A javítási terv **A–D fázisa kész**. A publikálás **átteljezve kétkörösre**
+A javítási terv **A–D fázisa kész**. A publikálás **kétkörös**
 (ld. [docs/PUBLISH_PLAN.md](docs/PUBLISH_PLAN.md)): az elemzés lokálisan, kérésre
-fut, így **round 1 = read-only publikálás** (Vercel + Neon + Street View
-deep-linkek). Kész és commitolva: **F1** (Clerk auth), **F1.5** (térkép
-minőség-rács + admin stats/monitoring oldal), az **F0 Alembic-része**, plusz
-SSE-progress és pont-limit fixek. **Soron következő: Round 1 (R1.1–R1.5)** —
-pano_id + Street View link, torch-mentes read-backend Vercelre, Neon +
-publish-script, deploy `simaut.hu`-ra. A round-2 (auth/queue/kvóta, F0–F6) a
-user-beküldésig vár. Commit/push csak explicit kérésre.
+fut, így **round 1 = read-only publikálás**. Deploy-topológia: **két Vercel-
+projekt** — `simaut.hu` (frontend) + `api.simaut.hu` (`backend/`, ugyanaz az
+app `PUBLIC_READ_ONLY=1`-gyel) → **Neon** olvasható DB, a képek helyett Google
+Street View deep-linkek. Kész és pusholva: **F1** (Clerk auth), **F1.5** (térkép
+minőség-rács + admin stats), **R1.1** (pano_id + SV link), **R1.2** (read-only
+mód + Vercel-artefaktumok). **Soron következő: R1.3** (Neon + `publish` script),
+majd **R1.4** (DNS + deploy). A round-2 (auth/queue/kvóta, F0–F6) a
+user-beküldésig vár. A lokális dev változatlan (`make dev`, teljes backend);
+a read-only csak env-flag. Commit/push csak explicit kérésre.
