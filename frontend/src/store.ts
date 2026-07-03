@@ -3,7 +3,7 @@ import createSagaMiddleware from 'redux-saga'
 import { all } from 'redux-saga/effects'
 
 // Reducers
-import { reducer as mapReducer, sagas as mapSagas } from './modules/map'
+import { reducer as mapReducer, sagas as mapSagas, mapInitialState } from './modules/map'
 import { reducer as trainingReducer, sagas as trainingSagas } from './modules/training'
 import { reducer as settingsReducer, sagas as settingsSagas } from './modules/settings'
 import { reducer as appReducer } from './modules/app'
@@ -36,14 +36,12 @@ const getPreloadedState = () => {
   const z = params.get('z')
 
   if (lat && lng && z) {
+    // Spread the full slice initial state and override only the viewport —
+    // hand-listing fields here silently drops any new ones (e.g. it once
+    // omitted aggregatedCells and crashed MapView on undefined.map).
     return {
       map: {
-        points: [],
-        loading: false,
-        error: null,
-        selectedPointId: null,
-        selectedPointDetail: null,
-        loadingDetail: false,
+        ...mapInitialState,
         viewport: {
           center: [parseFloat(lat), parseFloat(lng)] as [number, number],
           zoom: parseInt(z, 10),

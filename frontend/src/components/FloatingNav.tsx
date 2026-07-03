@@ -1,6 +1,6 @@
 import React from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { Map as MapIcon, Database, Settings } from 'lucide-react'
+import { Map as MapIcon, Database, Settings, BarChart3 } from 'lucide-react'
 import { FloatingNavBar } from 'modules/ui'
 import { UserMenu, useViewer } from 'modules/auth'
 
@@ -15,6 +15,7 @@ const FloatingNav: React.FC = () => {
     // same rule, hiding them here is just honest navigation.
     ...(isAdmin
       ? [
+          { path: '/admin', label: 'Admin', icon: <BarChart3 size={20} /> },
           { path: '/training', label: 'Training', icon: <Database size={20} /> },
           { path: '/settings', label: 'Settings', icon: <Settings size={20} /> },
         ]

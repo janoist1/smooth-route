@@ -164,9 +164,11 @@ export type Query = {
   config: Scalars['String']['output'];
   getRoute?: Maybe<RouteData>;
   job?: Maybe<Job>;
+  me?: Maybe<Viewer>;
   nextTrainingPoint?: Maybe<Scalars['Int']['output']>;
   point?: Maybe<Point>;
   points: Array<Point>;
+  roadQualityGrid: Scalars['JSON']['output'];
   rqiModelInfo: RqiModelInfo;
   settings: Array<Setting>;
   trainingPoints: TrainingPointsResponse;
@@ -201,6 +203,12 @@ export type QueryPointsArgs = {
   bbox?: InputMaybe<Array<Scalars['Float']['input']>>;
   limit?: Scalars['Int']['input'];
   offset?: Scalars['Int']['input'];
+};
+
+
+export type QueryRoadQualityGridArgs = {
+  bbox?: InputMaybe<Array<Scalars['Float']['input']>>;
+  zoom: Scalars['Int']['input'];
 };
 
 
@@ -311,12 +319,24 @@ export type UpdateSettingInput = {
   value: Scalars['JSON']['input'];
 };
 
+export type Viewer = {
+  __typename?: 'Viewer';
+  clerkId: Scalars['String']['output'];
+  email?: Maybe<Scalars['String']['output']>;
+  role: Scalars['String']['output'];
+};
+
 export type GetJobQueryVariables = Exact<{
   id: Scalars['String']['input'];
 }>;
 
 
 export type GetJobQuery = { __typename?: 'Query', job?: { __typename?: 'Job', id: string, status: string, progress: number, total: number, message: string, result?: any | null, error?: string | null, createdAt: any, completedAt?: any | null } | null };
+
+export type ViewerQueryVariables = Exact<{ [key: string]: never; }>;
+
+
+export type ViewerQuery = { __typename?: 'Query', me?: { __typename?: 'Viewer', clerkId: string, email?: string | null, role: string } | null };
 
 export type GetPointsQueryVariables = Exact<{
   limit?: InputMaybe<Scalars['Int']['input']>;
@@ -325,6 +345,14 @@ export type GetPointsQueryVariables = Exact<{
 
 
 export type GetPointsQuery = { __typename?: 'Query', points: Array<{ __typename?: 'Point', id: number, latitude: number, longitude: number, rqiScore?: number | null, dinoRqiScore?: number | null, rqiSource: string, heading: number }> };
+
+export type GetRoadQualityGridQueryVariables = Exact<{
+  zoom: Scalars['Int']['input'];
+  bbox?: InputMaybe<Array<Scalars['Float']['input']> | Scalars['Float']['input']>;
+}>;
+
+
+export type GetRoadQualityGridQuery = { __typename?: 'Query', roadQualityGrid: any };
 
 export type GetPointDetailQueryVariables = Exact<{
   id: Scalars['Int']['input'];
@@ -442,7 +470,9 @@ export type PerformReviewActionMutation = { __typename?: 'Mutation', performRevi
 
 
 export const GetJobDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetJob"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"job"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"progress"}},{"kind":"Field","name":{"kind":"Name","value":"total"}},{"kind":"Field","name":{"kind":"Name","value":"message"}},{"kind":"Field","name":{"kind":"Name","value":"result"}},{"kind":"Field","name":{"kind":"Name","value":"error"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"completedAt"}}]}}]}}]} as unknown as DocumentNode<GetJobQuery, GetJobQueryVariables>;
+export const ViewerDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"Viewer"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"me"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"clerkId"}},{"kind":"Field","name":{"kind":"Name","value":"email"}},{"kind":"Field","name":{"kind":"Name","value":"role"}}]}}]}}]} as unknown as DocumentNode<ViewerQuery, ViewerQueryVariables>;
 export const GetPointsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetPoints"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"limit"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"bbox"}},"type":{"kind":"ListType","type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"Float"}}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"points"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"limit"},"value":{"kind":"Variable","name":{"kind":"Name","value":"limit"}}},{"kind":"Argument","name":{"kind":"Name","value":"bbox"},"value":{"kind":"Variable","name":{"kind":"Name","value":"bbox"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"latitude"}},{"kind":"Field","name":{"kind":"Name","value":"longitude"}},{"kind":"Field","name":{"kind":"Name","value":"rqiScore"}},{"kind":"Field","name":{"kind":"Name","value":"dinoRqiScore"}},{"kind":"Field","name":{"kind":"Name","value":"rqiSource"}},{"kind":"Field","name":{"kind":"Name","value":"heading"}}]}}]}}]} as unknown as DocumentNode<GetPointsQuery, GetPointsQueryVariables>;
+export const GetRoadQualityGridDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetRoadQualityGrid"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"zoom"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"bbox"}},"type":{"kind":"ListType","type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"Float"}}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"roadQualityGrid"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"zoom"},"value":{"kind":"Variable","name":{"kind":"Name","value":"zoom"}}},{"kind":"Argument","name":{"kind":"Name","value":"bbox"},"value":{"kind":"Variable","name":{"kind":"Name","value":"bbox"}}}]}]}}]} as unknown as DocumentNode<GetRoadQualityGridQuery, GetRoadQualityGridQueryVariables>;
 export const GetPointDetailDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetPointDetail"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"point"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"latitude"}},{"kind":"Field","name":{"kind":"Name","value":"longitude"}},{"kind":"Field","name":{"kind":"Name","value":"rqiScore"}},{"kind":"Field","name":{"kind":"Name","value":"dinoRqiScore"}},{"kind":"Field","name":{"kind":"Name","value":"dinoScore"}},{"kind":"Field","name":{"kind":"Name","value":"dinoPBad"}},{"kind":"Field","name":{"kind":"Name","value":"rqiSource"}},{"kind":"Field","name":{"kind":"Name","value":"heading"}},{"kind":"Field","name":{"kind":"Name","value":"pitch"}},{"kind":"Field","name":{"kind":"Name","value":"imageUrl"}},{"kind":"Field","name":{"kind":"Name","value":"manualRqi"}},{"kind":"Field","name":{"kind":"Name","value":"manualTags"}},{"kind":"Field","name":{"kind":"Name","value":"manualAnnotations"}},{"kind":"Field","name":{"kind":"Name","value":"damageCount"}},{"kind":"Field","name":{"kind":"Name","value":"damageTypes"}},{"kind":"Field","name":{"kind":"Name","value":"analysisMetadata"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}}]}}]}}]} as unknown as DocumentNode<GetPointDetailQuery, GetPointDetailQueryVariables>;
 export const GetRouteDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetRoute"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"origin"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"destination"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"getRoute"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"origin"},"value":{"kind":"Variable","name":{"kind":"Name","value":"origin"}}},{"kind":"Argument","name":{"kind":"Name","value":"destination"},"value":{"kind":"Variable","name":{"kind":"Name","value":"destination"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"points"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"lat"}},{"kind":"Field","name":{"kind":"Name","value":"lng"}}]}}]}}]}}]} as unknown as DocumentNode<GetRouteQuery, GetRouteQueryVariables>;
 export const ProcessRouteDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"ProcessRoute"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ProcessRouteInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"processRoute"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"message"}}]}}]}}]} as unknown as DocumentNode<ProcessRouteMutation, ProcessRouteMutationVariables>;

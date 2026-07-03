@@ -9,6 +9,7 @@ import type { MapStyle } from './MapStyleSwitcher'
 
 import { getRQIColor, resolveRqi } from '../../ui'
 import { useRqiDisplaySource } from '../../settings'
+import QualityGridLayer from './QualityGridLayer'
 
 const TILE_LAYERS: Record<MapStyle, { url: string; attribution: string }> = {
   dark: {
@@ -101,6 +102,7 @@ interface MapViewProps {
 const MapView: React.FC<MapViewProps> = ({ onTrain, onMapMove }) => {
   const {
     points,
+    grid,
     loading,
     selectPoint,
     selectedPointDetail,
@@ -108,7 +110,7 @@ const MapView: React.FC<MapViewProps> = ({ onTrain, onMapMove }) => {
     selectedPoint,
     viewport,
     routePoints,
-    pickingLocationFor, 
+    pickingLocationFor,
   } = useMap()
   const [mapStyle, setMapStyle] = useState<MapStyle>('dark')
 
@@ -127,6 +129,7 @@ const MapView: React.FC<MapViewProps> = ({ onTrain, onMapMove }) => {
       <MapContainer
         center={viewport.center}
         zoom={viewport.zoom}
+        preferCanvas={true}
         style={{ height: '100%', width: '100%', background: '#111' }}>
         <TileLayer
           attribution={TILE_LAYERS[mapStyle].attribution}
@@ -148,6 +151,9 @@ const MapView: React.FC<MapViewProps> = ({ onTrain, onMapMove }) => {
             }}
           />
         )}
+
+        {/* Zoomed-out overview: road-quality grid (colour = average RQI). */}
+        {grid && grid.cells.length > 0 && <QualityGridLayer grid={grid} />}
 
         {/* Data Points (Markers) */}
         {points.map((point) => {

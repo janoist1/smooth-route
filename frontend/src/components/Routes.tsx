@@ -5,6 +5,7 @@ import HomePage from './HomePage'
 import TrainingPage from './pages/TrainingPage'
 import TrainingDashboardPage from './pages/TrainingDashboardPage'
 import SettingsPage from './pages/SettingsPage'
+import AdminStatsPage from './pages/AdminStatsPage'
 import { ROUTES } from '../routes'
 
 const Routes: React.FC = () => {
@@ -32,6 +33,14 @@ const Routes: React.FC = () => {
         element={
           <RequireAdmin>
             <SettingsPage />
+          </RequireAdmin>
+        }
+      />
+      <Route
+        path={ROUTES.ADMIN.path}
+        element={
+          <RequireAdmin>
+            <AdminStatsPage />
           </RequireAdmin>
         }
       />

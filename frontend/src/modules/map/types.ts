@@ -21,8 +21,12 @@ export interface RoadPointDetail extends RoadPoint {
   created_at: string
 }
 
+import type { QualityGrid } from './aggregation'
+
 export interface MapState {
   points: RoadPoint[]
+  // Zoomed-out overview: average-RQI grid cells (null until fetched).
+  grid: QualityGrid | null
   loading: boolean
   error: string | null
   selectedPointId: number | null

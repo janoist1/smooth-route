@@ -3,6 +3,7 @@ import { takeLatest, put, call, select } from 'redux-saga/effects'
 import { matchPath, type PathMatch } from 'react-router-dom'
 import { actions as trainingActions, selectors as trainingSelectors } from 'modules/training'
 import { actions as mapActions, selectors as mapSelectors } from 'modules/map'
+import { shouldShowGrid } from 'modules/map/aggregation'
 import { actions as settingsActions } from 'modules/settings'
 import { actions as routingActions } from 'modules/routing'
 import { waitForAppStart } from 'modules/app'
@@ -72,10 +73,18 @@ function* handleMapHome(_match: PathMatch, searchParams: URLSearchParams): SagaI
   const lngDelta = (width / 2) * degPerPixel
   const latDelta = (height / 2) * degPerPixel
 
-  yield put(mapActions.fetchPoints([
+  const bbox = [
     center[1] - lngDelta, center[0] - latDelta,
     center[1] + lngDelta, center[0] + latDelta,
-  ]))
+  ]
+
+  // Zoomed out: road-quality grid (honest whole-network picture, no
+  // truncation). Zoomed in: individual clickable points.
+  if (shouldShowGrid(zoom)) {
+    yield put(mapActions.fetchGrid({ bbox, zoom }))
+  } else {
+    yield put(mapActions.fetchPoints(bbox))
+  }
 
   // Restore a route analysis job still running on the backend (survives reload)
   yield put(mapActions.reconnectRouteJob())

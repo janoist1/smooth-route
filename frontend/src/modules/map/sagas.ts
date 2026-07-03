@@ -9,11 +9,14 @@ import type { RootState } from '../../store'
 import * as selectors from './selectors'
 import type {
   GetPointsQuery,
+  GetRoadQualityGridQuery,
   GetPointDetailQuery,
   GetRouteQuery,
   ProcessRouteMutation,
   GetActiveJobQuery,
 } from '../graphql/generated/graphql'
+import type { QualityGrid } from './aggregation'
+import { shouldShowGrid } from './aggregation'
 
 // Fragment Colocation: Define what we need
 // Inlined for simplicity to satisfy linter
@@ -28,6 +31,12 @@ const GET_POINTS = gql(`
       rqiSource
       heading
     }
+  }
+`)
+
+const GET_ROAD_QUALITY_GRID = gql(`
+  query GetRoadQualityGrid($zoom: Int!, $bbox: [Float!]) {
+    roadQualityGrid(zoom: $zoom, bbox: $bbox)
   }
 `)
 
@@ -96,13 +105,18 @@ const GET_ACTIVE_JOB = gql(`
     }
 `)
 
-// Backend endpoint: GET /api/v1/points
+// Individual points only load zoomed in (zoom ≥ 14), where the viewport bbox
+// is small — the bbox is the real bound, so this cap only exists to stop a
+// pathological query returning the whole table. Points render on a canvas
+// (preferCanvas) so a few thousand in a dense city view stay smooth.
+const MAP_POINT_LIMIT = 20000
+
 function* fetchPointsWorker(action: SagaActionFromCreator<typeof actions.fetchPoints>) {
   const bbox = action.meta.arg
 
   const result: { data: GetPointsQuery } = yield call([client, client.query], {
     query: GET_POINTS,
-    variables: { limit: 2000, bbox },
+    variables: { limit: MAP_POINT_LIMIT, bbox },
   })
 
   return result.data.points.map(p => ({
@@ -113,6 +127,18 @@ function* fetchPointsWorker(action: SagaActionFromCreator<typeof actions.fetchPo
     rqi_score: p.rqiScore ?? undefined,
     rqi_source: p.rqiSource,
   }))
+}
+
+// Backend: GraphQL roadQualityGrid — { cell, cells: [[swLat, swLng, avgRqi]] }.
+function* fetchGridWorker(action: SagaActionFromCreator<typeof actions.fetchGrid>) {
+  const { bbox, zoom } = action.meta.arg
+
+  const result: { data: GetRoadQualityGridQuery } = yield call([client, client.query], {
+    query: GET_ROAD_QUALITY_GRID,
+    variables: { zoom, bbox },
+  })
+
+  return (result.data.roadQualityGrid ?? { cell: 0, cells: [] }) as QualityGrid
 }
 
 function* fetchPointDetailWorker(action: SagaActionFromCreator<typeof actions.fetchPointDetail>) {
@@ -228,7 +254,8 @@ function* watchJobUpdates(action: ReturnType<typeof apiActions.updateJob>) {
   const routeJobId: string | null = yield select((state: RootState) => state.map.routeAnalysisJobId)
 
   if (id === routeJobId && status === 'completed') {
-    // Job finished! Refetch points to show new data
+    // Job finished! Refetch to show new data — respect the zoom-based
+    // aggregate/raw split so a zoomed-out refresh isn't silently truncated.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const viewport: any = yield select(selectors.selectViewport)
     const { center, zoom } = viewport
@@ -246,13 +273,18 @@ function* watchJobUpdates(action: ReturnType<typeof apiActions.updateJob>) {
       center[1] + lngDelta,
       center[0] + latDelta,
     ]
-    yield put(actions.fetchPoints(bbox))
+    if (shouldShowGrid(zoom)) {
+      yield put(actions.fetchGrid({ bbox, zoom }))
+    } else {
+      yield put(actions.fetchPoints(bbox))
+    }
     yield put(actions.finishAnalysis())
   }
 }
 
 export default [
   takeLatestAsync(actions.fetchPoints.type, fetchPointsWorker),
+  takeLatestAsync(actions.fetchGrid.type, fetchGridWorker),
   takeLatestAsync(actions.fetchPointDetail.type, fetchPointDetailWorker),
   takeLatest(actions.selectPoint.type, handleSelectionSaga),
   takeLatestAsync(actions.planRoute.type, planRouteWorker),

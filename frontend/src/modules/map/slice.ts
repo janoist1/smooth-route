@@ -2,12 +2,14 @@ import { createSlice, createAction } from '@reduxjs/toolkit'
 import type { PayloadAction } from '@reduxjs/toolkit'
 import { createSagaAction } from 'saga-toolkit'
 import type { MapState, RoadPoint, RoadPointDetail } from './types'
+import type { QualityGrid } from './aggregation'
 import type { SerializedError } from '@reduxjs/toolkit'
 
 type SagaRejectedAction = PayloadAction<unknown, string, never, SerializedError>
 
-const initialState: MapState = {
+export const initialState: MapState = {
   points: [],
+  grid: null,
   loading: false,
   error: null,
   selectedPointId: null,
@@ -27,6 +29,9 @@ const initialState: MapState = {
 }
 
 export const fetchPoints = createSagaAction<number[] | undefined, RoadPoint[]>('map/fetchPoints')
+export const fetchGrid = createSagaAction<{ bbox?: number[]; zoom: number }, QualityGrid>(
+  'map/fetchGrid',
+)
 export const fetchPointDetail = createSagaAction<number, RoadPointDetail>('map/fetchPointDetail')
 
 export const planRoute = createSagaAction<{ origin: string; destination: string }, [number, number][]>('map/planRoute')
@@ -97,6 +102,8 @@ const mapSlice = createSlice({
       .addCase(fetchPoints.fulfilled, (state, action: PayloadAction<RoadPoint[]>) => {
         state.loading = false
         state.points = action.payload
+        // Raw points and the quality grid are mutually exclusive views.
+        state.grid = null
       })
       .addCase(fetchPoints.rejected, (state, _action) => {
         state.loading = false
@@ -104,6 +111,24 @@ const mapSlice = createSlice({
         // Ignore AbortErrors (cancelled requests)
         if (action.error.name !== 'AbortError' && action.error.message !== 'Aborted') {
           state.error = action.error.message || 'Failed to fetch points'
+        }
+      })
+
+      // Quality-grid overview (zoomed out)
+      .addCase(fetchGrid.pending, state => {
+        state.loading = true
+        state.error = null
+      })
+      .addCase(fetchGrid.fulfilled, (state, action: PayloadAction<QualityGrid>) => {
+        state.loading = false
+        state.grid = action.payload
+        state.points = []
+      })
+      .addCase(fetchGrid.rejected, (state, _action) => {
+        state.loading = false
+        const action = _action as SagaRejectedAction
+        if (action.error.name !== 'AbortError' && action.error.message !== 'Aborted') {
+          state.error = action.error.message || 'Failed to fetch overview'
         }
       })
       .addCase(fetchPointDetail.pending, state => {
@@ -151,5 +176,5 @@ const mapSlice = createSlice({
   },
 })
 
-export const actions = { ...mapSlice.actions, fetchPoints, fetchPointDetail, planRoute, analyzeRoute, reconnectRouteJob }
+export const actions = { ...mapSlice.actions, fetchPoints, fetchGrid, fetchPointDetail, planRoute, analyzeRoute, reconnectRouteJob }
 export default mapSlice.reducer

@@ -4,12 +4,14 @@ import { bindActionCreators } from '@reduxjs/toolkit'
 import { actions } from './slice'
 import * as selectors from './selectors'
 import type { RoadPoint, RoadPointDetail } from './types'
+import type { QualityGrid } from './aggregation'
 import type { RootState } from '../../store'
 import { selectJob } from '../api'
 
 // Power Hook Interface: Combines State + Actions
 export interface UseMap {
   points: RoadPoint[]
+  grid: QualityGrid | null
   loading: boolean
   selectedPoint: RoadPoint | null
   selectedPointDetail: RoadPointDetail | null
@@ -49,6 +51,7 @@ export const useMap = (): UseMap => {
   const dispatch = useDispatch()
 
   const points = useSelector(selectors.selectPoints)
+  const grid = useSelector(selectors.selectGrid)
   const loading = useSelector(selectors.selectLoading)
   const selectedPoint = useSelector(selectors.selectSelectedPoint)
   const selectedPointDetail = useSelector(selectors.selectSelectedPointDetail)
@@ -72,6 +75,7 @@ export const useMap = (): UseMap => {
 
   return {
     points,
+    grid,
     loading,
     selectedPoint,
     selectedPointDetail,

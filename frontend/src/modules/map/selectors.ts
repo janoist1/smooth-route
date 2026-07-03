@@ -5,6 +5,8 @@ const selectMapState = (state: RootState) => state.map
 
 export const selectPoints = createSelector(selectMapState, map => map.points)
 
+export const selectGrid = createSelector(selectMapState, map => map.grid)
+
 export const selectLoading = createSelector(selectMapState, map => map.loading)
 
 export const selectSelectedPointId = createSelector(selectMapState, map => map.selectedPointId)

@@ -15,7 +15,9 @@ import type { TypedDocumentNode as DocumentNode } from '@graphql-typed-document-
  */
 type Documents = {
     "\n  query GetJob($id: String!) {\n    job(id: $id) {\n      id\n      status\n      progress\n      total\n      message\n      result\n      error\n      createdAt\n      completedAt\n    }\n  }\n": typeof types.GetJobDocument,
+    "\n  query Viewer {\n    me {\n      clerkId\n      email\n      role\n    }\n  }\n": typeof types.ViewerDocument,
     "\n  query GetPoints($limit: Int, $bbox: [Float!]) {\n    points(limit: $limit, bbox: $bbox) {\n      id\n      latitude\n      longitude\n      rqiScore\n      dinoRqiScore\n      rqiSource\n      heading\n    }\n  }\n": typeof types.GetPointsDocument,
+    "\n  query GetRoadQualityGrid($zoom: Int!, $bbox: [Float!]) {\n    roadQualityGrid(zoom: $zoom, bbox: $bbox)\n  }\n": typeof types.GetRoadQualityGridDocument,
     "\n  query GetPointDetail($id: Int!) {\n    point(id: $id) {\n      id\n      latitude\n      longitude\n      rqiScore\n      dinoRqiScore\n      dinoScore\n      dinoPBad\n      rqiSource\n      heading\n      pitch\n      imageUrl\n      # manual data\n      manualRqi\n      manualTags\n      manualAnnotations\n# ...\n      # analysis\n      damageCount\n      damageTypes\n      analysisMetadata\n      createdAt\n    }\n  }\n": typeof types.GetPointDetailDocument,
     "\n  query GetRoute($origin: String!, $destination: String!) {\n    getRoute(origin: $origin, destination: $destination) {\n      points {\n        lat\n        lng\n      }\n    }\n  }\n": typeof types.GetRouteDocument,
     "\n  mutation ProcessRoute($input: ProcessRouteInput!) {\n    processRoute(input: $input) {\n      id\n      status\n      message\n    }\n  }\n": typeof types.ProcessRouteDocument,
@@ -36,7 +38,9 @@ type Documents = {
 };
 const documents: Documents = {
     "\n  query GetJob($id: String!) {\n    job(id: $id) {\n      id\n      status\n      progress\n      total\n      message\n      result\n      error\n      createdAt\n      completedAt\n    }\n  }\n": types.GetJobDocument,
+    "\n  query Viewer {\n    me {\n      clerkId\n      email\n      role\n    }\n  }\n": types.ViewerDocument,
     "\n  query GetPoints($limit: Int, $bbox: [Float!]) {\n    points(limit: $limit, bbox: $bbox) {\n      id\n      latitude\n      longitude\n      rqiScore\n      dinoRqiScore\n      rqiSource\n      heading\n    }\n  }\n": types.GetPointsDocument,
+    "\n  query GetRoadQualityGrid($zoom: Int!, $bbox: [Float!]) {\n    roadQualityGrid(zoom: $zoom, bbox: $bbox)\n  }\n": types.GetRoadQualityGridDocument,
     "\n  query GetPointDetail($id: Int!) {\n    point(id: $id) {\n      id\n      latitude\n      longitude\n      rqiScore\n      dinoRqiScore\n      dinoScore\n      dinoPBad\n      rqiSource\n      heading\n      pitch\n      imageUrl\n      # manual data\n      manualRqi\n      manualTags\n      manualAnnotations\n# ...\n      # analysis\n      damageCount\n      damageTypes\n      analysisMetadata\n      createdAt\n    }\n  }\n": types.GetPointDetailDocument,
     "\n  query GetRoute($origin: String!, $destination: String!) {\n    getRoute(origin: $origin, destination: $destination) {\n      points {\n        lat\n        lng\n      }\n    }\n  }\n": types.GetRouteDocument,
     "\n  mutation ProcessRoute($input: ProcessRouteInput!) {\n    processRoute(input: $input) {\n      id\n      status\n      message\n    }\n  }\n": types.ProcessRouteDocument,
@@ -77,7 +81,15 @@ export function gql(source: "\n  query GetJob($id: String!) {\n    job(id: $id) 
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
+export function gql(source: "\n  query Viewer {\n    me {\n      clerkId\n      email\n      role\n    }\n  }\n"): (typeof documents)["\n  query Viewer {\n    me {\n      clerkId\n      email\n      role\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
 export function gql(source: "\n  query GetPoints($limit: Int, $bbox: [Float!]) {\n    points(limit: $limit, bbox: $bbox) {\n      id\n      latitude\n      longitude\n      rqiScore\n      dinoRqiScore\n      rqiSource\n      heading\n    }\n  }\n"): (typeof documents)["\n  query GetPoints($limit: Int, $bbox: [Float!]) {\n    points(limit: $limit, bbox: $bbox) {\n      id\n      latitude\n      longitude\n      rqiScore\n      dinoRqiScore\n      rqiSource\n      heading\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  query GetRoadQualityGrid($zoom: Int!, $bbox: [Float!]) {\n    roadQualityGrid(zoom: $zoom, bbox: $bbox)\n  }\n"): (typeof documents)["\n  query GetRoadQualityGrid($zoom: Int!, $bbox: [Float!]) {\n    roadQualityGrid(zoom: $zoom, bbox: $bbox)\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

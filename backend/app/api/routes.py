@@ -233,6 +233,7 @@ async def stream_job_status(job_id: str):
     async def event_generator():
         last_progress = -1
         last_status = None
+        last_message = None
 
         while True:
             job = get_job(job_id)
@@ -240,10 +241,18 @@ async def stream_job_status(job_id: str):
                 yield {"event": "error", "data": "Job not found"}
                 break
 
-            # Only send update if something changed
-            if job.progress != last_progress or job.status != last_status:
+            # Push on any visible change. `message` carries the fine-grained
+            # counter (e.g. "876/1871"), which changes far more often than the
+            # integer `progress` percentage — without it the client's progress
+            # text looks frozen between whole-percent ticks.
+            if (
+                job.progress != last_progress
+                or job.status != last_status
+                or job.message != last_message
+            ):
                 last_progress = job.progress
                 last_status = job.status
+                last_message = job.message
 
                 yield {
                     "data": json.dumps(

@@ -1,15 +1,16 @@
 import strawberry
 from typing import List, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, text
 import threading
 import json
 import datetime
 
 from app.core.database import SessionLocal
-from app.models.models import StreetViewImage, TrainingData as TrainingDataModel, Job as JobModel
+from app.models.models import StreetViewImage, TrainingData as TrainingDataModel, Job as JobModel, User
 from app.core.config import settings
 from app.services.job_service import create_job, get_job
+from app.services.map_aggregation import grid_cell_size_for_zoom
 from app.core.settings_manager import settings_manager
 
 from .types import Point, Job, TrainingData, ProcessRouteInput, TrainingDataInput, RunAnalysisInput, TrainingStats, TrainingPointsResponse, FilterMode, Setting, UpdateSettingInput, DetectInput, DetectPrediction, ReviewActionInput, ReviewActionResult, RqiModelInfo
@@ -34,6 +35,52 @@ class Viewer:
     clerk_id: str
     email: Optional[str]
     role: str
+
+
+@strawberry.type
+class DailyCount:
+    day: str
+    count: int
+
+
+@strawberry.type
+class JobSummary:
+    id: str
+    status: str
+    message: Optional[str]
+    progress: int
+    total: int
+    created_at: Optional[datetime.datetime]
+    completed_at: Optional[datetime.datetime]
+
+
+@strawberry.type
+class AdminStats:
+    """Rudimentary usage / coverage / job monitoring for admins."""
+    # Street View image usage (Google cost proxy: 1 stored image ≈ 1 billable
+    # Street View Static request; the free tier is per calendar month).
+    total_images: int
+    images_this_month: int
+    free_tier_limit: int
+    billable_this_month: int
+    images_per_day: List[DailyCount]
+    # Coverage / analysis
+    total_points: int
+    analyzed_points: int
+    pending_analysis: int
+    rqi_good: int
+    rqi_fair: int
+    rqi_poor: int
+    # Users & jobs
+    total_users: int
+    admin_users: int
+    recent_jobs: List[JobSummary]
+
+
+# Street View Static is an Essentials SKU: 10k free billable events per month.
+STREET_VIEW_FREE_TIER = 10000
+
+
 
 
 @strawberry.type
@@ -243,6 +290,137 @@ class Query:
         finally:
             db.close()
     
+    @strawberry.field
+    def road_quality_grid(
+        self, zoom: int, bbox: Optional[List[float]] = None
+    ) -> strawberry.scalars.JSON:
+        """Quality-grid overview for the zoomed-out map.
+
+        Returns `{"cell": <deg>, "cells": [[swLat, swLng, avgRqi], …]}` — one
+        row per populated grid cell, coloured client-side by AVERAGE RQI. This
+        is density-independent on purpose: a densely-sampled good road stays
+        green (a summed heatmap would falsely light it up). Coverage is shown by
+        which cells are filled, quality by their colour. Anonymous like
+        `points`. Effective score = dino_rqi_score → yolo rqi_score; cells with
+        neither are skipped. `swLat/swLng` = the cell's south-west corner.
+        """
+        cell = grid_cell_size_for_zoom(zoom)
+        params = {"cell": cell}
+        where = ["COALESCE(dino_rqi_score, rqi_score) IS NOT NULL"]
+        if bbox and len(bbox) == 4:
+            min_lng, min_lat, max_lng, max_lat = bbox
+            where.append("longitude BETWEEN :min_lng AND :max_lng")
+            where.append("latitude BETWEEN :min_lat AND :max_lat")
+            params.update(
+                min_lng=min_lng, min_lat=min_lat, max_lng=max_lng, max_lat=max_lat
+            )
+
+        sql = text(
+            f"""
+            SELECT
+              floor(latitude / :cell) * :cell AS sw_lat,
+              floor(longitude / :cell) * :cell AS sw_lng,
+              AVG(COALESCE(dino_rqi_score, rqi_score)) AS avg_rqi
+            FROM street_view_images
+            WHERE {" AND ".join(where)}
+            GROUP BY floor(latitude / :cell), floor(longitude / :cell)
+            """
+        )
+
+        db = get_db_session()
+        try:
+            rows = db.execute(sql, params).fetchall()
+        finally:
+            db.close()
+
+        return {
+            "cell": cell,
+            "cells": [
+                [round(row.sw_lat, 6), round(row.sw_lng, 6), round(float(row.avg_rqi), 2)]
+                for row in rows
+            ],
+        }
+
+    @strawberry.field(permission_classes=[IsAdmin])
+    def admin_stats(self) -> AdminStats:
+        """Aggregate usage/coverage/job stats for the admin monitoring page."""
+        effective = func.coalesce(
+            StreetViewImage.dino_rqi_score, StreetViewImage.rqi_score
+        )
+        month_start = datetime.datetime.utcnow().replace(
+            day=1, hour=0, minute=0, second=0, microsecond=0
+        )
+
+        db = get_db_session()
+        try:
+            total_images = db.query(StreetViewImage).count()
+            images_this_month = (
+                db.query(StreetViewImage)
+                .filter(StreetViewImage.created_at >= month_start)
+                .count()
+            )
+            analyzed = db.query(StreetViewImage).filter(effective.isnot(None)).count()
+            good = db.query(StreetViewImage).filter(effective <= 2.0).count()
+            fair = db.query(StreetViewImage).filter(
+                effective > 2.0, effective <= 3.0
+            ).count()
+            poor = db.query(StreetViewImage).filter(effective > 3.0).count()
+
+            per_day_rows = db.execute(
+                text(
+                    """
+                    SELECT to_char(date_trunc('day', created_at), 'YYYY-MM-DD') AS day,
+                           COUNT(*) AS cnt
+                    FROM street_view_images
+                    WHERE created_at >= (now() - interval '13 days')
+                    GROUP BY 1
+                    ORDER BY 1
+                    """
+                )
+            ).fetchall()
+
+            total_users = db.query(User).count()
+            admin_users = db.query(User).filter(User.role == "admin").count()
+
+            recent = (
+                db.query(JobModel)
+                .order_by(JobModel.created_at.desc())
+                .limit(10)
+                .all()
+            )
+
+            return AdminStats(
+                total_images=total_images,
+                images_this_month=images_this_month,
+                free_tier_limit=STREET_VIEW_FREE_TIER,
+                billable_this_month=max(0, images_this_month - STREET_VIEW_FREE_TIER),
+                images_per_day=[
+                    DailyCount(day=r.day, count=r.cnt) for r in per_day_rows
+                ],
+                total_points=total_images,
+                analyzed_points=analyzed,
+                pending_analysis=total_images - analyzed,
+                rqi_good=good,
+                rqi_fair=fair,
+                rqi_poor=poor,
+                total_users=total_users,
+                admin_users=admin_users,
+                recent_jobs=[
+                    JobSummary(
+                        id=j.job_id,
+                        status=j.status or "unknown",
+                        message=j.message,
+                        progress=j.progress or 0,
+                        total=j.total or 0,
+                        created_at=j.created_at,
+                        completed_at=j.completed_at,
+                    )
+                    for j in recent
+                ],
+            )
+        finally:
+            db.close()
+
     @strawberry.field(permission_classes=[IsAdmin])
     def training_points(self, mode: FilterMode = FilterMode.ALL, limit: int = 20, offset: int = 0, model: str = "yolo") -> TrainingPointsResponse:
         db = get_db_session()
