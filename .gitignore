@@ -20,6 +20,14 @@ node_modules/
 
 # ML regenerable feature caches (keep the small trained model + dataset.csv)
 ml/cache/*.npz
+# Regenerable v2 experiment/diagnostic outputs (keep rqi_model.joblib)
+ml/cache/feats_v2_*.npz
+ml/cache/clip_v2.npz
+ml/cache/dataset_v2.csv
+ml/cache/experiments_*.csv
+ml/cache/oof_*.npy
+ml/cache/oof_table.csv
+ml/missing_labelled_mapped.csv
 
 # Local debug / scratch artifacts
 debug_preprocessed/

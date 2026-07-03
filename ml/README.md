@@ -47,30 +47,54 @@ python ml/audit_labels.py
 Tehát *alacsonyabb szám = jobb út*. (Az RQI 5 osztály a gyakorlatban használhatatlan:
 3 meglévő képből egy szálloda-előcsarnok, egy járda — tanításnál eldobjuk.)
 
-## Eredmények (2026-07-01, fagyasztott DINOv2-small + Ridge, 5-fold CV)
+## Eredmények
 
-1238 kép (RQI 1–4, nem-út szemét kiszűrve). A jel **valós és tanulható,
-újraannotálás nélkül**:
+### v2 (2026-07-03, DINOv2-small CLS+patch + hangolt SVR-RBF, 5-fold CV)
 
-| metrika | érték | naiv baseline |
+**1903 kép** — a 676 hiányzó címkézett kép visszaszerzése után
+(`ml/recover_missing_images.py`: a Street View API-ból, pano-dátum őrfeltétellel,
+hogy csak a címkézéskor is látott panorámákat töltsük vissza).
+
+| metrika | v2 | v1 (Ridge, 1238 kép) |
 |---|---|---|
-| MAE | **0.30** ± 0.02 | 0.76 |
-| pontos találat | 70.5% | – |
-| ±1 pontosság | **99.6%** | – |
-| QWK (ordinális egyezés) | **0.83** | 0 |
+| MAE | **0.195** | 0.30 |
+| pontos találat | **80.9%** | 70.5% |
+| ±1 pontosság | **99.8%** | 99.6% |
+| QWK | **0.889** | 0.83 |
+| rossz út (RQI≥3) találat | **91.9%** | – |
+| rossz út AUC | **0.970** | – |
+
+Recept: fagyasztott DINOv2-small **CLS + patch-token átlag** (768 dim, egyetlen
+forward pass), StandardScaler + **SVR-RBF** (C=1, eps=0.05), plusz a kerekítés
+helyett **hangolt ordinális vágópontok** (a 3|4 határ 3.18-ra csúszott → jobb
+rossz-út recall). A számok beágyazott (nested) CV-ből jönnek, szivárgásmentesek.
+A dinov2-base ugyanennyit tud (QWK 0.8886) 2× költségért → marad a small.
+Az artifact **izotonikus P(rossz út) kalibrátort** és megbízhatósági táblát is
+tartalmaz: ha a modell 4-est mond, 80%-ban tényleg 4-es és <1%-ban jó út (1–2).
 
 A tévesztések kivétel nélkül szomszédos szintek (nincs 1↔4 keveredés).
-Ez már egy lineáris próbafej frozen jellemzőkön — a nagyobb backbone / MLP fej /
-ordinális loss / a hiányzó rossz-út képek visszaszerzése mind ráadás, nem szükséglet.
+A legrosszabb OOF-hibák kézi átnézés alapján tényleg határeset-utak (foltozott
+falusi út, árnyékos kereszteződés), nem címkehibák — a QWK 0.89 közel van az
+egy-annotátoros plafonhoz.
+
+### v1 (2026-07-01, fagyasztott DINOv2-small + Ridge, 5-fold CV)
+
+1238 kép (RQI 1–4, nem-út szemét kiszűrve). A jel **valós és tanulható,
+újraannotálás nélkül**: MAE 0.30, pontos 70.5%, ±1 99.6%, QWK 0.83.
 
 ## Pipeline (minden a Mac-en fut, MPS)
 
 ```bash
-bash ml/export_labels.sh                    # -> ml/labels.csv (Docker kell)
-.venv/bin/python ml/audit_labels.py         # címke-audit
-.venv/bin/python ml/extract_features.py     # -> ml/cache/{features.npz,dataset.csv}
-.venv/bin/python ml/train.py                # 5-fold CV baseline + metrikák
+bash ml/export_labels.sh                       # -> ml/labels.csv (Docker kell)
+.venv/bin/python ml/recover_missing_images.py  # hiányzó címkézett képek vissza (Street View API)
+.venv/bin/python ml/extract_features_v2.py     # -> ml/cache/{feats_v2_small.npz,clip_v2.npz,dataset_v2.csv}
+.venv/bin/python ml/experiments.py             # jellemzők x fejek rács, 5-fold CV
+.venv/bin/python ml/tune_svr.py                # SVR hiperparaméter + vágópont hangolás
+.venv/bin/python ml/save_model_v2.py           # végső artifact -> ml/cache/rqi_model.joblib
 ```
+
+Régi (v1) szkriptek: `extract_features.py`, `train.py`, `save_model.py` —
+referenciának maradnak, az éles artifact a v2 receptből jön.
 
 ## Állapot
 
@@ -80,13 +104,21 @@ bash ml/export_labels.sh                    # -> ml/labels.csv (Docker kell)
 - [x] Címke-audit + **képek vizuális átnézése** → skálairány tisztázva, adat viabilis
 - [x] Frozen DINOv2 + Ridge baseline, 5-fold CV → **QWK 0.83, MAE 0.30**
 - [x] Deployolható modell mentve (`ml/cache/rqi_model.joblib`) + `ml/predict.py`
-- [x] Backbone-összevetés: **dinov2-small nyert** (small QWK 0.83 > base 0.82; kisebb+gyorsabb)
+- [x] Backbone-összevetés: **dinov2-small nyert** (v1: QWK 0.83 > base 0.82; v2-ben döntetlen QWK 0.889 a base 2× költsége mellett)
 - [x] Generalizáció ellenőrizve 6 nem-látott képen (mind értelmes)
 - [x] **Backend-integráció:** `backend/app/services/dino_service.py` ezt a modellt tölti;
       a route-feldolgozás (`tasks.run_route_processing`) YOLO + DINO CLASSIFICATION passt futtat,
       a térkép a `dino_rqi_score`-t mutatja (`rqi_display_source="dino"`).
-- [ ] Opcionális: a 676 hiányzó (főleg rossz-út) kép visszaszerzése a balanszért
-- [ ] Opcionális: MLP fej / ordinális loss (a lineáris próbafej már QWK 0.83)
+- [x] A 676 hiányzó címkézett kép visszaszerzése (`recover_missing_images.py`) → 1903 kép
+- [x] Fej-összevetés (Ridge/Huber/SVR/HistGB/MLP × 7 jellemző-variáns): **SVR-RBF nyert**
+- [x] Ordinális vágópont-hangolás + izotonikus P(rossz) kalibráció az artifactban
+- [x] v2 recept élesítve: `dino_service` a `feature_recipe`-et értelmezi (recept-váltás kódmódosítás nélkül)
+- [x] Friss (nem látott) budapesti útvonalakon ellenőrizve: Keleti→Örs vezér tere
+      (457 pont) és Csepel (442 pont) — a pontszámok szemre is stimmelnek, a
+      `dino_score` + `dino_p_bad` az `analysis_metadata`-ba kerül
+- [ ] Opcionális: DINOv3 backbone kipróbálása (HF-en kapuzott, licenc-elfogadás kell)
+- [ ] Opcionális: több címkézett adat a 3↔4 határ élesítéséhez (a hibák zöme ott van)
+- [ ] Opcionális: P(rossz út) megjelenítése a frontend részletkártyán
 
 ### Inferencia egy képre
 ```bash

@@ -81,13 +81,17 @@ class RoadQualityService:
 
                 if strategy == "CLASSIFICATION":
                     print(f"DEBUG: Running DINO classification for {path}")
-                    rqi = dino_service.predict_rqi(path)
-                    if rqi is not None:
+                    score = dino_service.predict_score(path)
+                    if score is not None:
+                        rqi = dino_service.rqi_from_score(score)
+                        p_bad = dino_service.p_bad_from_score(score)
                         img.dino_rqi_score = float(rqi)
                         # Keep YOLO damage_count/types; only touch DINO metadata.
                         img.analysis_metadata = {
                             **(img.analysis_metadata or {}),
                             "dino_strategy": "DINO Classification",
+                            "dino_score": round(float(score), 3),
+                            **({"dino_p_bad": round(p_bad, 3)} if p_bad is not None else {}),
                             "dino_timestamp": str(datetime.utcnow()),
                         }
                         analyzed_count += 1
