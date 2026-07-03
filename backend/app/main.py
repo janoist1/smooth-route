@@ -53,10 +53,14 @@ static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
 if os.path.exists(static_dir):
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
-# Serve generated previews from the canonical data directory.
-previews_dir = data_path("static", "previews")
-previews_dir.mkdir(parents=True, exist_ok=True)
-app.mount("/previews", StaticFiles(directory=previews_dir), name="previews")
+# Serve generated previews from the canonical data directory. Skipped on the
+# public read-only deploy: Vercel's serverless filesystem is read-only outside
+# /tmp (this mkdir crashes the function at import), and the read-only API serves
+# no locally generated previews anyway.
+if not settings.PUBLIC_READ_ONLY:
+    previews_dir = data_path("static", "previews")
+    previews_dir.mkdir(parents=True, exist_ok=True)
+    app.mount("/previews", StaticFiles(directory=previews_dir), name="previews")
 
 @app.get("/")
 async def root():
