@@ -15,6 +15,9 @@ Start here depending on what you need:
   story in plain language: what was tried, what shipped, and why.
 - **[docs/IMPROVEMENT_PLAN.md](docs/IMPROVEMENT_PLAN.md)** — architecture audit and
   the phased refactor/improvement plan.
+- **[docs/PUBLISH_PLAN.md](docs/PUBLISH_PLAN.md)** — publishing plan: auth (Clerk),
+  persistent job queue, download quotas/dedup, and the Hetzner+Cloudflare deploy
+  target, phased F0–F6.
 - **[docs/SESSION_PROMPTS.md](docs/SESSION_PROMPTS.md)** — copy-paste prompts to
   start a fresh AI session per phase (router-based, low context).
 - **[ml/README.md](ml/README.md)** — the RQI model pipeline, its CV results, and the

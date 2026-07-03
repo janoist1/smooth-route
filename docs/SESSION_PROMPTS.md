@@ -144,3 +144,77 @@ Feladat: ellenőrizd a legutóbbi <<fázis/PR>> munkát.
 3. Összegezz: mi zöld, mi nem, mit javasolsz. Ne javíts, csak jelentsd — kivéve
    ha kifejezetten kérem.
 ```
+
+---
+
+## F0–F6 — Publikálási fázisok (auth, queue, kvóták, deploy)
+
+```
+A repó: /Users/i/Dev/smooth-route
+
+Először olvasd el az AGENTS.md útválasztót. A feladatod a publikálási terv
+egy fázisa: nyisd meg a docs/PUBLISH_PLAN.md-t, és CSAK a saját fázisod
+(F<<N>>) szakaszát dolgozd fel + a rá vonatkozó közös szakaszokat
+(adatmodell, kvóta/dedup-terv, hardening-checklist). A többi fázis részleteit
+ne olvasd be.
+
+Feladat: hajtsd végre az F<<N>> fázist a PUBLISH_PLAN.md checklistje szerint.
+
+Megkötések:
+- Python: mindig a .venv/bin/python; ne hozz létre új venv-et.
+- A tesztkapuknak zöldnek kell lenniük a végén:
+    cd backend && ../.venv/bin/python -m pytest -q
+    cd frontend && npm run typecheck && npm run lint && npm test
+- A fázis "Elfogadás" kritériumát bizonyítsd (teszt vagy kézi ellenőrzés
+  leírása), és pipáld ki az elkészült checklist-elemeket a PUBLISH_PLAN.md-ben.
+- Titkok (API-kulcs, Clerk secret) SOSEM kerülhetnek a repóba.
+- A végén foglald össze a diffet és a tesztek eredményét. Commit/push CSAK
+  explicit kérésre.
+```
+
+---
+
+## F1 — User-modul (auth + szerepek) — ELŐREHOZVA, ez az első publikálási lépés
+
+```
+A repó: /Users/i/Dev/smooth-route
+
+Először olvasd el az AGENTS.md útválasztót. A feladatod a publikálási terv F1
+fázisa: a docs/PUBLISH_PLAN.md-ből CSAK az "F1 — Auth és szerepek" szakaszt,
+az "Adatmodell-változások" és a "Jogosultsági szintek" szakaszt olvasd el.
+A többi fázis (F2–F6) részleteit NE olvasd be.
+
+Feladat: fejleszd ki a user-modult lokálisan (Clerk dev-instance-szal), a
+PUBLISH_PLAN F1-checklistje szerint:
+
+1. Előfeltétel-ellenőrzés: kell CLERK_SECRET_KEY a gyökér .env-be és
+   VITE_CLERK_PUBLISHABLE_KEY a frontend env-jébe. Ha hiányoznak, építsd meg
+   a kódot mockolt/tesztelhető JWT-verifikációval, és a session végén sorold
+   fel pontosan, mit kell a Clerk-dashboardon kézzel létrehozni (app,
+   email+jelszó és Google provider), hova kerülnek a kulcsok.
+2. F0-ból előrehozva, mert séma-változás lesz: Alembic bevezetése baseline
+   migrációval a jelenlegi sémáról; a users tábla már migrációként jöjjön.
+3. Backend: JWT-verifikáló dependency (Clerk JWKS), users tábla
+   (id, clerk_id unique, email, role: 'user'/'admin') JIT-provisioninggal;
+   Strawberry permission-osztályok (IsAuthenticated, IsAdmin); a
+   training/review/settings mutációk admin-only, a route-indítás user-only;
+   a REST /api/v1/* végpontok ugyanezzel a dependency-vel védve.
+   A térkép-OLVASÁS anonim marad (elfogadott termékdöntés).
+4. Frontend: @clerk/clerk-react — SignIn/SignUp, user-menü; Apollo authLink
+   a Clerk session-tokennel; admin-only menüpontok elrejtése user elől.
+5. Tesztek: a permission-guardok unit-tesztje mockolt tokennel (401/403 utak);
+   a meglévő tesztek ne törjenek.
+
+Megkötések:
+- Python: mindig a .venv/bin/python; ne hozz létre új venv-et.
+- A tesztkapuknak zöldnek kell lenniük a végén:
+    cd backend && ../.venv/bin/python -m pytest -q
+    cd frontend && npm run typecheck && npm run lint && npm test
+- Titkok (Clerk secret, API-kulcsok) SOSEM kerülhetnek a repóba — env-ből.
+- Menet közben jegyezd fel, milyen VALÓS szükségletek derülnek ki (mi hiányzik
+  a tervből, mi felesleges) — ez a session egyik célja; a végén ezt külön
+  szakaszban foglald össze, és javasolj PUBLISH_PLAN-módosítást, ha indokolt.
+- Pipáld ki az elkészült F1-checklist-elemeket a docs/PUBLISH_PLAN.md-ben.
+- A végén foglald össze a diffet és a tesztek eredményét. Commit/push CSAK
+  explicit kérésre.
+```

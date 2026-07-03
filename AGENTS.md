@@ -22,6 +22,7 @@ hibapoligonokat ad a részletkártyához, nem az RQI-t.
 | **Frontend UI** | [frontend/ARCHITECTURE.md](frontend/ARCHITECTURE.md) | `ml/**` |
 | **A javítási terv végrehajtása** | [docs/IMPROVEMENT_PLAN.md](docs/IMPROVEMENT_PLAN.md) — csak a saját fázisod | a többi fázis részletei |
 | **Backend API / GraphQL** | [docs/API_SURFACE.md](docs/API_SURFACE.md) | — |
+| **Publikálás: auth / queue / kvóták / deploy** | [docs/PUBLISH_PLAN.md](docs/PUBLISH_PLAN.md) — csak a saját fázisod (F0–F6) | a többi fázis részletei |
 | **„Miért így van?" / előzmények** | [docs/MODEL_EXPERIMENTS.md](docs/MODEL_EXPERIMENTS.md) | — |
 | **Szakszó nem világos** (QWK, MAE, 5-fold CV…) | [docs/GLOSSARY.md](docs/GLOSSARY.md) | — |
 | **Címkézési útmutató** | [docs/TrainingGuide.md](docs/TrainingGuide.md) | — |
@@ -69,5 +70,7 @@ szkripteket használd — azok referencia/zsákutca. Fogalmak: [docs/GLOSSARY.md
 ## Állapot (2026-07-03)
 
 A javítási terv **A–D fázisa kész és commitolva**; a working tree tiszta, a kapuk
-zöldek. Ami hátravan: az **E fázis** (opcionális — ld. IMPROVEMENT_PLAN). Commit/push
-csak explicit kérésre; ha commitolatlan munkát találsz, előbb tisztázd az emberrel.
+zöldek. Ami hátravan: az **E fázis** (opcionális — ld. IMPROVEMENT_PLAN) és a
+**publikálás** (F0–F6 — ld. [docs/PUBLISH_PLAN.md](docs/PUBLISH_PLAN.md); a terv
+elfogadva, első lépés az előrehozott F1 user-modul). Commit/push csak explicit kérésre; ha commitolatlan munkát
+találsz, előbb tisztázd az emberrel.
