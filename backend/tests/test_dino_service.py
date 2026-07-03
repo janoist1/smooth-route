@@ -1,5 +1,11 @@
-"""Unit tests for DinoInferenceService decision logic (no torch model load)."""
+"""Unit tests for DinoInferenceService decision logic (no torch model load).
+
+dino_service imports torch/numpy/PIL at module level, so on torch-free
+environments (CI) this module is skipped; it runs fully on the dev machine.
+"""
 import pytest
+
+pytest.importorskip("torch")
 
 from app.services.dino_service import (DinoInferenceService, EXPECTED_V2_KEYS,
                                        validate_artifact)
