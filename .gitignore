@@ -34,3 +34,5 @@ debug_preprocessed/
 backend/debug_*.jpg
 /package.json
 /package-lock.json
+.vercel
+.env*
