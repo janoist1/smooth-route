@@ -2,6 +2,7 @@ import React from 'react'
 import type { RoadPointDetail } from '../types'
 import { getRQIColor, getRQILabel, resolveRqi } from '../../ui'
 import { useRqiDisplaySource } from '../../settings'
+import { useViewer } from '../../auth'
 
 interface PointDetailCardProps {
   detail: RoadPointDetail
@@ -11,6 +12,7 @@ interface PointDetailCardProps {
 }
 
 const PointDetailCard: React.FC<PointDetailCardProps> = ({ detail, loading, onClose, onTrain }) => {
+  const { isAdmin } = useViewer()
   const displaySource = useRqiDisplaySource()
   const { score: displayScore, model: targetModel, label: sourceLabel } = resolveRqi(
     detail ?? {},
@@ -213,25 +215,29 @@ const PointDetailCard: React.FC<PointDetailCardProps> = ({ detail, loading, onCl
           }}>
           Recorded:{' '}
           {detail.created_at ? new Date(detail.created_at).toLocaleDateString() : 'Unknown'}
-          <button
-            onClick={() => onTrain(detail.id)}
-            style={{
-              marginTop: '10px',
-              width: '100%',
-              padding: '8px',
-              background: 'rgba(255,255,255,0.1)',
-              border: '1px solid rgba(255,255,255,0.2)',
-              borderRadius: '8px',
-              color: 'white',
-              cursor: 'pointer',
-              fontSize: '0.9rem',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px',
-            }}>
-            <span>✏️</span> Train / Correct
-          </button>
+          {/* Correction flow is an admin-only surface (backend enforces the same
+              rule); hiding it keeps the public read-only card clean. */}
+          {isAdmin && (
+            <button
+              onClick={() => onTrain(detail.id)}
+              style={{
+                marginTop: '10px',
+                width: '100%',
+                padding: '8px',
+                background: 'rgba(255,255,255,0.1)',
+                border: '1px solid rgba(255,255,255,0.2)',
+                borderRadius: '8px',
+                color: 'white',
+                cursor: 'pointer',
+                fontSize: '0.9rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+              }}>
+              <span>✏️</span> Train / Correct
+            </button>
+          )}
         </div>
       </div>
     </div>
