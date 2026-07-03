@@ -1,0 +1,5 @@
+# The round-1 public deploy is torch-free: it installs from requirements.txt.
+# pyproject.toml pulls ultralytics -> torch (+CUDA), ~5GB, which blows past the
+# 500MB serverless function cap. Keep it out of the Vercel upload so the Python
+# builder falls back to requirements.txt. (Local dev still uses pyproject.toml.)
+pyproject.toml
