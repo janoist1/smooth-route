@@ -15,6 +15,8 @@ Start here depending on what you need:
   story in plain language: what was tried, what shipped, and why.
 - **[docs/IMPROVEMENT_PLAN.md](docs/IMPROVEMENT_PLAN.md)** — architecture audit and
   the phased refactor/improvement plan.
+- **[docs/SESSION_PROMPTS.md](docs/SESSION_PROMPTS.md)** — copy-paste prompts to
+  start a fresh AI session per phase (router-based, low context).
 - **[ml/README.md](ml/README.md)** — the RQI model pipeline, its CV results, and the
   ship gate (`ml/evaluate_artifact.py`).
 - **[docs/GLOSSARY.md](docs/GLOSSARY.md)** — plain-language glossary of the ML terms
