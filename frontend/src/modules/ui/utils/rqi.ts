@@ -8,7 +8,7 @@ export type RqiDisplaySource = 'yolo' | 'dino' | 'both'
 
 /** The two model scores a point can carry. */
 export interface RqiScores {
-  rqi_score?: number | null // YOLO defect-detection heuristic
+  rqi_score?: number | null // YOLO damage-derived score
   dino_rqi_score?: number | null // frozen DINOv2 + trained head
 }
 

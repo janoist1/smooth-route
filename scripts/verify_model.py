@@ -5,8 +5,8 @@ import glob
 
 # Paths
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) # Root
-MODEL_PATH = os.path.join(BASE_DIR, "backend", "data", "models", "trained_yolo_restored.pt")
-IMAGE_DIR = os.path.join(BASE_DIR, "backend", "data", "training_dataset", "images", "val")
+MODEL_PATH = os.path.join(BASE_DIR, "data", "models", "trained_yolo_restored.pt")
+IMAGE_DIR = os.path.join(BASE_DIR, "data", "training_dataset", "images", "val")
 
 print(f"Testing model: {MODEL_PATH}")
 

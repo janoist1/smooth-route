@@ -4,15 +4,19 @@ API endpoints for web interface.
 
 from fastapi import APIRouter, Depends, BackgroundTasks
 from sqlalchemy.orm import Session
-from typing import List, Optional, Any, Dict
+from typing import List, Optional
 from app.core.database import SessionLocal
 from app.models.models import StreetViewImage
 from app.core.config import settings
-from app.services.job_service import create_job, get_job, update_job, get_active_job, JobStatus, JobStep
+from app.services.job_service import (
+    JobStatus,
+    create_job,
+    get_active_job,
+    get_job,
+    update_job,
+)
 from sqlalchemy import func
 from pydantic import BaseModel
-import threading
-import time
 import asyncio
 import json
 from sse_starlette.sse import EventSourceResponse
@@ -297,52 +301,3 @@ async def get_current_active_job():
             "result": job.result
         }
     }
-
-
-
-
-
-
-class DetectRequest(BaseModel):
-    filename: str
-    conf_threshold: float = 0.25
-
-
-@router.post("/api/v1/inference/detect")
-async def detect_objects(request: DetectRequest):
-    """
-    Run YOLO inference on a specific image and return polygons.
-    """
-    from app.services.inference import inference_service
-    import os
-    from fastapi import HTTPException
-    
-    # Resolve image path with fallbacks
-    backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-    project_root = os.path.dirname(backend_dir)
-    
-    candidates = [
-        settings.resolve_data_dir(),
-        os.path.join(project_root, "data"),
-        os.path.join(backend_dir, "data")
-    ]
-    
-    image_path = None
-    for base_dir in candidates:
-        cand = os.path.join(base_dir, "images", request.filename)
-        if os.path.exists(cand):
-             image_path = cand
-             break
-             
-    if not image_path:
-        raise HTTPException(status_code=404, detail=f"Image {request.filename} not found")
-        
-    try:
-        # Run inference (cpu/gpu auto-selected by ultralytics)
-        predictions = inference_service.detect_objects(image_path, request.conf_threshold)
-        return {"predictions": predictions}
-    except Exception as e:
-        print(f"Inference error: {e}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))

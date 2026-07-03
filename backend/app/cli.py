@@ -140,7 +140,7 @@ def download_images(
             
             # Determine output dir for display
             if output_dir is None:
-                data_dir = settings.DATA_DIR
+                data_dir = settings.resolve_data_dir()
                 output_dir = os.path.join(data_dir, "images")
             console.print(f"[bold]Images saved to: {output_dir}[/bold]")
         
@@ -176,12 +176,11 @@ def fetch_missing_images(
 
 
 @app.command()
-def analyze_image(image_path: str, simple: bool = False):
+def analyze_image(image_path: str):
     """
     Analyze a single image for road quality.
 
     IMAGE_PATH: Path to the image file.
-    --simple: Use simple heuristic analysis (no YOLO).
     """
     from app.services.road_quality import road_quality_service
     import os
@@ -193,7 +192,6 @@ def analyze_image(image_path: str, simple: bool = False):
 
     console.print(f"[bold blue]Analyzing: {image_path}[/bold blue]")
 
-    # Strategy selection removed - always use YOLO as per user request
     result = road_quality_service.analyze_image(image_path)
 
     # Display results
@@ -233,13 +231,12 @@ def analyze_points(
     --lat, --lng: Center point for area analysis (optional)
     --radius: Radius in meters for area analysis (default: 1000m)
     --limit: Max number of points to analyze (0 = all)
-    --strategy: Strategy to use: "HEURISTIC", "YOLO", or "FUSION"
     --reanalyze: Re-analyze points that already have RQI scores.
     """
     from app.services.processing_service import processing_service
     
     try:
-        console.print(f"[bold blue]Starting analysis (Strategy: {strategy})...[/bold blue]")
+        console.print("[bold blue]Starting analysis (Strategy: YOLO)...[/bold blue]")
         if lat and lng:
             console.print(f"[dim]Analyzing points within {radius}m of ({lat}, {lng})[/dim]")
         

@@ -160,7 +160,7 @@ const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
           transition: 'all 0.2s',
         }}>
         <Play size={16} fill="white" />
-        <span>Run Analysis</span>
+        <span>YOLO-elemzés</span>
       </button>
       <button
         onClick={onStartTraining}
@@ -209,9 +209,9 @@ const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
     <>
       {!isRunning && analysisStatus !== 'completed' && analysisStatus !== 'failed' && (
         <div style={{ color: '#9ca3af', fontSize: '0.9rem', lineHeight: 1.5 }}>
-          Model ready: <span style={{ color: 'white', fontWeight: 600 }}>{modelName}</span>
+          YOLO hibadetektor: <span style={{ color: 'white', fontWeight: 600 }}>{modelName}</span>
           <br />
-          Ready to process or train.
+          Hibapoligonok előállítására és YOLO-finomhangolásra kész.
         </div>
       )}
 
@@ -382,7 +382,7 @@ const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
 
   return (
     <AnalysisHubLayout
-      title="AI Analysis Hub"
+      title="YOLO hibaelemzés"
       statusBadge={statusBadge}
       configContent={configContent}
       actionsContent={actionsContent}

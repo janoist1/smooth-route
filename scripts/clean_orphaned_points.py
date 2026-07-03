@@ -26,18 +26,7 @@ def clean_orphaned_points():
         
         deleted_count = 0
         
-        # Determine strict data directory
-        data_dir = settings.DATA_DIR
-        if not os.path.isabs(data_dir):
-            data_dir = os.path.join(project_root, data_dir)
-        
-        # If running in development structure, data/images might be in backend/data/images
-        # Adjust logic to match road_quality.py logic if needed, but usually settings.DATA_DIR is correct relative to project root.
-        # Let's check common locations.
-        possible_dirs = [
-            os.path.join(project_root, "data", "images"),
-            os.path.join(project_root, "backend", "data", "images")
-        ]
+        images_dir = os.path.join(settings.resolve_data_dir(), "images")
         
         # We need to check where the file *actually* is.
         # The 'image_url' in DB is usually 'images/filename.jpg' or http URL.
@@ -56,13 +45,8 @@ def clean_orphaned_points():
                 # Local path format: "images/filename.jpg"
                 filename = point.image_url.replace("images/", "")
                 
-                # Look for file in possible dirs
-                found_path = None
-                for d in possible_dirs:
-                    cand = os.path.join(d, filename)
-                    if os.path.exists(cand):
-                        found_path = cand
-                        break
+                candidate = os.path.join(images_dir, filename)
+                found_path = candidate if os.path.exists(candidate) else None
                 
                 if not found_path:
                     should_delete = True

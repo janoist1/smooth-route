@@ -5,12 +5,11 @@ Composes the focused units — route collection, image download, and YOLO damage
 analysis — and orchestrates the per-point analysis pass. Kept as the single
 `road_quality_service` entry point used by tasks.py and cli.py.
 """
-import os
 from datetime import datetime
 from typing import Dict, Optional
 
-from app.core.config import settings
 from app.core.database import SessionLocal
+from app.core.paths import resolve_stored_image
 from app.models.models import StreetViewImage
 from app.services import image_downloader, route_collector
 from app.services.dino_service import dino_service
@@ -46,7 +45,7 @@ class RoadQualityService:
     def analyze_points(
         self,
         job_id: str = None,
-        strategy: str = "HEURISTIC",
+        strategy: str = "YOLO",
         limit: int = 0,
         reanalyze: bool = False,
     ) -> Dict:
@@ -113,18 +112,9 @@ class RoadQualityService:
 
     @staticmethod
     def _resolve_image_path(image_url: str) -> Optional[str]:
-        """Resolve a stored image_url to an existing absolute path, or None."""
-        fname = image_url.replace("images/", "") if image_url.startswith("images/") \
-            else os.path.basename(image_url)
-
-        candidates = [os.path.join(settings.resolve_data_dir(), "images", fname)]
-
-        # Legacy: <project_root>/data/images and CWD-relative fallbacks.
-        backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        candidates.append(os.path.join(os.path.dirname(backend_dir), "data", "images", fname))
-        candidates.append(os.path.join(os.getcwd(), "data", "images", fname))
-
-        return next((p for p in candidates if os.path.exists(p)), None)
+        """Resolve a stored image_url from the canonical image directory."""
+        path = resolve_stored_image(image_url)
+        return str(path) if path else None
 
 
 # Singleton instance

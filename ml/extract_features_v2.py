@@ -29,13 +29,8 @@ from PIL import Image
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LABELS = os.path.join(ROOT, "ml", "labels.csv")
-# The backend saves route imagery under backend/data/images (see
-# config.resolve_data_dir); the original training dump lives in data/images.
-# Labelled images may sit in either, so look both places.
-IMAGE_DIRS = [
-    os.path.join(ROOT, "data", "images"),
-    os.path.join(ROOT, "backend", "data", "images"),
-]
+# The backend and ML pipeline share the canonical root data/images directory.
+IMAGE_DIRS = [os.path.join(ROOT, "data", "images")]
 CACHE = os.path.join(ROOT, "ml", "cache")
 os.makedirs(CACHE, exist_ok=True)
 

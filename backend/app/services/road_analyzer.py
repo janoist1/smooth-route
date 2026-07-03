@@ -2,7 +2,7 @@
 YOLO-based road damage analyzer: loads the segmentation model and scores a
 single image (damage detection + ROI masking + damage%→RQI).
 """
-import os
+
 from typing import Dict, Optional
 
 import cv2
@@ -15,6 +15,11 @@ from app.services.rqi_scoring import (
     RoadQualityResult,
     rqi_from_damage_percent,
 )
+from app.services.yolo_loader import (
+    DEFAULT_YOLO_MODEL,
+    YoloModelLoader,
+    yolo_model_loader,
+)
 
 # Ordered class codes (index == YOLO class id).
 CLASS_CODES = [DAMAGE_CLASSES[i] for i in sorted(DAMAGE_CLASSES)]
@@ -23,9 +28,9 @@ CLASS_CODES = [DAMAGE_CLASSES[i] for i in sorted(DAMAGE_CLASSES)]
 class RoadDamageAnalyzer:
     """Loads the YOLO model (lazily) and analyzes one image at a time."""
 
-    def __init__(self):
+    def __init__(self, model_loader: YoloModelLoader = yolo_model_loader):
+        self._model_loader = model_loader
         self.model = None
-        self._loaded = False
         self.current_model_path = None
 
     def _get_setting(self, key: str, default: float) -> float:
@@ -36,32 +41,12 @@ class RoadDamageAnalyzer:
     def _load_model(self):
         """Lazy load or reload the YOLO model if settings changed."""
         from app.core.settings_manager import settings_manager
-        from ultralytics import YOLO
 
-        target_model = settings_manager.get_setting("yolo_model", "yolov12s-seg.pt")
-
-        actual_model_path = target_model
-        if not os.path.isabs(target_model):
-            cand = os.path.join(os.getcwd(), "data", "models", target_model)
-            if os.path.exists(cand):
-                actual_model_path = cand
-
-        if self.current_model_path == actual_model_path and self._loaded:
-            return
-
-        print(f"RoadDamageAnalyzer: Loading YOLO model from {actual_model_path}...")
-        try:
-            self.model = YOLO(actual_model_path)
-            self._loaded = True
-            self.current_model_path = actual_model_path
-            self.is_segmentation = getattr(self.model, "task", None) == "segment"
-            print(f"Model loaded. Task: {getattr(self.model, 'task', 'unknown')}. "
-                  f"Device: {self.model.device}")
-        except Exception as e:
-            print(f"Error loading model {actual_model_path}: {e}")
-            if self.model is None:
-                self.model = YOLO("yolov8m-seg.pt")  # final fallback
-                self._loaded = True
+        target_model = settings_manager.get_setting("yolo_model", DEFAULT_YOLO_MODEL)
+        self.model = self._model_loader.load("road_damage", target_model)
+        loaded_path = self._model_loader.loaded_path("road_damage")
+        self.current_model_path = str(loaded_path) if loaded_path else None
+        self.is_segmentation = getattr(self.model, "task", None) == "segment"
 
     def analyze_image(
         self, image_path: str, confidence_threshold: Optional[float] = None
@@ -86,12 +71,15 @@ class RoadDamageAnalyzer:
 
             # ROI trapezoid: damage only counts if it is on the road surface.
             roi_mask = np.zeros((img_h, img_w), dtype=np.uint8)
-            mask_poly = np.array([
-                [img_w * 0.1, img_h],        # bottom-left
-                [img_w * 0.9, img_h],        # bottom-right
-                [img_w * 0.65, img_h * 0.5], # top-right
-                [img_w * 0.35, img_h * 0.5], # top-left
-            ], dtype=np.int32)
+            mask_poly = np.array(
+                [
+                    [img_w * 0.1, img_h],  # bottom-left
+                    [img_w * 0.9, img_h],  # bottom-right
+                    [img_w * 0.65, img_h * 0.5],  # top-right
+                    [img_w * 0.35, img_h * 0.5],  # top-left
+                ],
+                dtype=np.int32,
+            )
             cv2.fillPoly(roi_mask, [mask_poly], 255)
             roi_area_pixels = np.sum(roi_mask > 0)
 
@@ -99,7 +87,9 @@ class RoadDamageAnalyzer:
                 for i, mask_obj in enumerate(result.masks.data):
                     conf = float(result.boxes.conf[i])
                     cls_id = int(result.boxes.cls[i])
-                    label = CLASS_CODES[cls_id] if cls_id < len(CLASS_CODES) else "unknown"
+                    label = (
+                        CLASS_CODES[cls_id] if cls_id < len(CLASS_CODES) else "unknown"
+                    )
 
                     mask = mask_obj.cpu().numpy()
                     mask = cv2.resize(mask, (img_w, img_h))
@@ -110,10 +100,14 @@ class RoadDamageAnalyzer:
                     if damage_pixels > 0:
                         rel_area = damage_pixels / roi_area_pixels
                         x1, y1, x2, y2 = result.boxes.xyxy[i].tolist()
-                        detections.append(DamageDetection(
-                            damage_type=label, confidence=conf,
-                            bbox=(x1, y1, x2, y2), area=rel_area,
-                        ))
+                        detections.append(
+                            DamageDetection(
+                                damage_type=label,
+                                confidence=conf,
+                                bbox=(x1, y1, x2, y2),
+                                area=rel_area,
+                            )
+                        )
                         # Negative classes (shadow/manhole/marking) don't count as damage.
                         if cls_id <= MAX_DAMAGE_CLASS_ID:
                             total_damage_pixels += damage_pixels
@@ -125,16 +119,22 @@ class RoadDamageAnalyzer:
                     x1, y1, x2, y2 = box.xyxy[0].tolist()
                     conf = float(box.conf[0])
                     cls_id = int(box.cls[0])
-                    label = CLASS_CODES[cls_id] if cls_id < len(CLASS_CODES) else "unknown"
+                    label = (
+                        CLASS_CODES[cls_id] if cls_id < len(CLASS_CODES) else "unknown"
+                    )
 
                     cy = (y1 + y2) / 2
                     if cy > img_h * 0.5:
                         box_area = (x2 - x1) * (y2 - y1)
                         rel_area = box_area / (img_h * img_w)
-                        detections.append(DamageDetection(
-                            damage_type=label, confidence=conf,
-                            bbox=(x1, y1, x2, y2), area=rel_area,
-                        ))
+                        detections.append(
+                            DamageDetection(
+                                damage_type=label,
+                                confidence=conf,
+                                bbox=(x1, y1, x2, y2),
+                                area=rel_area,
+                            )
+                        )
                         if cls_id <= MAX_DAMAGE_CLASS_ID:
                             damage_counts[label] = damage_counts.get(label, 0) + 1
 

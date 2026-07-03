@@ -9,8 +9,8 @@ venv/
 
 # Data and Models
 data/
-backend/data/
 **/runs/
+**/exports/
 *.pt
 *.log
 

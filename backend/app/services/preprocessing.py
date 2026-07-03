@@ -1,16 +1,24 @@
+"""
+Quarantined preprocessing for explicit YOLO dataset diagnostics.
+
+This module is not part of the production RQI path. The live DINOv2 + SVR
+artifact consumes raw Street View images. FastSAM is retained only for the
+backend ``preview_preprocessing`` diagnostic action; it is not applied
+automatically by the current YOLO export.
+"""
+
 import os
+
 import cv2
 import numpy as np
-from ultralytics import YOLO, FastSAM
+from ultralytics import FastSAM, YOLO
+
+from app.core.config import settings
 from app.core.settings_manager import settings_manager
 
+
 class RoadPreprocessor:
-    """
-    Preprocesses images for road quality analysis by:
-    1. Applying a geometric ROI (Region of Interest) to remove sky/horizon.
-    2. Using a YOLO segmentation model to mask out dynamic objects (cars, people, etc.) that obstruct the road.
-    3. Using FastSAM for intelligent road segmentation.
-    """
+    """Build optional diagnostic previews for YOLO dataset inspection."""
     
     # COCO Classes to mask out (obstructions)
     # 0: person, 1: bicycle, 2: car, 3: motorcycle, 5: bus, 7: truck
@@ -20,6 +28,7 @@ class RoadPreprocessor:
         self.model_name = model_name
         self.model = None
         self.fastsam = None
+        self.fastsam_path = None
 
     def _load_model(self):
         if self.model is None:
@@ -27,10 +36,23 @@ class RoadPreprocessor:
             self.model = YOLO(self.model_name)
 
     def _load_fastsam(self):
-        if self.fastsam is None:
-            print("RoadPreprocessor: Loading FastSAM-s.pt...")
-            # Automatically downloads if not present
-            self.fastsam = FastSAM('FastSAM-s.pt')
+        model_name = settings_manager.get_setting("fastsam_model", "FastSAM-s.pt")
+        model_path = (
+            model_name
+            if os.path.isabs(model_name)
+            else os.path.join(settings.resolve_data_dir(), "models", model_name)
+        )
+
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(
+                f"FastSAM diagnostic model not found: {model_path}. "
+                "Place it in the configured data/models directory."
+            )
+
+        if self.fastsam is None or self.fastsam_path != model_path:
+            print(f"RoadPreprocessor: Loading {model_path}...")
+            self.fastsam = FastSAM(model_path)
+            self.fastsam_path = model_path
 
     def process_and_save(self, src_path: str, dst_path: str, options: dict = None):
         """
@@ -88,8 +110,6 @@ class RoadPreprocessor:
                 masks_data = results[0].masks.data # GPU/CPU tensor
                 if masks_data is not None:
                     # Convert to numpy (N, H, W)
-                    masks_np = masks_data.cpu().numpy()
-                    
                     masks_np = masks_data.cpu().numpy()
                     
                     # Multi-point PROMPT Strategy

@@ -8,7 +8,7 @@ import datetime
 
 from app.core.database import SessionLocal
 from app.models.models import StreetViewImage, TrainingData as TrainingDataModel, Job as JobModel
-from app.core.config import settings
+from app.core.paths import image_path
 from app.services.job_service import create_job, get_job
 from app.core.settings_manager import settings_manager
 
@@ -78,17 +78,17 @@ class Mutation:
         )
 
     @strawberry.mutation
-    def start_model_training(self, model_type: str = "YOLO") -> Job:
+    def start_model_training(self) -> Job:
         from app.services.job_runner import job_runner
         from app.services.tasks import run_training_job
         
-        print(f"DEBUG: start_model_training mutation INVOKED (Type: {model_type})")
+        print("DEBUG: start_model_training mutation INVOKED (YOLO)")
         job_id = create_job()
         
         # Start background process
         job_runner.run_background_task(
             target=run_training_job, 
-            args=(job_id, model_type)
+            args=(job_id,)
         )
         
         return Job(
@@ -195,33 +195,13 @@ class Mutation:
     @strawberry.mutation
     def detect_objects(self, input: DetectInput) -> List[DetectPrediction]:
         from app.services.inference import inference_service
-        import os
-        from app.core.config import settings
 
-        # Robust path resolution matching main.py and routes.py
-        # backend/app/graphql/schema.py -> backend/app/graphql -> backend/app -> backend
-        backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        project_root = os.path.dirname(backend_dir)
+        path = image_path(input.filename)
+        if not path.is_file():
+            raise Exception(f"Image {input.filename} not found")
         
-        candidates = [
-            settings.resolve_data_dir(),          # 1. Configured preference
-            os.path.join(project_root, "data"),   # 2. Legacy root data
-            os.path.join(backend_dir, "data")     # 3. Backend local data
-        ]
-        
-        image_path = None
-        for base_dir in candidates:
-            cand = os.path.join(base_dir, "images", input.filename)
-            if os.path.exists(cand):
-                 image_path = cand
-                 break
-        
-        if not image_path:
-            raise Exception(f"Image {input.filename} not found in any data directory")
-        
-        # Call inference
         results = inference_service.detect_objects(
-            image_path, 
+            str(path),
             conf_threshold=input.conf_threshold,
             classes=input.classes
         )
@@ -277,30 +257,12 @@ class Mutation:
     @strawberry.mutation
     def predict_dino_rqi(self, image_filename: str) -> Optional[int]:
         from app.services.dino_service import dino_service
-        import os
-        from app.core.config import settings
-        
-        # Resolve image path similar to detect_objects
-        backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        project_root = os.path.dirname(backend_dir)
-        
-        candidates = [
-            settings.resolve_data_dir(),
-            os.path.join(project_root, "data"),
-            os.path.join(backend_dir, "data")
-        ]
-        
-        image_path = None
-        for base_dir in candidates:
-            cand = os.path.join(base_dir, "images", image_filename)
-            if os.path.exists(cand):
-                 image_path = cand
-                 break
-        
-        if not image_path:
+
+        path = image_path(image_filename)
+        if not path.is_file():
             raise Exception(f"Image {image_filename} not found")
 
-        score = dino_service.predict_rqi(image_path)
+        score = dino_service.predict_rqi(str(path))
         
         # Optionally save the result to DB automatically?
         # For now, just return it.
@@ -315,4 +277,3 @@ class Mutation:
                 db.close()
 
         return score
-

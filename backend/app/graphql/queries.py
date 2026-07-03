@@ -64,14 +64,12 @@ class Query:
 
     @strawberry.field
     def available_models(self) -> List[str]:
-        import glob
-        import os
-        models_dir = os.path.join(os.getcwd(), "data", "models")
-        if not os.path.exists(models_dir):
+        from app.core.paths import data_path
+
+        models_dir = data_path("models")
+        if not models_dir.is_dir():
             return []
-        # Return relative paths or filenames of .pt files
-        files = glob.glob(os.path.join(models_dir, "*.pt"))
-        return [os.path.basename(f) for f in files]
+        return sorted(path.name for path in models_dir.glob("*.pt"))
 
     @strawberry.field
     def point(self, id: int) -> Optional[Point]:
@@ -487,5 +485,4 @@ class Query:
                     
         finally:
             db.close()
-
 

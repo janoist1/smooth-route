@@ -9,7 +9,7 @@ interface TrainingLocationState {
   allIds?: (string | number)[]
 }
 
-const TrainingPage: React.FC<{ reviewMode?: boolean }> = ({ reviewMode }) => {
+const TrainingPage: React.FC = () => {
   const navigate = useNavigate()
   const location = useLocation()
 
@@ -39,13 +39,9 @@ const TrainingPage: React.FC<{ reviewMode?: boolean }> = ({ reviewMode }) => {
   )
 
   const handleClose = useCallback(() => {
-    if (reviewMode) {
-      const page = Math.floor(offset / PAGE_SIZE) + 1
-      navigate(`/training?mode=${activeMode}&page=${page}`)
-    } else {
-      navigate('/')
-    }
-  }, [navigate, reviewMode, activeMode, offset])
+    const page = Math.floor(offset / PAGE_SIZE) + 1
+    navigate(`/training?mode=${activeMode}&page=${page}`)
+  }, [navigate, activeMode, offset])
 
   return (
     <TrainingView allIds={allIds} onNext={handleNext} onPrev={handlePrev} onClose={handleClose} />

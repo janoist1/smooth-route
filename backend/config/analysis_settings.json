@@ -56,30 +56,6 @@
         "explanation": "Korai leállás (Early Stopping): Hány epoch javulás nélkül, mielőtt leáll a tanítás."
     },
     {
-        "key": "dino_model_name",
-        "value": "dinov2_vits14",
-        "description": "Aktív DINO Modell",
-        "example": "dinov2_vits14",
-        "category": "DINO (Osztályozás)",
-        "explanation": "A Meta AI DINOv2 modellje, amelyet általános útosztályozásra (RQI) használunk."
-    },
-    {
-        "key": "dino_training_epochs",
-        "value": 20,
-        "description": "DINO Epochok Száma",
-        "example": "20",
-        "category": "Tanítás - DINO",
-        "explanation": "Hányszor fusson át a tanítás a DINO osztályozó fejen (Linear Head)."
-    },
-    {
-        "key": "dino_training_batch_size",
-        "value": 32,
-        "description": "DINO Batch Size",
-        "example": "32",
-        "category": "Tanítás - DINO",
-        "explanation": "Egyszerre feldolgozott képek száma (DINO Features)."
-    },
-    {
         "key": "training_provider",
         "value": "local",
         "description": "Tanítási Platform",
@@ -93,71 +69,15 @@
         "description": "Adatbetöltő Szálak",
         "example": "4",
         "category": "Tanítás - Általános",
-        "explanation": "Párhuzamos adatbetöltő processzek száma (mindkét modellnél használva)."
+        "explanation": "A YOLO-tanítás párhuzamos adatbetöltő processzeinek száma."
     },
     {
-        "key": "repair_score_weight",
-        "value": 150.0,
-        "description": "Folytozások Súlya",
-        "example": null,
-        "category": "Súlyok",
-        "explanation": "A már javított úthibák súlyozása a végső minősítésben."
-    },
-    {
-        "key": "edge_density_weight",
-        "value": 10,
-        "description": "Repedés-hálózat Súly",
-        "example": null,
-        "category": "Súlyok",
-        "explanation": "Az apró, pókhálószerű repedések fontossága az értékelésnél."
-    },
-    {
-        "key": "edge_density_fine_weight",
-        "value": 10.0,
-        "description": "Hajszálrepedés Súly",
-        "example": null,
-        "category": "Súlyok",
-        "explanation": "A legvékonyabb, alig látható repedések érzékenysége."
-    },
-    {
-        "key": "patch_density_weight",
-        "value": 10.0,
-        "description": "Kátyúk Súlya",
-        "example": null,
-        "category": "Súlyok",
-        "explanation": "A mély kátyúk és lyukak fontossága a biztonság szempontjából."
-    },
-    {
-        "key": "rqi_threshold_excellent",
-        "value": 20,
-        "description": "Kiváló Minőség Határ",
-        "example": null,
-        "category": "Küszöbértékek",
-        "explanation": "A maximális hiba-pontszám a Kiváló minősítéshez."
-    },
-    {
-        "key": "rqi_threshold_good",
-        "value": 35,
-        "description": "Jó Minőség Határa",
-        "example": null,
-        "category": "Küszöbértékek",
-        "explanation": "A határvonal az RQI 2 (Jó) és Közepes kategóriák között."
-    },
-    {
-        "key": "rqi_threshold_fair",
-        "value": 40.0,
-        "description": "Közepes Minőség Határ",
-        "example": null,
-        "category": "Küszöbértékek",
-        "explanation": "Ezen pontszám felett az út már rázkódósnak minősül."
-    },
-    {
-        "key": "rqi_threshold_poor",
-        "value": 55.0,
-        "description": "Rossz Minőség Határa",
-        "example": null,
-        "category": "Küszöbértékek",
-        "explanation": "A kritikus pontszám, ami felett az út állapota nem elfogadható."
+        "key": "fastsam_model",
+        "value": "FastSAM-s.pt",
+        "description": "FastSAM diagnosztikai modell",
+        "example": "FastSAM-s.pt",
+        "category": "YOLO tanítóadat-diagnosztika",
+        "explanation": "Csak az opcionális preprocessing előnézet használja; az éles RQI-modell mindig nyers képen fut."
     },
     {
         "key": "google_maps_pitch",
@@ -166,14 +86,6 @@
         "example": "-20",
         "category": "Google Street View",
         "explanation": "A Google autó kamerájának dőlésszöge az út felé."
-    },
-    {
-        "key": "texture_variance_divisor",
-        "value": 500.0,
-        "description": "Szemcsézettség Súly",
-        "example": null,
-        "category": "Súlyok",
-        "explanation": "Az aszfalt érdességének hatása a végső minősítésre."
     },
     {
         "key": "rqi_display_source",

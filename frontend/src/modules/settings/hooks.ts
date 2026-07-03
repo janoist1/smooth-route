@@ -13,7 +13,6 @@ export const useSettings = () => {
     {
       fetchSettings: actions.fetchSettings,
       updateSetting: actions.updateSetting,
-      applyPreset: actions.applyPreset,
     },
     dispatch,
   )

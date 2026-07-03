@@ -60,10 +60,9 @@ használd — azok referencia/zsákutca (ld. MODEL_EXPERIMENTS.md).
 
 ## Buktatók (amiken más már elvérzett)
 
-- **Kettéhasadt adatkönyvtár:** a backend a `backend/data/images`-be menti a
-  route-képeket, a tanítóadat a gyökér `data/images`-ben van; a modellek 3
-  helyen szórva. A `config.resolve_data_dir()` a `backend/data`-t preferálja.
-  Az `ml/extract_features_v2.py` mindkét helyen keres. (A C2 lépés egyesíti.)
+- **Kanonikus adatkönyvtár:** a backend és az ML-pipeline egyaránt a gyökér
+  `data/` könyvtárat használja; relatív `DATA_DIR` felülírás is a repó
+  gyökeréhez képest oldódik fel. Ne hozz létre újra `backend/data/` fát.
 - **Háromféle "dino" webes felület, KÜLÖN sorssal** (ld. terv P1/P9):
   (1) DINO *tanítás* gomb = halott, törlendő; (2) DINO *review/pontozó* nézet =
   élő, kell (ez adja a `manual_rqi` címkéket); (3) a `/dino` URL = megszüntetendő.

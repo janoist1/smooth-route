@@ -21,9 +21,6 @@ export const fetchSettings = createSagaAction<SystemSetting[]>('settings/fetchSe
 export const updateSetting = createSagaAction<SystemSetting, { key: string; value: unknown }>(
   'settings/updateSetting',
 )
-export const applyPreset = createSagaAction<SystemSetting[], Record<string, unknown>>(
-  'settings/applyPreset',
-)
 
 const settingsSlice = createSlice({
   name: 'settings',
@@ -71,31 +68,6 @@ const settingsSlice = createSlice({
       state.error = err?.message || 'Failed to update setting'
     })
 
-    // applyPreset
-    builder.addCase(applyPreset.pending, state => {
-      state.saveLoading = true
-      state.error = null
-    })
-    builder.addCase(applyPreset.fulfilled, (state, action: PayloadAction<SystemSetting[]>) => {
-      state.saveLoading = false
-      const updatedList = action.payload
-      if (updatedList) {
-        updatedList.forEach((updated: SystemSetting) => {
-          const index = state.items.findIndex(s => s.key === updated.key)
-          if (index !== -1) {
-            state.items[index] = updated
-          } else {
-            state.items.push(updated)
-          }
-        })
-      }
-    })
-    builder.addCase(applyPreset.rejected, (state, action) => {
-      state.saveLoading = false
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const err = (action as any).error
-      state.error = err?.message || 'Failed to apply preset'
-    })
   },
 })
 
@@ -103,7 +75,6 @@ export const actions = {
   ...settingsSlice.actions,
   fetchSettings,
   updateSetting,
-  applyPreset,
 }
 
 // Export nothing from actions manually

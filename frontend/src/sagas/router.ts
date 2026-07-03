@@ -14,35 +14,6 @@ import type { RootState } from '../store'
 // --- Route Handlers ---
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-function* handleTrainingDinoReview(match: PathMatch, _searchParams: URLSearchParams): SagaIterator {
-  console.log('Router: Handling Dino Review', match.params)
-  const pointId = match.params.id ? parseInt(match.params.id, 10) : 0
-  if (pointId) yield put(trainingActions.fetchDinoImage(pointId))
-}
-
-function* handleTrainingDinoList(_match: PathMatch, searchParams: URLSearchParams): SagaIterator {
-  console.log('Router: Handling Dino List', { page: searchParams.get('page'), mode: searchParams.get('mode') })
-  const mode = (searchParams.get('mode') || 'all') as string
-  const page = parseInt(searchParams.get('page') || '1', 10)
-  const offset = (page - 1) * PAGE_SIZE
-
-  const activeMode: string = yield select(trainingSelectors.selectActiveMode)
-  const currentItems: TrainingPoint[] = yield select(trainingSelectors.selectItems)
-  const currentOffset: number = yield select(trainingSelectors.selectOffset)
-  const currentStats: unknown = yield select((state: RootState) => state.training.globalStats)
-
-  // Fetch List: Mode or Offset change
-  if (mode.toLowerCase() !== activeMode.toLowerCase() || currentItems.length === 0 || currentOffset !== offset) {
-    yield put(trainingActions.fetchList({ offset, mode, model: 'dino' }))
-  }
-
-  // Fetch Stats: Only if Mode changed
-  if (mode.toLowerCase() !== activeMode.toLowerCase() || !currentStats) {
-     yield put(trainingActions.fetchStats({ mode: mode.toUpperCase(), model: 'dino' }))
-  }
-}
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function* handleTrainingDetail(match: PathMatch, _searchParams: URLSearchParams): SagaIterator {
   const pointId = match.params.id ? parseInt(match.params.id, 10) : 0
   if (pointId) yield put(trainingActions.fetchImage(pointId))
@@ -123,9 +94,6 @@ interface RouteHandlerConfig {
 }
 
 const ROUTE_CONFIG: RouteHandlerConfig[] = [
-  { route: ROUTES.TRAINING_DINO_REVIEW, handler: handleTrainingDinoReview },
-  { route: ROUTES.TRAINING_DINO_LIST, handler: handleTrainingDinoList },
-  { route: ROUTES.TRAINING_DETAIL, handler: handleTrainingDetail }, 
   { route: ROUTES.TRAINING_REVIEW, handler: handleTrainingDetail }, 
   { route: ROUTES.TRAINING_LIST, handler: handleTrainingDashboard },
   { route: ROUTES.HOME, handler: handleMapHome },

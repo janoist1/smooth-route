@@ -1,17 +1,15 @@
-import os
 import uuid
-import uuid
-import cv2
-import json
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict
+
+from app.core.paths import data_path, image_path
 from app.services.inference import inference_service
 from app.services.preprocessing import road_preprocessor
-from app.core.config import settings
 
 class ReviewService:
     """
     Unified service for handling interactive review toolbar actions.
-    Dispatches actions like 'auto_detect', 'preview_preprocessing' to specific services.
+    ``preview_preprocessing`` is a quarantined YOLO-dataset diagnostic and is
+    never used by the production RQI inference path.
     """
 
     def perform_action(self, action_type: str, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -35,23 +33,10 @@ class ReviewService:
             raise ValueError(f"Unknown action type: {action_type}")
 
     def _resolve_image_path(self, filename: str) -> str:
-        # Reusing logic from schema.py / inference.py
-        # Ideally this should be in a shared utility
-        backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        project_root = os.path.dirname(backend_dir)
-        
-        candidates = [
-            settings.resolve_data_dir(),
-            os.path.join(project_root, "data"),
-            os.path.join(backend_dir, "data")
-        ]
-        
-        for base_dir in candidates:
-            cand = os.path.join(base_dir, "images", filename)
-            if os.path.exists(cand):
-                return cand
-                
-        raise FileNotFoundError(f"Image {filename} not found in any data directory")
+        path = image_path(filename)
+        if path.is_file():
+            return str(path)
+        raise FileNotFoundError(f"Image {filename} not found in canonical data directory")
 
     def _handle_auto_detect(self, params: Dict[str, Any]) -> Dict[str, Any]:
         filename = params.get('filename')
@@ -106,15 +91,14 @@ class ReviewService:
         
         # Create temp output path
         # Assuming we have a static/temp folder served by API
-        backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        temp_dir = os.path.join(backend_dir, "data", "static", "previews")
-        os.makedirs(temp_dir, exist_ok=True)
+        temp_dir = data_path("static", "previews")
+        temp_dir.mkdir(parents=True, exist_ok=True)
         
         temp_filename = f"preview_{uuid.uuid4().hex[:8]}_{filename}"
-        dst_path = os.path.join(temp_dir, temp_filename)
+        dst_path = temp_dir / temp_filename
         
         # Execute Preprocessing
-        road_preprocessor.process_and_save(src_path, dst_path, options)
+        road_preprocessor.process_and_save(src_path, str(dst_path), options)
         
         # Return URL (assuming /static/previews/ is mounted)
         # Note: Vite proxy needs to handle /static/ or /api/v1/static

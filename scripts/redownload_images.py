@@ -33,9 +33,7 @@ def redownload_all_images(new_pitch=-20.0):
         print(f"🔄 Found {len(images)} images to process (New Pitch: {new_pitch}).")
         
         # Determine local directory
-        data_dir = settings.DATA_DIR
-        if not os.path.isabs(data_dir):
-            data_dir = os.path.join(project_root, data_dir)
+        data_dir = settings.resolve_data_dir()
         images_dir = os.path.join(data_dir, "images")
         os.makedirs(images_dir, exist_ok=True)
         

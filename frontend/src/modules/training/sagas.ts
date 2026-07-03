@@ -93,8 +93,8 @@ const RUN_ANALYSIS = gql(`
 `)
 
 const START_MODEL_TRAINING = gql(`
-    mutation StartModelTraining($modelType: String) {
-        startModelTraining(modelType: $modelType) {
+    mutation StartModelTraining {
+        startModelTraining {
             id
         }
     }
@@ -123,27 +123,6 @@ const GET_ACTIVE_JOB = gql(`
 
 
 
-
-const GET_DINO_TRAINING_DATA = gql(`
-    query GetDinoTrainingData($id: Int!) {
-        point(id: $id) {
-            id
-            imageUrl
-            dinoRqiScore
-            manualRqi
-        }
-    }
-`)
-
-
-
-
-
-const SAVE_DINO_RQI = gql(`
-    mutation SaveDinoRqi($input: TrainingDataInput!) {
-        saveTrainingData(input: $input)
-    }
-`)
 
 // Logic to fetch image from API
 function* fetchImageWorker(action: SagaActionFromCreator<typeof actions.fetchImage>) {
@@ -310,15 +289,11 @@ function* runAnalysisSaga(action: SagaActionFromCreator<typeof actions.runAnalys
   return { jobId }
 }
 
-function* startTrainingSaga(action: SagaActionFromCreator<typeof actions.startTraining>) {
-  const payload = action.meta.arg
-  const modelType = payload && typeof payload === 'object' ? payload.modelType : undefined
-
+function* startTrainingSaga() {
   const result: { data: { startModelTraining: { id: string } } } = yield call(
     [client, client.mutate],
     {
       mutation: START_MODEL_TRAINING,
-      variables: { modelType }
     },
   )
 
@@ -379,69 +354,6 @@ function* reviewActionWorker(action: SagaActionFromCreator<typeof actions.perfor
   }
 }
 
-function* fetchDinoImageWorker(action: SagaActionFromCreator<typeof actions.fetchDinoImage>) {
-  const pointId = action.meta.arg
-  const result: { data: { point: { id: string; imageUrl: string; manualRqi: number | null } } } = yield call([client, client.query], {
-    query: GET_DINO_TRAINING_DATA,
-    variables: { id: pointId },
-    fetchPolicy: 'network-only',
-  })
-
-  const pt = result.data.point
-  if (!pt) throw new Error('Point not found')
-
-  return {
-    id: String(pt.id),
-    url: pt.imageUrl,
-    manualRqi: pt.manualRqi || null,
-  }
-}
-
-function* saveDinoRqiWorker() {
-  const state: ReturnType<typeof selectTrainingState> = yield select(selectTrainingState)
-
-  if (!state.imageId || !state.imageUrl || state.manualRqi === null || state.manualRqi === undefined) {
-    return
-  }
-
-  const filename = state.imageUrl.split('/').pop() || ''
-  
-  yield call([client, client.mutate], {
-    mutation: SAVE_DINO_RQI,
-    variables: {
-      input: {
-        imageFilename: filename,
-        manualRqi: state.manualRqi,
-        metaData: { source: 'training-dino' }
-      }
-    }
-  })
-
-  // Fetch NEXT ID for seamless server-side navigation
-  const mode = state.activeMode || 'ALL'
-  try {
-    const nextResult: { data: { nextTrainingPoint: number | null } } = yield call([client, client.query], {
-      query: gql(`
-        query GetNextTrainingPoint($currentId: Int!, $mode: FilterMode!, $model: String!) {
-          nextTrainingPoint(currentId: $currentId, mode: $mode, model: $model)
-        }
-      `),
-      variables: { 
-        currentId: parseInt(state.imageId || '0'), 
-        mode: mode.toUpperCase(), 
-        model: 'dino' 
-      },
-      fetchPolicy: 'network-only'
-    })
-    
-    // Return the next ID to the caller (DinoTrainingView)
-    return { nextId: nextResult.data.nextTrainingPoint }
-  } catch (err) {
-    console.error("Failed to fetch next training point:", err)
-    return { nextId: null }
-  }
-}
-
 export default [
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   takeLatestAsync((fetchImage as any).type || fetchImage, fetchImageWorker),
@@ -462,32 +374,4 @@ export default [
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   takeLatestAsync((actions.stopJob as any).type || actions.stopJob, stopJobSaga),
   takeLatest(actions.reconnectJob.type, reconnectJobSaga),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  takeLatestAsync((actions.fetchDinoImage as any).type || actions.fetchDinoImage, fetchDinoImageWorker),
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  takeLatestAsync((actions.saveDinoRqi as any).type || actions.saveDinoRqi, saveDinoRqiWorker),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  takeLatestAsync((actions.predictDinoRqi as any).type || actions.predictDinoRqi, predictDinoRqiWorker),
 ]
-
-const PREDICT_DINO_RQI = gql(`
-  mutation PredictDinoRqi($imageFilename: String!) {
-    predictDinoRqi(imageFilename: $imageFilename)
-  }
-`)
-
-function* predictDinoRqiWorker() {
-  const state: ReturnType<typeof selectTrainingState> = yield select(selectTrainingState)
-  
-  if (!state.imageUrl) return null
-  const filename = state.imageUrl.split('/').pop()
-  if (!filename) return null
-
-  const result: { data: { predictDinoRqi: number | null } } = yield call([client, client.mutate], {
-    mutation: PREDICT_DINO_RQI,
-    variables: { imageFilename: filename },
-  })
-
-  return result.data.predictDinoRqi
-}

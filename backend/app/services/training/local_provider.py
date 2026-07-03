@@ -32,14 +32,7 @@ class LocalTrainingProvider(BaseTrainingProvider):
         return True  # Always available
     
     def run(self, config: TrainingConfig) -> Dict[str, Any]:
-        """
-        Execute local training (YOLO or DINO) with progress callbacks.
-        """
-        # Handle DINO training
-        if config.model_type == "DINO":
-            return self._run_dino_training(config)
-
-        # Handle YOLO training
+        """Execute local YOLO training with progress callbacks."""
         device = config.device or self._device
         
         # Log device info
@@ -93,71 +86,12 @@ class LocalTrainingProvider(BaseTrainingProvider):
                 "metrics": {},
             }
     
-    def _run_dino_training(self, config: TrainingConfig) -> Dict[str, Any]:
-        """Execute local DINO classification head training."""
-        print("DEBUG: Starting local DINO training...")
-        try:
-            # Import dynamically to avoid circular dependencies
-            import sys
-            import os
-            
-            # Ensure backend dir is in path
-            # base_dir is project/backend
-            sys.path.append(config.base_dir)
-            
-            from train_dino_head import train
-            
-            # Define output path
-            timestamp = datetime.now().strftime("%Y%m%d")
-            # Using vits14 as suffix for now, maybe in future dynamic based on config
-            target_name = f"dino_rqi_head_vits14_{timestamp}.pt"
-            output_path = os.path.join(config.base_dir, "data", "models", target_name)
-            
-            # Wrapper for progress updates?
-            # train_dino_head currently doesn't support callbacks, 
-            # so we just run it and assume it logs enough or finishes fast.
-            # TODO: Add callback support to train_dino_head.py
-            
-            if config.progress_callback:
-                config.progress_callback(50, "DINO Head tanítása folyamatban...")
-            
-            # config.data_yaml_path is actually the DIR path for DINO
-            train(
-                config.data_yaml_path,
-                output_path,
-                epochs=config.epochs,
-                batch_size=config.batch_size,
-                num_workers=0, # Force main process to avoid "daemonic processes are not allowed to have children"
-                progress_callback=config.progress_callback
-            )
-            
-            if config.progress_callback:
-                config.progress_callback(100, "Tanítás kész!")
-                
-            return {
-                "success": True,
-                "model_path": output_path,
-                "message": "DINO Tanítás sikeresen befejeződött!",
-                "metrics": {},
-            }
-            
-        except Exception as e:
-            print(f"ERROR: DINO Training failed: {e}")
-            import traceback
-            traceback.print_exc()
-            return {
-                "success": False,
-                "model_path": None,
-                "message": f"DINO Tanítási hiba: {str(e)}",
-                "metrics": {},
-            }
-    
     def _load_model(self, config: TrainingConfig) -> YOLO:
         """Load YOLO model from config."""
         model_path = config.model_name
         
         # Check if model exists in models directory
-        candidate_path = os.path.join(config.base_dir, "data", "models", model_path)
+        candidate_path = os.path.join(config.data_dir, "models", model_path)
         if os.path.exists(candidate_path):
             model_path = candidate_path
         
@@ -173,7 +107,9 @@ class LocalTrainingProvider(BaseTrainingProvider):
         base_name = model_path.replace(".pt", "")
         yaml_file = f"{base_name}.yaml"
         detection_weights = base_name.replace("-seg", "") + ".pt"
-        detection_weights_path = os.path.join(config.base_dir, "data", "models", detection_weights)
+        detection_weights_path = os.path.join(
+            config.data_dir, "models", detection_weights
+        )
         
         print(f"DEBUG: Initializing YOLOv12 seg from {yaml_file}")
         model = YOLO(yaml_file)
@@ -267,7 +203,7 @@ class LocalTrainingProvider(BaseTrainingProvider):
         # Save with timestamp
         timestamp = datetime.now().strftime("%Y%m%d")
         target_name = f"model_{timestamp}.pt"
-        target_path = os.path.join(config.base_dir, "data", "models", target_name)
+        target_path = os.path.join(config.data_dir, "models", target_name)
         
         import shutil
         shutil.copy2(best_model_src, target_path)

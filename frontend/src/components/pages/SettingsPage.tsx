@@ -1,11 +1,10 @@
 import React from 'react'
 import { Loader2, Save } from 'lucide-react'
-import { useSettings, SettingsHeader, PresetsSection, SettingsList } from 'modules/settings'
+import { useSettings, SettingsHeader, SettingsList } from 'modules/settings'
 import MainLayout from '../MainLayout'
 
 const SettingsPage: React.FC = () => {
-  const { items, loading, saveLoading, error, categories, updateSetting, applyPreset } =
-    useSettings()
+  const { items, loading, saveLoading, error, categories, updateSetting } = useSettings()
 
   const handleUpdate = (key: string, value: unknown) => {
     updateSetting({ key, value })
@@ -35,8 +34,6 @@ const SettingsPage: React.FC = () => {
       <div
         style={{ padding: '40px', maxWidth: '1200px', margin: '0 auto', paddingBottom: '120px' }}>
         <SettingsHeader />
-
-        <PresetsSection onApply={applyPreset} />
 
         {error && (
           <div

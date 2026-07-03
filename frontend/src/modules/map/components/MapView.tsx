@@ -94,7 +94,7 @@ const MapClickHandler = () => {
 }
 
 interface MapViewProps {
-  onTrain: (id: string | number, model?: 'yolo' | 'dino') => void
+  onTrain: (id: string | number) => void
   onMapMove: (bbox: number[], center: [number, number], zoom: number) => void
 }
 

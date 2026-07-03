@@ -60,7 +60,7 @@ export const TrainingList: React.FC<TrainingListProps> = ({
     },
     {
       key: 'rqi',
-      header: 'YOLO AI',
+      header: 'Hibaalapú pontszám',
       render: (item: TrainingPoint) => {
         const val = item.rqiScore
         if (val === undefined || val === null) return <span style={{ color: '#6b7280' }}>-</span>
@@ -70,7 +70,7 @@ export const TrainingList: React.FC<TrainingListProps> = ({
     },
     {
       key: 'dino_rqi',
-      header: 'DINO AI',
+      header: 'RQI-becslés',
       render: (item: TrainingPoint) => {
         const val = item.dinoRqiScore
         if (val === undefined || val === null) return <span style={{ color: '#6b7280' }}>-</span>

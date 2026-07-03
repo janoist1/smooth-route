@@ -39,5 +39,6 @@ jobs:
       # Minimal deps for the current isolated tests (no DB / no torch).
       # As backend test coverage grows to import heavier modules, switch this
       # to `pip install -e .[test]` (and add a postgres service for DB tests).
-      - run: pip install pytest pydantic
+      - run: pip install pytest pydantic ruff
+      - run: ruff check --select F821 .
       - run: pytest

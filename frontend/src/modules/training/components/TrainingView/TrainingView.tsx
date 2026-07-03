@@ -134,6 +134,11 @@ const TrainingView: React.FC<TrainingViewProps> = ({ allIds, onNext, onPrev, onC
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
 
+      if (e.key >= '1' && e.key <= '5') {
+        setRqi(Number(e.key))
+        return
+      }
+
       switch (e.key.toLowerCase()) {
         case 'arrowleft':
           handlePrev()
@@ -216,6 +221,7 @@ const TrainingView: React.FC<TrainingViewProps> = ({ allIds, onNext, onPrev, onC
     autoDetectClasses,
     filterCurrentAnnotations,
     filterThreshold,
+    setRqi,
   ])
 
   // Show overlay ONLY if we are loading AND don't have an image yet
@@ -267,6 +273,23 @@ const TrainingView: React.FC<TrainingViewProps> = ({ allIds, onNext, onPrev, onC
           position: 'relative',
         }}>
         <StatusToast saving={saving} showSavedFeedback={showSavedFeedback} />
+        <div
+          style={{
+            position: 'absolute',
+            top: '16px',
+            left: '20px',
+            zIndex: 90,
+            padding: '8px 12px',
+            borderRadius: '8px',
+            background: 'rgba(20,20,20,0.82)',
+            border: '1px solid rgba(255,255,255,0.12)',
+            color: '#f3f4f6',
+            fontSize: '13px',
+            fontWeight: 600,
+            pointerEvents: 'none',
+          }}>
+          Hibák jelölése (poligonok)
+        </div>
 
         {/* Canvas & Navigation */}
         <Canvas

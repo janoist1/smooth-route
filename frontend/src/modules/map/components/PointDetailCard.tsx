@@ -7,7 +7,7 @@ interface PointDetailCardProps {
   detail: RoadPointDetail
   loading: boolean
   onClose: () => void
-  onTrain: (id: string | number, model?: 'yolo' | 'dino') => void
+  onTrain: (id: string | number) => void
 }
 
 const PointDetailCard: React.FC<PointDetailCardProps> = ({ detail, loading, onClose, onTrain }) => {
@@ -154,7 +154,7 @@ const PointDetailCard: React.FC<PointDetailCardProps> = ({ detail, loading, onCl
           Recorded:{' '}
           {detail.created_at ? new Date(detail.created_at).toLocaleDateString() : 'Unknown'}
           <button
-            onClick={() => onTrain(detail.id, targetModel)}
+            onClick={() => onTrain(detail.id)}
             style={{
               marginTop: '10px',
               width: '100%',

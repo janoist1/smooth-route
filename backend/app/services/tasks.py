@@ -119,16 +119,16 @@ def run_analysis_job(job_id: str, strategy: str, limit: int = 0, reanalyze: bool
             completed_at=datetime.utcnow()
         )
 
-def run_training_job(job_id: str, model_type: str = "YOLO"):
-    """Run model training (YOLO or DINO) in background."""
-    print(f"DEBUG: Training process started for job {job_id} (Type: {model_type})")
+def run_training_job(job_id: str):
+    """Run YOLO model training in the background."""
+    print(f"DEBUG: YOLO training process started for job {job_id}")
     try:
         from app.services.training_service import training_service
         
-        update_job(job_id, status=JobStatus.RUNNING, message=f"{model_type} modell finomhangolása indítása...")
+        update_job(job_id, status=JobStatus.RUNNING, message="YOLO modell finomhangolása indítása...")
         
         # Call the real training logic in training_service
-        result = training_service.run_training(job_id, model_type=model_type)
+        result = training_service.run_training(job_id)
         
         if result.get("status") == "cancelled":
             print(f"DEBUG: Training job {job_id} was cancelled, not marking as completed.")

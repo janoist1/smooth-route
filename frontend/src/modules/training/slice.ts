@@ -39,29 +39,13 @@ export const performReviewAction = createSagaAction<
 >('training/performReviewAction')
 
 
-// DINO Classification Actions
-export const fetchDinoList = createSagaAction<
-  { items: TrainingPoint[]; totalCount: number; offset: number; hasMore: boolean },
-  { offset: number; mode?: string }
->('training/fetchDinoList')
-// fetchDinoStats removed - use fetchStats({ model: 'dino' })
-export const fetchDinoImage = createSagaAction<
-  { id: string; url: string; manualRqi: number | null },
-  number
->('training/fetchDinoImage')
-export const saveDinoRqi = createSagaAction<{ nextId: number | null }, void>(
-  'training/saveDinoRqi',
-)
-export const predictDinoRqi = createSagaAction<number | null, void>('training/predictDinoRqi')
-
-// Job Actions
 // Job Actions
 export const reconnectJob = createAction('training/reconnectJob')
 export const runAnalysis = createSagaAction<
   { jobId: string },
   { strategy: string; limit: number; reanalyze: boolean }
 >('training/runAnalysis')
-export const startTraining = createSagaAction<{ jobId: string }, { modelType?: string } | void>('training/startTraining')
+export const startTraining = createSagaAction<{ jobId: string }, void>('training/startTraining')
 export const stopJob = createSagaAction<void, string>('training/stopJob')
 
 const initialState: TrainingState = {
@@ -359,69 +343,6 @@ const trainingSlice = createSlice({
       .addCase(startTraining.rejected, (state) => {
         state.trainingStatus = 'failed'
       })
-      // DINO Classification Reducers
-      .addCase(fetchDinoList.pending, (state) => {
-        state.loading = true
-        state.error = null
-      })
-      .addCase(fetchDinoList.fulfilled, (state, action: PayloadAction<{ items: TrainingPoint[]; totalCount: number; offset: number }>) => {
-        state.loading = false
-        state.items = action.payload.offset === 0 
-          ? action.payload.items 
-          : [...state.items, ...action.payload.items]
-        state.totalCount = action.payload.totalCount
-        state.offset = action.payload.offset + action.payload.items.length
-      })
-      .addCase(fetchDinoList.rejected, (state, _action) => {
-        const action = _action as SagaRejectedAction
-        state.loading = false
-        if (action.error.name !== 'AbortError' && action.error.message !== 'Aborted') {
-          state.error = action.error?.message || 'Failed to fetch DINO list'
-        }
-      })
-
-      .addCase(fetchDinoImage.pending, (state) => {
-        state.loading = true
-        state.error = null
-      })
-      .addCase(fetchDinoImage.fulfilled, (state, action: PayloadAction<{ id: string; url: string; manualRqi: number | null }>) => {
-        state.loading = false
-        state.imageId = action.payload.id
-        state.imageUrl = action.payload.url
-        state.manualRqi = action.payload.manualRqi
-      })
-      .addCase(fetchDinoImage.rejected, (state, _action) => {
-        const action = _action as SagaRejectedAction
-        state.loading = false
-        if (action.error.name !== 'AbortError' && action.error.message !== 'Aborted') {
-          state.error = action.error?.message || 'Failed to fetch DINO image'
-        }
-      })
-      .addCase(saveDinoRqi.pending, (state) => {
-        state.saving = true
-      })
-      .addCase(saveDinoRqi.fulfilled, (state) => {
-        state.saving = false
-      })
-      .addCase(saveDinoRqi.rejected, (state, _action) => {
-        const action = _action as SagaRejectedAction
-        state.saving = false
-        state.error = action.error?.message || 'Failed to save DINO RQI'
-      })
-      .addCase(predictDinoRqi.pending, (state) => {
-        state.loading = true
-      })
-      .addCase(predictDinoRqi.fulfilled, (state, action) => {
-        state.loading = false
-        if (action.payload) {
-          state.manualRqi = action.payload
-        }
-      })
-      .addCase(predictDinoRqi.rejected, (state, _action) => {
-          const action = _action as SagaRejectedAction
-          state.loading = false
-          state.error = action.error?.message || 'Failed to predict DINO RQI'
-      })
   },
 })
 
@@ -437,10 +358,5 @@ export const actions = {
   runAnalysis,
   startTraining,
   stopJob,
-  fetchDinoList,
-
-  fetchDinoImage,
-  saveDinoRqi,
-  predictDinoRqi,
 }
 export default trainingSlice.reducer

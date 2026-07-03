@@ -2,23 +2,13 @@ import React from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { MapView, MapLegend } from 'modules/map'
 import MainLayout from './MainLayout'
-import { useRqiDisplaySource } from 'modules/settings'
 
 const HomePage: React.FC = () => {
   const navigate = useNavigate()
   const [, setSearchParams] = useSearchParams()
 
-  const displaySource = useRqiDisplaySource()
-
-  const handleTrain = (id: string | number, model?: 'yolo' | 'dino') => {
-    // Priority: Explicit argument > Setting > Default
-    const target = model || (displaySource === 'dino' ? 'dino' : 'yolo')
-    
-    if (target === 'dino') {
-        navigate(`/training/dino/${id}/review`)
-    } else {
-        navigate(`/training/${id}`)
-    }
+  const handleTrain = (id: string | number) => {
+    navigate(`/training/${id}/review`)
   }
 
   const handleMapMove = React.useCallback(

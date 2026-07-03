@@ -1,5 +1,5 @@
 import googlemaps
-from typing import List, Dict, Tuple
+from typing import Dict, List, Optional, Tuple
 from app.core.config import settings
 import math
 

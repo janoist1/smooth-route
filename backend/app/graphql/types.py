@@ -93,7 +93,7 @@ class TrainingPointsResponse:
 
 @strawberry.input
 class RunAnalysisInput:
-    strategy: str # YOLO, HEURISTIC, FUSION
+    strategy: str  # YOLO or CLASSIFICATION
     limit: int = 0
     reanalyze: bool = False
 

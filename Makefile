@@ -62,11 +62,6 @@ analyze-calibration:
 verify-real:
 	$(PYTHON) verify_real_images.py
 
-verify-preprocess:
-	@echo "🔍 Verifying Preprocessing..."
-	@echo "Usage: make verify-preprocess [ARGS='10' or ARGS='image_id']"
-	EXTRA_PYTHONPATH=$(shell pwd)/backend $(PYTHON) backend/verify_preprocessing.py $(ARGS)
-
 clean-orphans:
 	@echo "🧹 Cleaning orphaned points..."
 	DATABASE_URL=postgresql://postgres:postgres@localhost:5433/smooth_route \

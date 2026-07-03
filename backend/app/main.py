@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from app.core.config import settings
+from app.core.paths import data_path, image_path
 import os
 from pathlib import Path
 
@@ -43,11 +44,9 @@ static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
 if os.path.exists(static_dir):
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
-# Serve generated previews
-backend_dir = os.path.dirname(os.path.dirname(__file__))
-previews_dir = os.path.join(backend_dir, "data", "static", "previews")
-if not os.path.exists(previews_dir):
-    os.makedirs(previews_dir)
+# Serve generated previews from the canonical data directory.
+previews_dir = data_path("static", "previews")
+previews_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/previews", StaticFiles(directory=previews_dir), name="previews")
 
 @app.get("/")
@@ -85,32 +84,16 @@ async def health_check():
 
 @app.get("/images/{filename}")
 async def get_image(filename: str):
-    """Serve images from data directory (checking all locations)"""
-    import os
+    """Serve an image from the canonical data directory."""
     from fastapi import HTTPException
-    
-    # Check multiple possible locations to handle split datasets (legacy vs new)
-    backend_app_dir = os.path.dirname(os.path.abspath(__file__))
-    backend_dir = os.path.dirname(backend_app_dir)
-    project_root = os.path.dirname(backend_dir)
-    
-    candidates = [
-        settings.resolve_data_dir(),          # 1. Configured preference
-        os.path.join(project_root, "data"),   # 2. Legacy root data
-        os.path.join(backend_dir, "data")     # 3. Backend local data
-    ]
-    
-    for base_dir in candidates:
-        image_path = os.path.join(base_dir, "images", filename)
-        # Security check to ensure we stay within intended dirs could go here, 
-        # but filename is simple string from URL usually basic. 
-        # Adding basic traversal check:
-        if ".." in filename or "/" in filename:
-             continue
-             
-        if os.path.exists(image_path):
-            return FileResponse(image_path, media_type="image/jpeg")
-    
+
+    try:
+        path = image_path(filename)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if path.is_file():
+        return FileResponse(path, media_type="image/jpeg")
+
     raise HTTPException(status_code=404, detail="Image not found")
 
 @app.get("/api/v1/exports/{filename}")

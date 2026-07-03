@@ -54,10 +54,10 @@ export const BottomPanel: React.FC<BottomPanelProps> = ({
         color: '#ccc',
         marginLeft: '60px',
       }}>
-      {/* Column 1: RQI (Left) */}
+      {/* Panel 1: human road-quality ground truth */}
       <div
         style={{
-          width: '280px',
+          width: '320px',
           padding: '15px',
           borderRight: '1px solid #333',
           display: 'flex',
@@ -66,7 +66,7 @@ export const BottomPanel: React.FC<BottomPanelProps> = ({
           gap: '8px',
         }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontWeight: 600 }}>Ground Truth RQI</span>
+          <span style={{ fontWeight: 600 }}>Minőség (RQI 1–5)</span>
           <span
             style={{
               background: manualRqi ? getColorForRqi(manualRqi) : '#333',
@@ -76,35 +76,44 @@ export const BottomPanel: React.FC<BottomPanelProps> = ({
               fontWeight: 'bold',
               fontSize: '14px',
             }}>
-            {manualRqi ? manualRqi.toFixed(1) : '?.?'}
+            {manualRqi ? manualRqi.toFixed(0) : '?'}
           </span>
         </div>
-
-        <input
-          type="range"
-          min="1"
-          max="5"
-          step="0.5"
-          value={manualRqi || 1}
-          onChange={e => setRqi(parseFloat(e.target.value))}
-          style={{ width: '100%', cursor: 'pointer', accentColor: '#3b82f6' }}
-        />
 
         <div
           style={{
             display: 'flex',
+            gap: '8px',
             justifyContent: 'space-between',
-            fontSize: '10px',
-            color: '#666',
-            marginBottom: '10px',
           }}>
-          <span>Excellent (1.0)</span>
-          <span>Poor (5.0)</span>
+          {[1, 2, 3, 4, 5].map(score => {
+            const selected = manualRqi === score
+            return (
+              <button
+                key={score}
+                type="button"
+                onClick={() => setRqi(score)}
+                aria-pressed={selected}
+                style={{
+                  width: '48px',
+                  height: '42px',
+                  borderRadius: '8px',
+                  border: selected ? '1px solid rgba(255,255,255,0.4)' : '1px solid #444',
+                  background: selected ? getColorForRqi(score) : '#2a2a2a',
+                  color: selected ? '#111' : '#ccc',
+                  fontWeight: 700,
+                  fontSize: '16px',
+                  cursor: 'pointer',
+                }}>
+                {score}
+              </button>
+            )
+          })}
         </div>
 
         <div
           style={{
-            marginTop: '5px',
+            marginTop: '4px',
             padding: '8px',
             background: 'rgba(255,255,255,0.03)',
             borderRadius: '6px',
@@ -112,11 +121,14 @@ export const BottomPanel: React.FC<BottomPanelProps> = ({
             fontSize: '11px',
           }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-            <span style={{ color: '#888' }}>Kiszámított terület %:</span>
-            <span style={{ color: '#aaa', fontWeight: 'bold' }}>{coveragePercent}</span>
+            <span style={{ color: '#888' }}>Jelölt hibapoligonok:</span>
+            <span style={{ color: '#aaa', fontWeight: 'bold' }}>
+              {polygonCount} ({coveragePercent})
+            </span>
           </div>
           <p style={{ margin: 0, fontSize: '9px', color: '#555', fontStyle: 'italic' }}>
-            Az AI százalékot mér, de a tanításhoz a PASER (1-5) skála javasolt.
+            A humán osztályzat a <code>manual_rqi</code> mezőbe kerül. Modelltréning:
+            {' '}<code>ml/README.md</code>.
           </p>
         </div>
       </div>
