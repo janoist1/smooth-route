@@ -4,6 +4,8 @@ export interface RoadPoint {
   longitude: number
   rqi_score?: number
   dino_rqi_score?: number
+  dino_score?: number
+  dino_p_bad?: number
   manual_rqi?: number
   rqi_source?: string
   heading?: number

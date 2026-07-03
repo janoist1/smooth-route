@@ -39,6 +39,8 @@ const GET_POINT_DETAIL = gql(`
       longitude
       rqiScore
       dinoRqiScore
+      dinoScore
+      dinoPBad
       rqiSource
       heading
       pitch
@@ -131,6 +133,8 @@ function* fetchPointDetailWorker(action: SagaActionFromCreator<typeof actions.fe
     pitch: pt.pitch,
     rqi_score: pt.rqiScore,
     dino_rqi_score: pt.dinoRqiScore,
+    dino_score: pt.dinoScore,
+    dino_p_bad: pt.dinoPBad,
     rqi_source: pt.rqiSource,
     damage_count: pt.damageCount,
     damage_types: pt.damageTypes,

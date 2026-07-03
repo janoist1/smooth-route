@@ -1,13 +1,14 @@
 import type { PayloadAction } from '@reduxjs/toolkit'
 import { createSlice } from '@reduxjs/toolkit'
 import { createSagaAction } from 'saga-toolkit'
-import type { SystemSetting } from './types'
+import type { RqiModelInfo, SystemSetting } from './types'
 
 interface SettingsState {
   items: SystemSetting[]
   loading: boolean
   error: string | null
   saveLoading: boolean
+  modelInfo: RqiModelInfo | null
 }
 
 const initialState: SettingsState = {
@@ -15,12 +16,14 @@ const initialState: SettingsState = {
   loading: false,
   error: null,
   saveLoading: false,
+  modelInfo: null,
 }
 
 export const fetchSettings = createSagaAction<SystemSetting[]>('settings/fetchSettings')
 export const updateSetting = createSagaAction<SystemSetting, { key: string; value: unknown }>(
   'settings/updateSetting',
 )
+export const fetchModelInfo = createSagaAction<RqiModelInfo>('settings/fetchModelInfo')
 
 const settingsSlice = createSlice({
   name: 'settings',
@@ -68,6 +71,10 @@ const settingsSlice = createSlice({
       state.error = err?.message || 'Failed to update setting'
     })
 
+    // fetchModelInfo (read-only model card)
+    builder.addCase(fetchModelInfo.fulfilled, (state, action: PayloadAction<RqiModelInfo>) => {
+      state.modelInfo = action.payload || null
+    })
   },
 })
 
@@ -75,6 +82,7 @@ export const actions = {
   ...settingsSlice.actions,
   fetchSettings,
   updateSetting,
+  fetchModelInfo,
 }
 
 // Export nothing from actions manually

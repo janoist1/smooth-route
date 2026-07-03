@@ -1,6 +1,6 @@
 import React from 'react'
 import { Loader2, Save } from 'lucide-react'
-import { useSettings, SettingsHeader, SettingsList } from 'modules/settings'
+import { useSettings, SettingsHeader, SettingsList, ModelCard } from 'modules/settings'
 import MainLayout from '../MainLayout'
 
 const SettingsPage: React.FC = () => {
@@ -34,6 +34,8 @@ const SettingsPage: React.FC = () => {
       <div
         style={{ padding: '40px', maxWidth: '1200px', margin: '0 auto', paddingBottom: '120px' }}>
         <SettingsHeader />
+
+        <ModelCard />
 
         {error && (
           <div

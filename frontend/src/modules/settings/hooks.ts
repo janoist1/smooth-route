@@ -13,6 +13,7 @@ export const useSettings = () => {
     {
       fetchSettings: actions.fetchSettings,
       updateSetting: actions.updateSetting,
+      fetchModelInfo: actions.fetchModelInfo,
     },
     dispatch,
   )
@@ -26,3 +27,6 @@ export const useSettings = () => {
 
 /** Read-only access to the configured RQI display source ('yolo' | 'dino' | 'both'). */
 export const useRqiDisplaySource = () => useSelector(selectors.selectRqiDisplaySource)
+
+/** Read-only access to the live RQI model card (null until fetched). */
+export const useRqiModelInfo = () => useSelector(selectors.selectModelInfo)

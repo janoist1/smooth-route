@@ -12,6 +12,8 @@ export const selectRqiDisplaySource = createSelector([selectItems], (items): Rqi
   return raw === 'yolo' || raw === 'dino' ? raw : 'both'
 })
 
+export const selectModelInfo = createSelector([selectRoot], settings => settings.modelInfo)
+
 export const selectLoading = createSelector([selectRoot], settings => settings.loading)
 
 export const selectSaveLoading = createSelector([selectRoot], settings => settings.saveLoading)

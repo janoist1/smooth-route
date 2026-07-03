@@ -143,6 +143,40 @@ const PointDetailCard: React.FC<PointDetailCardProps> = ({ detail, loading, onCl
           </div>
         </div>
 
+        {targetModel === 'dino' && detail.dino_p_bad != null && (
+          <div style={{ marginTop: '14px' }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                fontSize: '0.75rem',
+                color: 'var(--text-dim)',
+                marginBottom: '4px',
+              }}>
+              <span>Rossz út valószínűsége</span>
+              <span style={{ color: 'white', fontWeight: 700 }}>
+                {Math.round(detail.dino_p_bad * 100)}%
+              </span>
+            </div>
+            <div
+              style={{
+                height: '6px',
+                borderRadius: '3px',
+                background: 'rgba(255,255,255,0.1)',
+                overflow: 'hidden',
+              }}>
+              <div
+                style={{
+                  width: `${Math.round(detail.dino_p_bad * 100)}%`,
+                  height: '100%',
+                  background: detail.dino_p_bad >= 0.5 ? '#f87171' : '#34d399',
+                  transition: 'width 0.3s ease',
+                }}
+              />
+            </div>
+          </div>
+        )}
+
         <div
           style={{
             marginTop: '15px',
