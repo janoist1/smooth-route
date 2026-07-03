@@ -17,6 +17,8 @@ Start here depending on what you need:
   the phased refactor/improvement plan.
 - **[ml/README.md](ml/README.md)** — the RQI model pipeline, its CV results, and the
   ship gate (`ml/evaluate_artifact.py`).
+- **[docs/GLOSSARY.md](docs/GLOSSARY.md)** — plain-language glossary of the ML terms
+  (QWK, MAE, AUC, 5-fold CV, …) used across these docs.
 - **[docs/API_SURFACE.md](docs/API_SURFACE.md)** — GraphQL/REST surface inventory.
 - **[frontend/ARCHITECTURE.md](frontend/ARCHITECTURE.md)** — frontend module boundaries.
 - **[docs/TrainingGuide.md](docs/TrainingGuide.md)** — how to produce good manual
