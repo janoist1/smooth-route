@@ -12,7 +12,7 @@ from app.core.config import settings
 from app.services.job_service import create_job, get_job
 from app.core.settings_manager import settings_manager
 
-from .types import Point, Job, TrainingData, ProcessRouteInput, TrainingDataInput, RunAnalysisInput, TrainingStats, TrainingPointsResponse, FilterMode, Setting, UpdateSettingInput, DetectInput, DetectPrediction, ReviewActionInput, ReviewActionResult
+from .types import Point, Job, TrainingData, ProcessRouteInput, TrainingDataInput, RunAnalysisInput, TrainingStats, TrainingPointsResponse, FilterMode, Setting, UpdateSettingInput, DetectInput, DetectPrediction, ReviewActionInput, ReviewActionResult, RqiModelInfo
 
 from app.graphql.resolver_helpers import get_db_session, image_filename_from_url as get_filename
 
@@ -70,6 +70,16 @@ class Query:
         if not models_dir.is_dir():
             return []
         return sorted(path.name for path in models_dir.glob("*.pt"))
+
+    @strawberry.field
+    def rqi_model_info(self) -> RqiModelInfo:
+        """Read-only card for the live RQI (DINO) artifact — for the settings UI."""
+        from app.services.dino_service import dino_service
+
+        info = dino_service.model_info()
+        if not info:
+            return RqiModelInfo(available=False)
+        return RqiModelInfo(available=True, **info)
 
     @strawberry.field
     def point(self, id: int) -> Optional[Point]:

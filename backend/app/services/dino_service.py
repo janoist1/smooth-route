@@ -193,6 +193,34 @@ class DinoInferenceService:
             return None
         return self.p_bad_from_score(score)
 
+    def model_info(self) -> Optional[dict]:
+        """Read the live artifact's metadata (no torch backbone load) for the
+        read-only model card. Returns None if the artifact is absent/unreadable."""
+        if not os.path.exists(MODEL_PATH):
+            return None
+        try:
+            import joblib
+
+            art = joblib.load(MODEL_PATH)
+            cv = art.get("cv_metrics", {}) or {}
+            recipe = art.get("feature_recipe") or {}
+            return {
+                "version": art.get("version"),
+                "backbone": art.get("backbone"),
+                "recipe": recipe.get("name"),
+                "head": art.get("head"),
+                "n_train": art.get("n_train"),
+                "qwk": cv.get("qwk"),
+                "mae": cv.get("mae"),
+                "exact_acc": cv.get("exact_acc"),
+                "bad_road_acc": cv.get("bad_road_acc"),
+                "bad_road_auc": cv.get("bad_road_auc"),
+                "scale_meaning": art.get("scale_meaning"),
+            }
+        except Exception as e:  # pragma: no cover - defensive
+            print(f"DinoInferenceService.model_info ERROR: {e}")
+            return None
+
 
 # Singleton instance
 dino_service = DinoInferenceService()

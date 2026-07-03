@@ -43,6 +43,25 @@ class Point:
         # ... logic similar to REST ...
         return self.image_url
 
+    def _meta_float(self, key: str) -> Optional[float]:
+        meta = self.analysis_metadata
+        if isinstance(meta, dict) and meta.get(key) is not None:
+            try:
+                return float(meta[key])
+            except (TypeError, ValueError):
+                return None
+        return None
+
+    @strawberry.field
+    def dino_p_bad(self) -> Optional[float]:
+        """Calibrated P(road is bad, RQI>=3) written by the DINO pass."""
+        return self._meta_float("dino_p_bad")
+
+    @strawberry.field
+    def dino_score(self) -> Optional[float]:
+        """Continuous DINO RQI estimate (1.0-4.0) before ordinal rounding."""
+        return self._meta_float("dino_score")
+
 @strawberry.type
 class TrainingData:
     id: int
@@ -156,3 +175,20 @@ class ReviewActionResult:
     message: Optional[str] = None
     processed_image_url: Optional[str] = None
     annotations: Optional[List[Annotation]] = None
+
+
+@strawberry.type
+class RqiModelInfo:
+    """Read-only card describing the live RQI artifact (from its metadata)."""
+    available: bool
+    version: Optional[int] = None
+    backbone: Optional[str] = None
+    recipe: Optional[str] = None
+    head: Optional[str] = None
+    n_train: Optional[int] = None
+    qwk: Optional[float] = None
+    mae: Optional[float] = None
+    exact_acc: Optional[float] = None
+    bad_road_acc: Optional[float] = None
+    bad_road_auc: Optional[float] = None
+    scale_meaning: Optional[str] = None

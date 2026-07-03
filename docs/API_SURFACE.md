@@ -10,6 +10,12 @@ Az automatikus YOLO-jelölés a `performReviewAction(action_type:
 "auto_detect")` mutáción keresztül fut; a közvetlen `detectObjects` mutáció
 megmarad programozott GraphQL-fogyasztóknak.
 
+Read-only RQI-diagnosztika (D3): a `Point` típus a nyers DINO-becslést és a
+kalibrált rossz-út valószínűséget is kiadja (`dinoScore`, `dinoPBad`,
+az `analysisMetadata`-ból származtatva); a `rqiModelInfo` query az éles
+artifact modellkártyáját adja (verzió, recept, tanítóméret, CV-metrikák) a
+beállítások felülethez.
+
 ## Megtartott REST-végpontok
 
 | Végpont | Indok |
