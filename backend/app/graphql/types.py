@@ -24,13 +24,27 @@ class Point:
     analysis_metadata: Optional[JSON]
     dino_rqi_score: Optional[float] = None
     created_at: datetime.datetime
-    rqi_source: str = "yolo" 
-    
+    rqi_source: str = "yolo"
+    pano_id: Optional[str] = None
+
     # Manual Data (Joined)
     manual_rqi: Optional[float] = None
     manual_tags: Optional[List[str]] = None
     manual_annotations: Optional[JSON] = None
     manual_comment: Optional[str] = None
+
+    @strawberry.field
+    def street_view_url(self) -> str:
+        """Free Google Maps Street View deep-link (no API call, no stored image).
+
+        Uses the exact pano_id when available, else the point's coordinates
+        (Google resolves the nearest panorama).
+        """
+        base = "https://www.google.com/maps/@?api=1&map_action=pano"
+        view = f"&heading={self.heading}&pitch={self.pitch or 0}"
+        if self.pano_id:
+            return f"{base}&pano={self.pano_id}{view}"
+        return f"{base}&viewpoint={self.latitude},{self.longitude}{view}"
 
     # Derived/Computed fields can go here
     @strawberry.field

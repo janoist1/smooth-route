@@ -14,6 +14,7 @@ export interface RoadPoint {
 export interface RoadPointDetail extends RoadPoint {
   image_url: string
   image_path?: string
+  street_view_url?: string
   damage_count: number
   damage_types?: Record<string, number>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

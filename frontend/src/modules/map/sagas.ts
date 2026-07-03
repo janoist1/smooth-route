@@ -54,6 +54,7 @@ const GET_POINT_DETAIL = gql(`
       heading
       pitch
       imageUrl
+      streetViewUrl
       # manual data
       manualRqi
       manualTags
@@ -166,6 +167,7 @@ function* fetchPointDetailWorker(action: SagaActionFromCreator<typeof actions.fe
     damage_types: pt.damageTypes,
     analysis_metadata: pt.analysisMetadata,
     image_url: pt.imageUrl,
+    street_view_url: pt.streetViewUrl,
     created_at: pt.createdAt,
     manual_rqi: pt.manualRqi,
     manual_tags: pt.manualTags,

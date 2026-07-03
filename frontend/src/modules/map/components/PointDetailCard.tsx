@@ -177,6 +177,32 @@ const PointDetailCard: React.FC<PointDetailCardProps> = ({ detail, loading, onCl
           </div>
         )}
 
+        {detail.street_view_url && (
+          <a
+            href={detail.street_view_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              marginTop: '14px',
+              width: '100%',
+              boxSizing: 'border-box',
+              padding: '9px',
+              background: 'rgba(59,130,246,0.15)',
+              border: '1px solid rgba(59,130,246,0.4)',
+              borderRadius: '8px',
+              color: '#93c5fd',
+              textDecoration: 'none',
+              fontSize: '0.9rem',
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+            }}>
+            <span>🛣️</span> Megnyitás Street View-ban
+          </a>
+        )}
+
         <div
           style={{
             marginTop: '15px',

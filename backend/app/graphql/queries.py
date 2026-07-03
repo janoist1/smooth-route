@@ -212,6 +212,7 @@ class Query:
                 analysis_metadata=p.analysis_metadata,
                 created_at=p.created_at,
                 rqi_source=rqi_source,
+                pano_id=p.pano_id,
                 manual_rqi=manual_rqi,
                 manual_tags=manual_tags,
                 manual_annotations=manual_annotations,

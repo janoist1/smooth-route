@@ -47,6 +47,9 @@ class StreetViewImage(Base):
     heading = Column(Float, index=True)
     pitch = Column(Float)
     image_url = Column(String)  # Can be URL or local path
+    # Street View panorama id (from the free metadata API). Lets the public
+    # site deep-link to the exact panorama without storing/serving the image.
+    pano_id = Column(String, nullable=True, index=True)
     location = Column(Geometry("POINT", srid=4326), index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
