@@ -91,10 +91,36 @@ bash ml/export_labels.sh                       # -> ml/labels.csv (Docker kell)
 .venv/bin/python ml/experiments.py             # jellemzők x fejek rács, 5-fold CV
 .venv/bin/python ml/tune_svr.py                # SVR hiperparaméter + vágópont hangolás
 .venv/bin/python ml/save_model_v2.py           # végső artifact -> ml/cache/rqi_model.joblib
+.venv/bin/python ml/evaluate_artifact.py       # ÉLESÍTÉSI KAPU: PASS kell a shiphez
 ```
 
 Régi (v1) szkriptek: `extract_features.py`, `train.py`, `save_model.py` —
 referenciának maradnak, az éles artifact a v2 receptből jön.
+
+## Élesítési kapu (KÖTELEZŐ, ne lépd át)
+
+Új vagy módosított `ml/cache/rqi_model.joblib` **csak akkor élesíthető**, ha az
+`ml/evaluate_artifact.py` **PASS**-t ad. A szkript a mentett artifact receptjét
+és fejét (a pipeline utolsó lépését klónozva) újramért a hivatalos, fix seed-ű
+5-fold CV-n (ugyanazok a fold-ok, mint az `experiments.py`-ban), tehát nem az
+artifactba mentett számot hiszi el, hanem függetlenül lemér.
+
+A jelenlegi bajnok (v2) küszöbei (±0.005 tűrés a CV-zajra):
+
+| metrika | küszöb | irány |
+|---|---|---|
+| QWK | ≥ 0.889 | nagyobb jobb |
+| MAE | ≤ 0.195 | kisebb jobb |
+| rossz-út AUC | ≥ 0.970 | nagyobb jobb |
+
+```bash
+.venv/bin/python ml/evaluate_artifact.py                 # az éles artifactot méri
+.venv/bin/python ml/evaluate_artifact.py egy/masik.joblib  # jelöltet mér
+# exit 0 = PASS (élesíthető), 1 = FAIL (ne shipeld), 2 = hiba (pl. hiányzó cache)
+```
+
+Ha egy új modell veri ezeket, frissítsd a küszöböket az új bajnokra
+(`GATE` az `evaluate_artifact.py`-ban) — így a léc mindig a legjobbhoz igazodik.
 
 ## Állapot
 
