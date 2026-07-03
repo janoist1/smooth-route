@@ -346,14 +346,21 @@ változatlan (a flag default `False`).
       `point` lekérdezéseket, mutációt elutasít, torch nélkül importál. ✓
       *(Vercel-deploy = a te lépésed: `vercel` a `backend/`-ben és a `frontend/`-ben.)*
 
-### R1.3 — Neon + publish script (becslés: 1 nap)
+### R1.3 — Neon + publish script (KÉSZ script; Neon-projekt = a te lépésed)
 
-- [ ] Neon-projekt (Postgres + PostGIS); a Vercel-backend `DATABASE_URL`-je erre.
-- [ ] `scripts/publish` (egy parancs): a lokális `street_view_images` (paraméterek
-      + RQI-score-ok, `pano_id`) upsert Neonba; `image_url` NULL-ra (a publikus
-      DB csak a Street View linkhez kell). 17k sornál full-replace is jó.
+- [x] `backend/scripts/publish.py` (egy parancs): a target sémát alembic-kel
+      felhúzza (fresh Neon-on `CREATE EXTENSION postgis` + táblák), majd a lokális
+      `street_view_images` publikus oszlopait **full-replace**-eli a targetbe;
+      `image_url` + `location` NULL-ra (a publikus DB csak a Street View linkhez
+      kell). A target a `PUBLISH_DATABASE_URL` env-ből (soha a repóba). Lokálisan
+      scratch DB ellen tesztelve: 17 607 sor átment, a read-API hibátlanul adta a
+      `points`/`roadQualityGrid`/`streetViewUrl`-t. **Neon támogatja a PostGIS-t.**
+- [ ] Neon-projekt létrehozása (EU-régió), a connection string a Vercel-backend
+      `DATABASE_URL`-jébe + a lokális `publish` `PUBLISH_DATABASE_URL`-jébe.
+- **Használat:** `cd backend && PUBLISH_DATABASE_URL='postgresql://…neon…'
+      ../.venv/bin/python scripts/publish.py`
 - **Elfogadás:** lokális elemzés után egy `publish` futtatás → a publikus térképen
-      megjelenik az új adat.
+      megjelenik az új adat. ✓ (a script-lánc lokálisan igazolva)
 
 ### R1.4 — DNS + deploy + hardening-zárás (becslés: 0,5–1 nap)
 
