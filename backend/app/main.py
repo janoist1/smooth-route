@@ -30,10 +30,13 @@ app.add_middleware(
 )
 
 from app.api.routes import router as api_router
-from app.core.migrations import ensure_database_schema
 
 # Schema is owned by Alembic; pre-Alembic databases get stamped automatically.
+# Imported lazily inside the guard: the read-only deploy runs with
+# RUN_MIGRATIONS_ON_STARTUP=false and ships without alembic (torch-free
+# requirements.txt), so this import must not execute there.
 if settings.RUN_MIGRATIONS_ON_STARTUP:
+    from app.core.migrations import ensure_database_schema
     ensure_database_schema()
 
 # Include API router
