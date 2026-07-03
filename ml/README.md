@@ -122,6 +122,30 @@ A jelenlegi bajnok (v2) küszöbei (±0.005 tűrés a CV-zajra):
 Ha egy új modell veri ezeket, frissítsd a küszöböket az új bajnokra
 (`GATE` az `evaluate_artifact.py`-ban) — így a léc mindig a legjobbhoz igazodik.
 
+## Artifact szerződés (`ml/cache/rqi_model.joblib`)
+
+A backend (`backend/app/services/dino_service.py`) betöltéskor validálja az
+artifactot (`validate_artifact`), hogy egy hiányos modell ne kriptikus hibával
+dőljön el inference közben. A szerződés:
+
+**Strukturálisan kötelező** (hiánya → `ValueError` betöltéskor):
+- `pipeline` — a betanított sklearn `Pipeline` (StandardScaler + fej).
+- `feature_recipe.keys` — ha van `feature_recipe`, kell benne a `keys` lista
+  (mely DINOv2 nézetek/tokenek fűződnek össze). Enélkül a szerviz nem tudja,
+  milyen jellemzőt építsen.
+
+**Elvárt v2 metaadat** (hiánya → figyelmeztetés, fallbackkal fut tovább):
+- `version` — az artifact sémaverziója (jelenleg 2).
+- `backbone` — pl. `facebook/dinov2-small`.
+- `feature_recipe` — `{name, keys, needs_clip, crop_top}`.
+- `thresholds` — a 3 hangolt ordinális vágópont (hiányában `.5`-kerekítés).
+- `p_bad_calibrator` — izotonikus P(rossz út) kalibrátor.
+- `cv_metrics` — a beágyazott CV-számok (a modellkártya ezt mutatja).
+- `n_train`, `reliability` — tanítóméret és per-osztály megbízhatósági tábla.
+
+A `save_model_v2.py` mindezt beleírja; új mezőt oda és ide (a szerződéshez) is
+vezess be, hogy a validáció és a modellkártya konzisztens maradjon.
+
 ## Állapot
 
 - [x] Régi projekt átnézve, hibák dokumentálva

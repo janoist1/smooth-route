@@ -1,5 +1,8 @@
 """Unit tests for DinoInferenceService decision logic (no torch model load)."""
-from app.services.dino_service import DinoInferenceService
+import pytest
+
+from app.services.dino_service import (DinoInferenceService, EXPECTED_V2_KEYS,
+                                       validate_artifact)
 
 
 def make_service(thresholds=None):
@@ -36,3 +39,41 @@ def test_thresholds_monotonic_classes():
     classes = [svc.rqi_from_score(s) for s in scores]
     assert classes == sorted(classes)
     assert set(classes) == {1, 2, 3, 4}
+
+
+# --- artifact contract validation ------------------------------------------
+
+def _full_artifact():
+    art = {k: object() for k in EXPECTED_V2_KEYS} | {"pipeline": object()}
+    art["feature_recipe"] = {"name": "cls+patch", "keys": ["cls", "patch"]}
+    return art
+
+
+def test_validate_artifact_ok_returns_no_warnings():
+    assert validate_artifact(_full_artifact()) == []
+
+
+def test_validate_artifact_missing_pipeline_raises():
+    art = _full_artifact()
+    del art["pipeline"]
+    with pytest.raises(ValueError, match="required key"):
+        validate_artifact(art)
+
+
+def test_validate_artifact_not_a_dict_raises():
+    with pytest.raises(ValueError, match="must be a dict"):
+        validate_artifact(["not", "a", "dict"])
+
+
+def test_validate_artifact_bad_recipe_raises():
+    art = _full_artifact()
+    art["feature_recipe"] = {"name": "x"}  # no 'keys'
+    with pytest.raises(ValueError, match="no 'keys'"):
+        validate_artifact(art)
+
+
+def test_validate_artifact_missing_v2_metadata_warns_not_raises():
+    # structurally usable (has pipeline) but missing v2 metadata -> warnings only
+    warnings = validate_artifact({"pipeline": object()})
+    assert warnings  # non-empty
+    assert any("thresholds" in w for w in warnings)

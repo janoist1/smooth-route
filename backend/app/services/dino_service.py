@@ -32,6 +32,37 @@ def _project_root() -> str:
 
 MODEL_PATH = os.path.join(_project_root(), "ml", "cache", "rqi_model.joblib")
 
+# Artifact contract (see ml/README "Artifact szerződés"). REQUIRED keys make the
+# artifact structurally usable; EXPECTED keys carry the v2 metadata that the
+# product relies on (tuned thresholds, calibrated P(bad), reliability, etc.).
+REQUIRED_KEYS = ("pipeline",)
+EXPECTED_V2_KEYS = ("version", "backbone", "feature_recipe", "thresholds",
+                    "p_bad_calibrator", "cv_metrics", "n_train")
+
+
+def validate_artifact(artifact: dict) -> list:
+    """Raise ValueError on a structurally unusable artifact; return a list of
+    non-fatal warnings for missing v2 metadata (empty if fully conformant)."""
+    if not isinstance(artifact, dict):
+        raise ValueError(
+            f"RQI artifact must be a dict, got {type(artifact).__name__}. "
+            f"Retrain with: .venv/bin/python ml/save_model_v2.py"
+        )
+    missing_required = [k for k in REQUIRED_KEYS if k not in artifact]
+    if missing_required:
+        raise ValueError(
+            f"RQI artifact is missing required key(s) {missing_required} at "
+            f"{MODEL_PATH}. It cannot score images. Retrain with "
+            f"ml/save_model_v2.py and verify with ml/evaluate_artifact.py."
+        )
+    recipe = artifact.get("feature_recipe")
+    if recipe is not None and "keys" not in recipe:
+        raise ValueError(
+            "RQI artifact feature_recipe has no 'keys' list; the service cannot "
+            "know which features to build. Retrain with ml/save_model_v2.py."
+        )
+    return [f"missing '{k}'" for k in EXPECTED_V2_KEYS if k not in artifact]
+
 
 class DinoInferenceService:
     def __init__(self):
@@ -66,6 +97,11 @@ class DinoInferenceService:
             )
 
         artifact = joblib.load(MODEL_PATH)
+        warnings = validate_artifact(artifact)
+        if warnings:
+            print(f"DinoInferenceService WARNING: artifact at {MODEL_PATH} is "
+                  f"missing v2 metadata ({', '.join(warnings)}); running with "
+                  f"fallbacks. Retrain with ml/save_model_v2.py to refresh.")
         self.pipeline = artifact["pipeline"]
         self.recipe = artifact.get("feature_recipe")
         self.thresholds = artifact.get("thresholds")
