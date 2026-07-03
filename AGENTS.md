@@ -70,7 +70,9 @@ szkripteket használd — azok referencia/zsákutca. Fogalmak: [docs/GLOSSARY.md
 ## Állapot (2026-07-03)
 
 A javítási terv **A–D fázisa kész és commitolva**; a working tree tiszta, a kapuk
-zöldek. Ami hátravan: az **E fázis** (opcionális — ld. IMPROVEMENT_PLAN) és a
-**publikálás** (F0–F6 — ld. [docs/PUBLISH_PLAN.md](docs/PUBLISH_PLAN.md); a terv
-elfogadva, első lépés az előrehozott F1 user-modul). Commit/push csak explicit kérésre; ha commitolatlan munkát
-találsz, előbb tisztázd az emberrel.
+zöldek. A **publikálásból kész: F1** (Clerk auth + szerepek, élő dev-instance-szal
+E2E-tesztelve) és az **F0 Alembic-része** (baseline + users migráció). Ami hátravan:
+az **E fázis** (opcionális — ld. IMPROVEMENT_PLAN), az F0 maradéka (prod-konfig,
+Dockerfile, logging) és F2–F6 — ld. [docs/PUBLISH_PLAN.md](docs/PUBLISH_PLAN.md).
+Commit/push csak explicit kérésre; ha commitolatlan munkát találsz, előbb tisztázd
+az emberrel.
