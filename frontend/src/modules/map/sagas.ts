@@ -30,6 +30,7 @@ const GET_POINTS = gql(`
       dinoRqiScore
       rqiSource
       heading
+      captureDate
     }
   }
 `)
@@ -55,6 +56,7 @@ const GET_POINT_DETAIL = gql(`
       pitch
       imageUrl
       streetViewUrl
+      captureDate
       # manual data
       manualRqi
       manualTags
@@ -127,6 +129,7 @@ function* fetchPointsWorker(action: SagaActionFromCreator<typeof actions.fetchPo
     heading: p.heading,
     rqi_score: p.rqiScore ?? undefined,
     rqi_source: p.rqiSource,
+    capture_date: p.captureDate,
   }))
 }
 
@@ -168,6 +171,7 @@ function* fetchPointDetailWorker(action: SagaActionFromCreator<typeof actions.fe
     analysis_metadata: pt.analysisMetadata,
     image_url: pt.imageUrl,
     street_view_url: pt.streetViewUrl,
+    capture_date: pt.captureDate,
     created_at: pt.createdAt,
     manual_rqi: pt.manualRqi,
     manual_tags: pt.manualTags,

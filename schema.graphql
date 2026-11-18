@@ -1,5 +1,47 @@
+type AdminStats {
+  totalImages: Int!
+  imagesThisMonth: Int!
+  freeTierLimit: Int!
+  billableThisMonth: Int!
+  imagesPerDay: [DailyCount!]!
+  totalPoints: Int!
+  analyzedPoints: Int!
+  pendingAnalysis: Int!
+  rqiGood: Int!
+  rqiFair: Int!
+  rqiPoor: Int!
+  totalUsers: Int!
+  adminUsers: Int!
+  recentJobs: [JobSummary!]!
+}
+
+type Annotation {
+  id: String!
+  label: String!
+  score: Float!
+  type: String!
+  points: JSON!
+}
+
+type DailyCount {
+  day: String!
+  count: Int!
+}
+
 """Date with time (isoformat)"""
 scalar DateTime
+
+input DetectInput {
+  filename: String!
+  confThreshold: Float = null
+  classes: [String!] = null
+}
+
+type DetectPrediction {
+  label: String!
+  confidence: Float!
+  points: JSON!
+}
 
 enum FilterMode {
   ALL
@@ -13,23 +55,42 @@ The `JSON` scalar type represents JSON values as specified by [ECMA-404](https:/
 scalar JSON @specifiedBy(url: "https://ecma-international.org/wp-content/uploads/ECMA-404_2nd_edition_december_2017.pdf")
 
 type Job {
-  jobId: String!
+  id: String!
   status: String!
-  currentStep: String
   progress: Int!
   total: Int!
   message: String!
-  error: String
+  type: String!
+  currentStep: String
+  details: JSON
   result: JSON
+  error: String
   createdAt: DateTime!
   completedAt: DateTime
 }
 
+type JobSummary {
+  id: String!
+  status: String!
+  message: String
+  progress: Int!
+  total: Int!
+  createdAt: DateTime
+  completedAt: DateTime
+}
+
 type Mutation {
+  updateSetting(input: UpdateSettingInput!): Setting!
+  applyPreset(values: JSON!): [Setting!]!
   runAnalysis(input: RunAnalysisInput!): Job!
   startModelTraining: Job!
   processRoute(input: ProcessRouteInput!): Job!
   saveTrainingData(input: TrainingDataInput!): String!
+  deleteTrainingData(imageFilename: String!): Boolean!
+  stopJob(jobId: String!): Boolean!
+  detectObjects(input: DetectInput!): [DetectPrediction!]!
+  performReviewAction(input: ReviewActionInput!): ReviewActionResult!
+  predictDinoRqi(imageFilename: String!): Int
 }
 
 type Point {
@@ -43,34 +104,93 @@ type Point {
   damageCount: Int!
   damageTypes: JSON
   analysisMetadata: JSON
+  dinoRqiScore: Float
   createdAt: DateTime!
+  rqiSource: String!
+  panoId: String
   manualRqi: Float
   manualTags: [String!]
   manualAnnotations: JSON
   manualComment: String
+  streetViewUrl: String!
+  captureDate: String
   localImagePath: String
+  dinoPBad: Float
+  dinoScore: Float
 }
 
 input ProcessRouteInput {
-  originLat: Float!
-  originLng: Float!
-  destinationLat: Float!
-  destinationLng: Float!
+  origin: String!
+  destination: String!
 }
 
 type Query {
   config: String!
+  me: Viewer
+  getRoute(origin: String!, destination: String!): RouteData
+  settings: [Setting!]!
+  availableModels: [String!]!
+  rqiModelInfo: RqiModelInfo!
   point(id: Int!): Point
   points(bbox: [Float!] = null, limit: Int! = 100, offset: Int! = 0): [Point!]!
-  trainingPoints(mode: FilterMode! = ALL, limit: Int! = 100, offset: Int! = 0): TrainingPointsResponse!
-  trainingStats(mode: FilterMode! = ALL): TrainingStats!
+  roadQualityGrid(zoom: Int!, bbox: [Float!] = null): JSON!
+  adminStats: AdminStats!
+  trainingPoints(mode: FilterMode! = ALL, limit: Int! = 20, offset: Int! = 0, model: String! = "yolo"): TrainingPointsResponse!
+  trainingStats(mode: FilterMode! = ALL, isDino: Boolean! = false): TrainingStats!
   job(id: String!): Job
+  activeJob: Job
+  nextTrainingPoint(currentId: Int!, mode: FilterMode! = ALL, model: String! = "yolo"): Int
+}
+
+input ReviewActionInput {
+  actionType: String!
+  parameters: JSON!
+}
+
+type ReviewActionResult {
+  success: Boolean!
+  message: String
+  processedImageUrl: String
+  annotations: [Annotation!]
+}
+
+type RouteData {
+  points: [RouteStep!]!
+}
+
+type RouteStep {
+  lat: Float!
+  lng: Float!
+}
+
+type RqiModelInfo {
+  available: Boolean!
+  version: Int
+  backbone: String
+  recipe: String
+  head: String
+  nTrain: Int
+  qwk: Float
+  mae: Float
+  exactAcc: Float
+  badRoadAcc: Float
+  badRoadAuc: Float
+  scaleMeaning: String
 }
 
 input RunAnalysisInput {
   strategy: String!
   limit: Int! = 0
   reanalyze: Boolean! = false
+}
+
+type Setting {
+  key: String!
+  value: JSON!
+  description: String
+  example: String
+  category: String
+  explanation: String
 }
 
 input TrainingDataInput {
@@ -96,5 +216,21 @@ type TrainingStats {
   goodCount: Int!
   fairCount: Int!
   poorCount: Int!
+  rqi1Count: Int!
+  rqi2Count: Int!
+  rqi3Count: Int!
+  rqi4Count: Int!
+  rqi5Count: Int!
   pendingAnalysis: Int!
+}
+
+input UpdateSettingInput {
+  key: String!
+  value: JSON!
+}
+
+type Viewer {
+  clerkId: String!
+  email: String
+  role: String!
 }

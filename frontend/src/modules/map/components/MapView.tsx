@@ -10,6 +10,8 @@ import type { MapStyle } from './MapStyleSwitcher'
 import { getRQIColor, resolveRqi } from '../../ui'
 import { useRqiDisplaySource } from '../../settings'
 import QualityGridLayer from './QualityGridLayer'
+import StaleImageToggle from './StaleImageToggle'
+import { isStaleCapture } from '../captureDate'
 
 const TILE_LAYERS: Record<MapStyle, { url: string; attribution: string }> = {
   dark: {
@@ -113,6 +115,8 @@ const MapView: React.FC<MapViewProps> = ({ onTrain, onMapMove }) => {
     pickingLocationFor,
   } = useMap()
   const [mapStyle, setMapStyle] = useState<MapStyle>('dark')
+  // Optional: dim points whose Street View image is old (quality may be outdated).
+  const [dimStale, setDimStale] = useState(false)
 
   const displaySource = useRqiDisplaySource()
 
@@ -158,6 +162,7 @@ const MapView: React.FC<MapViewProps> = ({ onTrain, onMapMove }) => {
         {/* Data Points (Markers) */}
         {points.map((point) => {
           const { score } = resolveRqi(point, displaySource)
+          const faded = dimStale && isStaleCapture(point.capture_date)
 
           return (
           <CircleMarker
@@ -167,7 +172,8 @@ const MapView: React.FC<MapViewProps> = ({ onTrain, onMapMove }) => {
             pathOptions={{
               color: getRQIColor(score),
               fillColor: getRQIColor(score),
-              fillOpacity: 0.7,
+              fillOpacity: faded ? 0.12 : 0.7,
+              opacity: faded ? 0.25 : 1,
               weight: 1
             }}
             eventHandlers={{
@@ -184,6 +190,9 @@ const MapView: React.FC<MapViewProps> = ({ onTrain, onMapMove }) => {
       <RoutePlanner />
 
       <MapStyleSwitcher currentStyle={mapStyle} onChange={setMapStyle} />
+
+      {/* Only individual points carry a capture date (zoomed in). */}
+      {points.length > 0 && <StaleImageToggle enabled={dimStale} onChange={setDimStale} />}
 
       {/* Detail Overlay */}
       {(selectedPoint || loadingDetail) && (

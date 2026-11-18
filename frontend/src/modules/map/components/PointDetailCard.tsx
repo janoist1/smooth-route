@@ -3,6 +3,7 @@ import type { RoadPointDetail } from '../types'
 import { getRQIColor, getRQILabel, resolveRqi } from '../../ui'
 import { useRqiDisplaySource } from '../../settings'
 import { useViewer } from '../../auth'
+import { formatCaptureAge, formatCaptureDate, isStaleCapture, STALE_AFTER_YEARS } from '../captureDate'
 
 interface PointDetailCardProps {
   detail: RoadPointDetail
@@ -40,6 +41,9 @@ const PointDetailCard: React.FC<PointDetailCardProps> = ({ detail, loading, onCl
   }
 
   if (!detail) return null
+
+  const captureAge = formatCaptureAge(detail.capture_date)
+  const staleCapture = isStaleCapture(detail.capture_date)
 
   // Use proxy for image path directly (it already includes /api prefix from backend)
   const imgUrl = detail.image_path || detail.image_url
@@ -213,8 +217,34 @@ const PointDetailCard: React.FC<PointDetailCardProps> = ({ detail, loading, onCl
             fontSize: '0.9rem',
             color: 'var(--text-dim)',
           }}>
-          Recorded:{' '}
-          {detail.created_at ? new Date(detail.created_at).toLocaleDateString() : 'Unknown'}
+          {/* The RQI is as current as the Street View image, not our download. */}
+          <div data-testid="capture-date">
+            Kép készült:{' '}
+            <span style={{ color: staleCapture ? '#fbbf24' : 'var(--text-main)', fontWeight: 600 }}>
+              {formatCaptureDate(detail.capture_date)}
+            </span>
+            {captureAge && <span> ({captureAge})</span>}
+          </div>
+          {staleCapture && (
+            <div
+              role="note"
+              style={{
+                marginTop: '8px',
+                padding: '8px 10px',
+                background: 'rgba(251,191,36,0.12)',
+                border: '1px solid rgba(251,191,36,0.4)',
+                borderRadius: '8px',
+                color: '#fcd34d',
+                fontSize: '0.8rem',
+                lineHeight: 1.35,
+              }}>
+              ⚠️ {STALE_AFTER_YEARS} évnél régebbi kép — az út állapota azóta változhatott.
+            </div>
+          )}
+          <div style={{ marginTop: '6px', fontSize: '0.8rem' }}>
+            Letöltve:{' '}
+            {detail.created_at ? new Date(detail.created_at).toLocaleDateString() : 'ismeretlen'}
+          </div>
           {/* Correction flow is an admin-only surface (backend enforces the same
               rule); hiding it keeps the public read-only card clean. */}
           {isAdmin && (
