@@ -1,9 +1,10 @@
 import uuid
 
 from sqlalchemy import CheckConstraint, Column, Integer, String, Float, DateTime, JSON, Uuid, func
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import declarative_base
 from geoalchemy2 import Geometry
-from datetime import datetime
+
+from app.core.timeutil import utcnow
 
 Base = declarative_base()
 
@@ -51,7 +52,7 @@ class StreetViewImage(Base):
     # site deep-link to the exact panorama without storing/serving the image.
     pano_id = Column(String, nullable=True, index=True)
     location = Column(Geometry("POINT", srid=4326), index=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
 
     # AI Analysis results
     rqi_score = Column(Float, nullable=True, index=True)
@@ -76,7 +77,7 @@ class Job(Base):
     total = Column(Integer, default=0)
     message = Column(String, default="")
     error = Column(String, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
     completed_at = Column(DateTime, nullable=True)
     result = Column(JSON, nullable=True)
 
@@ -109,5 +110,5 @@ class TrainingData(Base):
     # Flexible metadata bucket
     meta_data = Column(JSON, default={})
     
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)

@@ -1,6 +1,6 @@
 import threading
 import traceback
-from datetime import datetime
+from app.core.timeutil import utcnow
 from app.services.job_service import update_job, JobStatus, create_job
 
 def run_route_processing(job_id: str, origin: str, destination: str):
@@ -63,7 +63,7 @@ def run_route_processing(job_id: str, origin: str, destination: str):
             status=JobStatus.COMPLETED,
             progress=100,
             message="Folyamat sikeresen befejezve",
-            completed_at=datetime.utcnow(),
+            completed_at=utcnow(),
             result={"status": "success"}
         )
 
@@ -76,7 +76,7 @@ def run_route_processing(job_id: str, origin: str, destination: str):
                 status=JobStatus.FAILED,
                 message=f"Hiba történt: {error_msg}",
                 error=error_msg,
-                completed_at=datetime.utcnow()
+                completed_at=utcnow()
             )
         except Exception as update_error:
             print(f"CRITICAL: Failed to update job status after error: {update_error}")
@@ -105,7 +105,7 @@ def run_analysis_job(job_id: str, strategy: str, limit: int = 0, reanalyze: bool
             job_id,
             status=JobStatus.COMPLETED,
             message=f"Elemzés sikeresen befejezve ({strategy_used})",
-            completed_at=datetime.utcnow(),
+            completed_at=utcnow(),
             result={"status": "success", "counts": result}
         )
 
@@ -116,7 +116,7 @@ def run_analysis_job(job_id: str, strategy: str, limit: int = 0, reanalyze: bool
             status=JobStatus.FAILED,
             message=f"Hiba az elemzés során: {str(e)}",
             error=str(e),
-            completed_at=datetime.utcnow()
+            completed_at=utcnow()
         )
 
 def run_training_job(job_id: str):
@@ -139,7 +139,7 @@ def run_training_job(job_id: str):
             status=JobStatus.COMPLETED,
             progress=100,
             message=result.get("message", "Modell finomhangolva és élesítve!"),
-            completed_at=datetime.utcnow(),
+            completed_at=utcnow(),
             result=result
         )
 
@@ -150,5 +150,5 @@ def run_training_job(job_id: str):
             status=JobStatus.FAILED,
             message=f"Hiba a tanítás során: {str(e)}",
             error=str(e),
-            completed_at=datetime.utcnow()
+            completed_at=utcnow()
         )
