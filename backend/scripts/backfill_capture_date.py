@@ -43,6 +43,10 @@ from app.services.capture_date import (  # noqa: E402
 META_URL = "https://maps.googleapis.com/maps/api/streetview/metadata"
 # Statuses worth retrying (transient); everything else is final for this run.
 RETRY_STATUSES = {"OVER_QUERY_LIMIT", "UNKNOWN_ERROR", "HTTP_ERROR", "EXCEPTION"}
+# Quota / billing / key problems: stop the run (commit what is done, report
+# the counts) instead of hammering the API. OVER_QUERY_LIMIT lands here only
+# after its retries were exhausted.
+FATAL_STATUSES = {"OVER_QUERY_LIMIT", "REQUEST_DENIED", "HTTP_403"}
 # Points were stored at the panorama's exact (snapped) coordinates, so a tight
 # radius picks that spot's live pano and not a neighbouring one.
 LOCATION_RADIUS_M = 10
@@ -87,7 +91,9 @@ def fetch_metadata(http, key: str, limiter: RateLimiter, *, pano_id: Optional[st
         limiter.wait()
         try:
             resp = http.get(META_URL, params=params, timeout=10)
-            if resp.status_code != 200:
+            if resp.status_code == 403:
+                status, data = "HTTP_403", None
+            elif resp.status_code != 200:
                 status, data = "HTTP_ERROR", None
             else:
                 data = resp.json()
@@ -120,6 +126,12 @@ def resolve_row(row, lookup) -> tuple[str, Optional[object], Optional[str]]:
     )
     fill_pano = data.get("pano_id") if (outcome == ACCEPT and not pano_id) else None
     return outcome, capture, fill_pano
+
+
+def quota_errors(counts) -> dict:
+    """The quota/billing error counts in an outcome Counter (empty = fine)."""
+    return {k: v for k, v in counts.items()
+            if k.startswith("error:") and k[len("error:"):] in FATAL_STATUSES}
 
 
 def load_api_key() -> str:
@@ -186,10 +198,17 @@ def main() -> None:
                 done = start + len(chunk)
                 rate = done / max(1e-6, time.monotonic() - started)
                 print(f"  {done}/{len(rows)}  {rate:.1f} rows/s  {dict(counts)}", flush=True)
+                fatal = quota_errors(counts)
+                if fatal:
+                    print(f"STOPPED on quota/billing error {fatal} after {done} rows "
+                          f"(committed so far; re-run resumes).", flush=True)
+                    break
     finally:
         db.close()
 
     print("summary:", dict(counts))
+    if quota_errors(counts):
+        sys.exit(2)
 
 
 if __name__ == "__main__":

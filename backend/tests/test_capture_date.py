@@ -283,3 +283,29 @@ def test_publish_carries_capture_date_and_only_real_columns():
 
     assert "capture_date" in publish.PUBLIC_COLUMNS
     assert set(publish.PUBLIC_COLUMNS) <= set(StreetViewImage.__table__.columns.keys())
+
+
+def test_backfill_stops_on_quota_or_billing_errors():
+    from collections import Counter
+
+    bf = _load_backfill()
+    assert bf.quota_errors(Counter({"accept": 10, "no_pano": 2, "error:UNKNOWN_ERROR": 1})) == {}
+    assert bf.quota_errors(Counter({"accept": 10, "error:REQUEST_DENIED": 3})) == {
+        "error:REQUEST_DENIED": 3
+    }
+
+
+def test_fetch_metadata_http_403_is_not_retried(monkeypatch):
+    bf = _load_backfill()
+    monkeypatch.setattr(bf.time, "sleep", lambda s: pytest.fail("403 must not be retried"))
+    calls = []
+
+    class FakeHttp:
+        def get(self, url, params, timeout):
+            calls.append(1)
+            return SimpleNamespace(status_code=403, json=lambda: {})
+
+    limiter = bf.RateLimiter(qps=1000, sleep=lambda s: None)
+    assert bf.fetch_metadata(FakeHttp(), "k", limiter, pano_id="P1") == ("HTTP_403", None)
+    assert len(calls) == 1
+    assert "HTTP_403" in bf.FATAL_STATUSES
