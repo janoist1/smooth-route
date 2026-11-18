@@ -8,8 +8,11 @@ sklearn pipeline, tuned ordinal cut-points and an isotonic P(bad) calibrator;
 this service interprets that recipe, so retraining with a different recipe
 does not require code changes here.
 
-v2 model (2026-07-03, 1903 images, 5-fold CV): QWK 0.889, MAE 0.195,
-exact 81%, +-1 acc 99.8%, bad-road (RQI>=3) accuracy 92%, AUC 0.969.
+v2 model (2026-07-03, 1903 images). Honest spatial CV (1 km grid cells,
+re-measured 2026-11-18, ml/spatial_cv.py): QWK 0.774, MAE 0.405, exact 61%,
++-1 acc 98.5%, bad-road (RQI>=3) accuracy 86%, AUC 0.934. (The originally
+reported QWK 0.889 / MAE 0.195 came from a random 5-fold that leaked
+neighbouring Street View frames between train and test.)
 
 Public interface: `predict_rqi(path) -> Optional[int]` (unchanged),
 `predict_score(path) -> Optional[float]`, `predict_p_bad(path) -> Optional[float]`.

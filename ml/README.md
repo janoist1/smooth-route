@@ -49,7 +49,46 @@ Tehát *alacsonyabb szám = jobb út*. (Az RQI 5 osztály a gyakorlatban haszná
 
 ## Eredmények
 
+### Őszinte mérés: térbeli CV (2026-11-18), ez a hivatalos szám
+
+A korábbi véletlen 5-fold CV **szivárgott**: a ~10 m-re lévő szomszéd
+képkockák (ugyanaz az utca) a tanító- és a tesztoldalra is kerültek. Egy csak
+GPS-t látó k-NN (kép nélkül) is QWK 0.884-et ért el rajta. A hivatalos
+protokoll mostantól **térben csoportosított** (`ml/spatial_cv.py`): 1 km-es
+rácscellák, StratifiedGroupKFold (5 fold, seed=42), beágyazott, térbeli
+vágópont-hangolás. Minden kép koordinátája az `ml/image_coords.csv` fájlban van
+(`ml/build_coords.py`).
+
+| metrika (v2 bajnok, ugyanaz a modell) | régi, véletlen CV | **térbeli CV, 1 km** | új régió (régió kihagyva) |
+|---|---|---|---|
+| QWK | 0.889 | **0.774** (95% CI 0.69–0.83) | 0.663 |
+| MAE | 0.195 | **0.405** | 0.491 |
+| pontos találat | 80.9% | **61.0%** | 52.3% |
+| ±1 pontosság | 99.8% | **98.5%** | – |
+| rossz út (RQI≥3) AUC | 0.970 | **0.934** | 0.872 |
+
+- **Cellaméret:** a variogram szerint a jegyek hasonlósága ~1 km-ig fogy, 1–5
+  km között lapos. A görbe (QWK): 200 m 0.83 → 500 m 0.79 → **1 km 0.79**
+  (a hivatalos rácson 0.774) → 2 km 0.77 → 3 km 0.75.
+- **Régiók:** az adat 4 gyűjtési területről jön. **Budapesten gyenge** (régión
+  belül AUC 0.78, új kerületben QWK 0.23). Vidéken és az agglomerációban a
+  jó/rossz döntés jó (AUC 0.95).
+- **Osztályok:** a 2-es recallja csak 0.43 (az 1-es 0.83, a 3-as 0.67, a 4-es
+  0.60). A tévesztés szinte mindig szomszédos szint.
+- **Kísérleti rács térbeli CV-n** (Ridge/SVR/ordinális logisztikus × 7
+  jellemző × dinov2-small/base/v3-small + utolsó 2 blokk finomhangolása):
+  minden értelmes recept 0.77–0.80 QWK között van, és egyik sem **mérhetően**
+  jobb a bajnoknál (páros cella-bootstrap, több rácseltolással ellenőrizve).
+  **A v2 recept marad.**
+- **Ajánlás:** rögzített független holdout régió; sok helyről kevés kép
+  (különösen Budapest); a 2-es osztály élesítése; szakaszszintű aggregálás a
+  termékben. Részletek:
+  [../docs/MODEL_EXPERIMENTS.md](../docs/MODEL_EXPERIMENTS.md) (6. korszak).
+
 ### v2 (2026-07-03, DINOv2-small CLS+patch + hangolt SVR-RBF, 5-fold CV)
+
+> ⚠️ Az alábbi számok a régi, **véletlen** fold-okon készültek, és térbeli
+> szivárgás miatt optimisták. A hivatalos szám a fenti térbeli mérés.
 
 **1903 kép** — a 676 hiányzó címkézett kép visszaszerzése után
 (`ml/recover_missing_images.py`: a Street View API-ból, pano-dátum őrfeltétellel,
@@ -91,8 +130,12 @@ egy-annotátoros plafonhoz.
 bash ml/export_labels.sh                       # -> ml/labels.csv (Docker kell)
 .venv/bin/python ml/recover_missing_images.py  # hiányzó címkézett képek vissza (Street View API)
 .venv/bin/python ml/extract_features_v2.py     # -> ml/cache/{feats_v2_small.npz,clip_v2.npz,dataset_v2.csv}
-.venv/bin/python ml/experiments.py             # jellemzők x fejek rács, 5-fold CV
-.venv/bin/python ml/tune_svr.py                # SVR hiperparaméter + vágópont hangolás
+.venv/bin/python ml/build_coords.py            # -> ml/image_coords.csv (lat/lon + régió minden képhez; commitolva)
+.venv/bin/python ml/spatial_analysis.py        # variogram, cellaméret-görbe, GPS-baseline, régió-/osztályhibák
+.venv/bin/python ml/experiments.py             # jellemzők x fejek rács, TÉRBELI 5-fold CV (--cv random = régi)
+.venv/bin/python ml/tune_svr.py                # SVR hiperparaméter + vágópont hangolás (térbeli fold-ok)
+.venv/bin/python ml/finetune_lastblocks.py     # opcionális: utolsó 2 blokk finomhangolása (MPS, ~1 óra)
+.venv/bin/python ml/compare_candidates.py      # kihívók páros összevetése a bajnokkal
 .venv/bin/python ml/save_model_v2.py           # végső artifact -> ml/cache/rqi_model.joblib
 .venv/bin/python ml/evaluate_artifact.py       # ÉLESÍTÉSI KAPU: PASS kell a shiphez
 ```
@@ -104,17 +147,23 @@ referenciának maradnak, az éles artifact a v2 receptből jön.
 
 Új vagy módosított `ml/cache/rqi_model.joblib` **csak akkor élesíthető**, ha az
 `ml/evaluate_artifact.py` **PASS**-t ad. A szkript a mentett artifact receptjét
-és fejét (a pipeline utolsó lépését klónozva) újramért a hivatalos, fix seed-ű
-5-fold CV-n (ugyanazok a fold-ok, mint az `experiments.py`-ban), tehát nem az
-artifactba mentett számot hiszi el, hanem függetlenül lemér.
+és fejét (a pipeline utolsó lépését klónozva) a hivatalos **térbeli** CV-n
+méri újra (1 km-es cellák, StratifiedGroupKFold, seed=42, ugyanazok a fold-ok,
+mint az `experiments.py`-ban). A vágópontokat beágyazottan, belső térbeli
+CV-n hangolja; az artifactba mentett vágópontokat és számokat nem hiszi el.
 
-A jelenlegi bajnok (v2) küszöbei (±0.005 tűrés a CV-zajra):
+A jelenlegi bajnok (v2) küszöbei térbeli CV-n (2026-11-18):
 
-| metrika | küszöb | irány |
-|---|---|---|
-| QWK | ≥ 0.889 | nagyobb jobb |
-| MAE | ≤ 0.195 | kisebb jobb |
-| rossz-út AUC | ≥ 0.970 | nagyobb jobb |
+| metrika | küszöb | tűrés | irány |
+|---|---|---|---|
+| QWK | ≥ 0.774 | 0.005 | nagyobb jobb |
+| MAE | ≤ 0.405 | 0.005 | kisebb jobb |
+| rossz-út AUC | ≥ 0.934 | 0.003 | nagyobb jobb |
+
+A PASS csak azt jelenti, hogy a jelölt nem rosszabb. Jelölt artifactnál a kapu
+**páros cella-bootstrapot** is futtat a bajnok ellen. Csak akkor élesíts új
+modellt, ha ott „measurably better: YES" jön ki (a ΔQWK 95%-os CI-je 0
+fölött van), lehetőleg eltolt rácson is ellenőrizve (`compare_candidates.py`).
 
 ```bash
 .venv/bin/python ml/evaluate_artifact.py                 # az éles artifactot méri
@@ -172,7 +221,16 @@ vezess be, hogy a validáció és a modellkártya konzisztens maradjon.
 - [x] DINOv3 backbone kipróbálva (`--backbone v3small`, HF licenc elfogadva):
       QWK 0.8825 / MAE 0.215 / AUC 0.967 a fix 5-fold CV-n → **nem veri a v2-t**,
       a kapun (`evaluate_artifact.py`) FAIL, ezért maradt a v2 (ld. MODEL_EXPERIMENTS.md)
-- [ ] Opcionális: több címkézett adat a 3↔4 határ élesítéséhez (a hibák zöme ott van)
+- [x] **Térbeli CV (2026-11-18):** koordináta mind az 1903 képhez, 1 km-es
+      cellás StratifiedGroupKFold kapu, rács újrafuttatva (+ ordinális
+      logisztikus fej, utolsó 2 blokk finomhangolása): a bajnok marad, őszinte
+      számok QWK 0.774 / MAE 0.405 / AUC 0.934
+- [ ] Rögzített, független holdout régió (új kerület + új város), sosem tanítva
+- [ ] Több és szórtabb címke (sok helyről kevés kép, főleg Budapest), és a
+      2-es osztály élesítése (a hibák zöme 1|2 és 2|3)
+- [ ] Szakaszszintű (~100–200 m) aggregálás a termékben, és mérés is ezen a szinten
+- [ ] A live artifact `cv_metrics`-e még a régi (0.895) számot mutatja a
+      modellkártyán. Újramentéskor (`save_model_v2.py`) már térbeli számok kerülnek bele
 - [ ] Opcionális: P(rossz út) megjelenítése a frontend részletkártyán
 
 ### Inferencia egy képre

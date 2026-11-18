@@ -51,10 +51,16 @@ CI mindkettőt futtatja (`.github/workflows/ci.yml`). **Zöld nélkül nem kész
 ### ML-élesítési kapu (KRITIKUS szabály)
 
 Új/módosított RQI-modellt (`ml/cache/rqi_model.joblib`) CSAK akkor élesíts, ha
-`.venv/bin/python ml/evaluate_artifact.py` **PASS**-t ad — ez a rögzített 5-fold
-CV-n (seed=42) újramér és a bajnokhoz méri (**QWK ≥ 0.889, MAE ≤ 0.195,
-bad-AUC ≥ 0.970**). Sose a régi `ml/train.py` / `backend/train_dino_head.py`
-szkripteket használd — azok referencia/zsákutca. Fogalmak: [docs/GLOSSARY.md](docs/GLOSSARY.md).
+`.venv/bin/python ml/evaluate_artifact.py` **PASS**-t ad. Ez **térben
+csoportosított** 5-fold CV-n mér (1 km-es rácscellák, StratifiedGroupKFold,
+seed=42, beágyazott vágópont-hangolás; ld. `ml/spatial_cv.py`), és a bajnokhoz
+hasonlít: **QWK ≥ 0.774, MAE ≤ 0.405, bad-AUC ≥ 0.934**. A régi, véletlen-foldos
+0.889/0.195/0.970 számok térbeli szivárgás miatt optimisták voltak, ne
+hivatkozz rájuk. A „mérhetően jobb" feltétele: a kapu páros összevetésében a
+ΔQWK 95%-os CI-je 0 fölött van. A koordináták forrása `ml/image_coords.csv`
+(`ml/build_coords.py`); új címkék után ezt is újra kell generálni. Sose a régi
+`ml/train.py` / `backend/train_dino_head.py` szkripteket használd, azok
+referenciák vagy zsákutcák. Fogalmak: [docs/GLOSSARY.md](docs/GLOSSARY.md).
 
 ## Buktatók (amiken más már elvérzett)
 
@@ -80,3 +86,9 @@ mód + Vercel-artefaktumok). **Soron következő: R1.3** (Neon + `publish` scrip
 majd **R1.4** (DNS + deploy). A round-2 (auth/queue/kvóta, F0–F6) a
 user-beküldésig vár. A lokális dev változatlan (`make dev`, teljes backend);
 a read-only csak env-flag. Commit/push csak explicit kérésre.
+
+**RQI-kiértékelés (2026-11-18):** térben csoportosított CV-re váltottunk. A v2
+bajnok őszinte számai: QWK 0.774 / MAE 0.405 / AUC 0.934. Budapesten gyenge,
+új régióban QWK ~0.66. A bajnok marad, mert egyik kihívó sem mérhetően jobb.
+Teendők (holdout régió, szórtabb címkék, szakasz-aggregálás):
+[docs/MODEL_EXPERIMENTS.md](docs/MODEL_EXPERIMENTS.md), 6. korszak.

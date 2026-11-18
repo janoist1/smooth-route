@@ -119,6 +119,37 @@ pontszámokat, és ezeken hangoljuk a vágópontokat és a valószínűség-kali
 (pl. a vágópontokat), a hangolást is elrejtett adaton kell csinálni, különben az
 is szivárgás. A beágyazott CV pont ezt biztosítja — ezért „nested".
 
+**Térbeli szivárgás (spatial leakage)** — a szivárgás alattomos fajtája. A
+Street View képek ~10 m-enként követik egymást, így a szomszédos képek szinte
+ugyanazt az aszfaltot mutatják. Ha véletlenszerűen osztjuk kupacokba a képeket,
+a tesztkép „ikertestvére" a tanulóhalmazba kerül, és a modell lényegében
+emlékszik az utcára. Mérésünk szerint egy olyan „modell", amely **csak a GPS-
+koordinátát látja, képet nem**, véletlen CV-n QWK 0.88-at ér el, vagyis
+majdnem annyit, mint a valódi modell. Ez a szivárgás nagyságát mutatja.
+
+**Térbeli / csoportosított CV (StratifiedGroupKFold)** — a kupacokba nem
+egyes képeket, hanem **egész földrajzi csoportokat** osztunk (nálunk 1 km × 1
+km-es rácscellákat), így egy cella minden képe ugyanabba a kupacba kerül. A
+teszt így olyan utcákon mér, amelyeket a modell sosem látott. **2026-11-18 óta
+ez a hivatalos mérés** (`ml/spatial_cv.py`). A cellaméretet a variogram
+alapján választottuk.
+
+**Variogram** — megmutatja, hogyan nő két kép jegyeinek eltérése a köztük lévő
+távolsággal. Ahol a görbe kisimul, ott szűnik meg a „szomszéd hasonlít a
+szomszédra" hatás: nálunk ez **~1 km**-nél történik. Ennél nagyobb cellával már
+egész városrészeket tartanánk vissza, ami egy másik kérdést mér.
+
+**Leave-one-area-out (egy régió kihagyása)** — a legszigorúbb teszt: három
+gyűjtési területen (Budapest, Törökbálint, Székesfehérvár, Tapolca közül)
+tanítunk, a negyediken mérünk. Arra felel, hogy a modell **új városban** is
+működik-e.
+
+**Bootstrap / konfidencia-intervallum (CI)** — a mért szám bizonytalansága. A
+cellákat visszatevéssel újrahúzzuk, és ezerszer újraszámoljuk a metrikát; a
+95%-os CI az a sáv, amelybe a mérés „újrasorsolva" az esetek 95%-ában esne.
+**Páros bootstrap:** két modell *különbségét* mérjük ugyanazokon a képeken. Ha
+a különbség CI-je nem tartalmazza a 0-t, akkor a javulás „mérhető".
+
 **Seed (véletlenmag)** — a véletlen műveletek (pl. a kupacokba osztás) egy fix
 számból indulnak, hogy az eredmény **megismételhető** legyen. Nálunk `seed=42`.
 Ugyanaz a seed = ugyanaz a szétvágás = összehasonlítható számok.
@@ -207,9 +238,11 @@ szereztünk vissza 676 hiányzó (főleg jó-út) képet a kiegyensúlyozáshoz.
 **joblib** — a Python könyvtár, amivel a modellt fájlba mentjük/visszatöltjük.
 
 **Promotion gate / élesítési kapu** — a szabály, hogy **új modell csak akkor mehet
-élesbe, ha a fenti CV-mérésen eléri/veri a jelenlegit.** Nálunk ezt az
-`ml/evaluate_artifact.py` automatikusan ellenőrzi (PASS/FAIL). Így nem tudunk
-véletlenül rosszabb modellt kiadni.
+élesbe, ha a fenti, *térbeli* CV-mérésen eléri vagy veri a jelenlegit.** Nálunk
+ezt az `ml/evaluate_artifact.py` automatikusan ellenőrzi (PASS/FAIL). Így nem
+tudunk véletlenül rosszabb modellt kiadni. Jelölt artifact esetén a kapu a
+bajnokkal páros összevetést is futtat, ez mondja meg, hogy a jelölt *mérhetően*
+jobb-e.
 
 **Backbone letöltés / MPS / CPU / CUDA** — hol fut a számítás. **MPS** = az Apple
 gépek grafikus gyorsítása (nálunk a Mac ezt használja), **CUDA** = NVIDIA

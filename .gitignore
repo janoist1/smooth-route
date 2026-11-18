@@ -27,6 +27,7 @@ ml/cache/dataset_v2.csv
 ml/cache/experiments_*.csv
 ml/cache/oof_*.npy
 ml/cache/oof_table.csv
+ml/cache/spatial_analysis.json
 ml/missing_labelled_mapped.csv
 
 # Local debug / scratch artifacts

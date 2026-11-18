@@ -4,25 +4,29 @@ Focused tuning of the winning head (SVR-RBF) on the top feature variants,
 plus ordinal cut-point tuning on top of the continuous predictions.
 
 Grid: C x gamma x epsilon on {cls+patch, cls+patch flipavg} (and optionally
-dinov2-base features). Same folds as experiments.py so results are comparable.
+dinov2-base features). Same SPATIAL folds as experiments.py / the promotion
+gate (ml/spatial_cv.py: 1 km grid cells, seed 42) so results are comparable.
 
 Cut-point tuning: instead of rounding at fixed .5 boundaries, learn the three
 boundaries (1|2, 2|3, 3|4) that maximise QWK on each fold's TRAIN out-of-fold
-predictions (inner 4-fold), then apply to the test fold. Honest, no leakage.
+predictions (inner 4-fold, spatial), then apply to the test fold. No leakage.
 
 Usage:  .venv/bin/python ml/tune_svr.py [--backbone small|base]
 """
 import argparse
 import itertools
 import os
+import sys
 import warnings
 
 import numpy as np
 import pandas as pd
 from sklearn.metrics import cohen_kappa_score, mean_absolute_error, roc_auc_score
-from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVR
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import spatial_cv as S  # noqa: E402
 
 warnings.filterwarnings("ignore")
 
@@ -86,8 +90,9 @@ def main():
     y = df["manual_rqi"].values.astype(float)
     yc = df["rqi"].values.astype(int)
     is_bad = (yc >= BAD_FROM).astype(int)
-    skf = StratifiedKFold(n_splits=N_SPLITS, shuffle=True, random_state=SEED)
-    folds = list(skf.split(np.zeros(len(yc)), yc))
+    c = S.load_coords(df["image_filename"])
+    groups = S.grid_cells(c["lat"].values, c["lon"].values)
+    folds = S.spatial_folds(yc, groups)
     print(f"backbone={args.backbone}  n={len(df)}\n")
 
     grid = list(itertools.product([1, 3, 10, 30], ["scale", 3e-4, 1e-3],
@@ -119,9 +124,8 @@ def main():
         sc = StandardScaler().fit(X[tr])
         m = SVR(C=C, gamma=gamma, epsilon=eps).fit(sc.transform(X[tr]), y[tr])
         # inner OOF on the training part for threshold fitting
-        inner = StratifiedKFold(4, shuffle=True, random_state=SEED)
         inner_oof = np.zeros(len(tr))
-        for itr, ite in inner.split(np.zeros(len(tr)), yc[tr]):
+        for itr, ite in S.spatial_folds(yc[tr], groups[tr], S.INNER_SPLITS):
             isc = StandardScaler().fit(X[tr][itr])
             im = SVR(C=C, gamma=gamma, epsilon=eps).fit(
                 isc.transform(X[tr][itr]), y[tr][itr])

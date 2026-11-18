@@ -12,6 +12,12 @@ Adds over v1:
   - per-predicted-class empirical reliability table from CV (what the true
     class distribution looks like when the model outputs k)
 
+All out-of-fold numbers come from the official SPATIAL CV (ml/spatial_cv.py:
+1 km grid cells, StratifiedGroupKFold, seed 42, nested cut-points), so the
+model card (`cv_metrics`, `reliability`) and the P(bad) calibrator describe
+performance on streets the model has never seen — not the leaky random-fold
+numbers of the first v2 artifact.
+
 The recipe is stored machine-readably in the artifact; inference code
 (ml/predict.py, backend dino_service) builds features from it.
 
@@ -20,18 +26,20 @@ Usage:  .venv/bin/python ml/save_model_v2.py --recipe cls+patch [--head svr-rbf]
 import argparse
 import json
 import os
+import sys
 
 import joblib
 import numpy as np
 import pandas as pd
 from sklearn.isotonic import IsotonicRegression
 from sklearn.linear_model import RidgeCV
-from sklearn.metrics import (cohen_kappa_score, mean_absolute_error,
-                             roc_auc_score)
-from sklearn.model_selection import StratifiedKFold
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVR
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import spatial_cv as S  # noqa: E402
+from spatial_cv import tune_thresholds  # noqa: E402,F401  (re-exported)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CACHE = os.path.join(ROOT, "ml", "cache")
@@ -40,8 +48,8 @@ DROP_RQI5 = True
 ROAD_PROB_MIN = 0.55
 RQI_MIN, RQI_MAX = 1, 4
 BAD_FROM = 3
-N_SPLITS = 5
-SEED = 42
+N_SPLITS = S.N_SPLITS
+SEED = S.SEED
 
 # recipe -> (feature keys concatenated in order, needs_clip)
 # keys refer to arrays in feats_v2_<backbone>.npz; "clip" comes from clip_v2.npz
@@ -67,25 +75,6 @@ BACKBONE_NAMES = {
     "v3small": "facebook/dinov3-vits16-pretrain-lvd1689m",
     "v3base": "facebook/dinov3-vitb16-pretrain-lvd1689m",
 }
-
-
-def tune_thresholds(y_true, pred):
-    """Greedy per-boundary search for the 3 ordinal cut-points, maximising QWK."""
-    th = [1.5, 2.5, 3.5]
-    for _ in range(3):
-        for i in range(3):
-            lo = th[i - 1] if i else 0.8
-            hi = th[i + 1] if i < 2 else 4.2
-            best_q, best_t = -1.0, th[i]
-            for t in np.linspace(lo + 0.02, hi - 0.02, 60):
-                cand = sorted(th[:i] + [t] + th[i + 1:])
-                q = cohen_kappa_score(y_true, np.digitize(pred, cand) + 1,
-                                      weights="quadratic", labels=[1, 2, 3, 4])
-                if q > best_q:
-                    best_q, best_t = q, t
-            th[i] = best_t
-            th = sorted(th)
-    return [float(t) for t in th]
 
 
 def build_features(recipe, backbone):
@@ -119,26 +108,25 @@ def main():
     yc = df["rqi"].values.astype(int)
     is_bad = (yc >= BAD_FROM).astype(int)
 
-    # ---- honest CV pass: metrics + OOF predictions for calibration ----
-    skf = StratifiedKFold(n_splits=N_SPLITS, shuffle=True, random_state=SEED)
-    oof = np.zeros(len(y))
-    for tr, te in skf.split(X, yc):
-        pipe = make_pipeline(StandardScaler(), HEADS[args.head]())
-        pipe.fit(X[tr], y[tr])
-        oof[te] = pipe.predict(X[te])
-
-    # ordinal cut-points tuned on the pooled OOF predictions
-    thresholds = tune_thresholds(yc, oof)
-    yp = (np.digitize(oof, thresholds) + 1).astype(int)
+    # ---- honest SPATIAL CV pass: metrics + OOF predictions for calibration ----
+    coords = S.load_coords(df["image_filename"])
+    groups = S.grid_cells(coords["lat"].values, coords["lon"].values)
+    res = S.nested_spatial_cv(X, y, yc, groups, HEADS[args.head])
+    oof, yp = res["oof"], res["pred"]
+    m = S.ordinal_metrics(yc, yp, oof)
     cv = {
-        "mae": float(mean_absolute_error(yc, yp)),
-        "exact_acc": float(np.mean(yc == yp)),
-        "off_by_one_acc": float(np.mean(np.abs(yc - yp) <= 1)),
-        "qwk": float(cohen_kappa_score(yc, yp, weights="quadratic",
-                                       labels=list(range(RQI_MIN, RQI_MAX + 1)))),
-        "bad_road_acc": float(np.mean((oof >= BAD_FROM - 0.5).astype(int) == is_bad)),
-        "bad_road_auc": float(roc_auc_score(is_bad, oof)),
+        "protocol": f"spatial {S.N_SPLITS}-fold StratifiedGroupKFold, "
+                    f"{S.CELL_M} m cells, seed {S.SEED}, nested cut-points",
+        "mae": m["mae"],
+        "exact_acc": m["exact"],
+        "off_by_one_acc": m["off1"],
+        "qwk": m["qwk"],
+        "bad_road_acc": m["bad_acc"],
+        "bad_road_auc": m["bad_auc"],
     }
+
+    # deployed cut-points: tuned on the pooled spatial OOF predictions
+    thresholds = tune_thresholds(yc, oof)
 
     # ---- P(bad) calibration on OOF scores ----
     iso = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0)

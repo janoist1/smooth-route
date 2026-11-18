@@ -32,8 +32,9 @@ Start here depending on what you need:
 ## The road-quality AI (RQI)
 
 The road quality score shown on the map (RQI 1 = excellent … 4 = poor) comes from
-the **v2 model** in `ml/` — a frozen DINOv2-small backbone + SVR head, 5-fold CV
-QWK 0.89. It is trained and shipped from the `ml/` pipeline, **not** from the web
+the **v2 model** in `ml/` — a frozen DINOv2-small backbone + SVR head, QWK 0.77 /
+bad-road AUC 0.93 on spatially grouped CV (streets never seen in training; the
+older random-fold figure of 0.89 was inflated by neighbouring-frame leakage). It is trained and shipped from the `ml/` pipeline, **not** from the web
 UI. YOLO damage detection is a separate concern (it produces the damage polygons
 on the detail card, not the RQI). See [docs/MODEL_EXPERIMENTS.md](docs/MODEL_EXPERIMENTS.md).
 

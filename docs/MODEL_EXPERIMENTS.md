@@ -130,7 +130,12 @@ Három, egyenként mérhető javítás:
    izotonikus **P(rossz út) kalibrátor** került: a modell nem csak osztályzatot
    ad, hanem megbízható valószínűséget is arra, hogy az út rossz (RQI ≥ 3).
 
-**Végeredmény (beágyazott, szivárgásmentes 5-fold CV, 1903 kép):**
+**Végeredmény (beágyazott, véletlen 5-fold CV, 1903 kép):**
+
+> ⚠️ **2026-11-18:** az alábbi számok **térbeli szivárgás miatt optimisták**: a
+> szomszédos, ~10 m-re lévő képkockák a tanító- és a tesztoldalra is kerültek.
+> A valódi, térben csoportosított mérés eredménye QWK 0.774 / MAE 0.405 / AUC
+> 0.934; részletek a [6. korszakban](#6-korszak--őszinte-mérés-térben-csoportosított-cv-2026-11-18).
 
 | metrika | v1 (Ridge) | **v2 (éles)** | mit jelent laikusan |
 |---|---|---|---|
@@ -155,7 +160,9 @@ alatti szétrepedt csomópont 4-es, P(rossz)=0.95).
 határeset-utak (foltozott falusi út, árnyékos kereszteződés) — egyetlen
 címkéző önkonzisztenciája kb. ennyi, tehát a QWK 0.89 közel van az adatból
 kihozható plafonhoz. Innen már csak több/célzottabb címke visz feljebb,
-nem okosabb modell.
+nem okosabb modell. *(2026-11-18: a 0.89 szivárgott szám volt; a
+következtetés, hogy innen a címke visz előre, nem a modell, térbeli CV-n is
+áll. Ld. 6. korszak.)*
 
 ### DINOv3 backbone kipróbálva (2026-07-03) — nem vert, marad a v2
 
@@ -198,6 +205,224 @@ kelljen még egyszer elvégezni.*
 
 ---
 
+## 6. korszak — Őszinte mérés: térben csoportosított CV (2026-11-18)
+
+> **TL;DR:** a v2-ről korábban közölt QWK 0.889 / MAE 0.195 **térbeli
+> szivárgás miatt optimista volt**. Olyan utcákon, amelyeket a modell sosem
+> látott, ugyanez a modell **QWK 0.774 / MAE 0.405 / pontos találat 61% /
+> rossz-út AUC 0.934**. Új városban (egész régió kihagyva) pedig csak **QWK
+> 0.66 / AUC 0.87**. A jó/rossz döntés (AUC 0.93) használható, az 1–4 jegy
+> csak nagyjából. A kapu mostantól a térbeli mérést használja. Új modellt nem
+> élesítettünk, mert egyik kihívó sem mérhetően jobb.
+
+### Mi volt a baj?
+
+A Street View képek ~10 m-enként követik egymást, ugyanazon az utcán. A régi
+véletlen 5-fold CV a tesztkép szomszédját (szinte ugyanazt az aszfaltot) a
+tanulóhalmazba tette, így a mérés részben azt nézte, hogy a modell emlékszik-e
+az utcára. A legerősebb bizonyíték egy **„csak GPS" modell**: egy k-NN, amely
+kizárólag a koordinátát látja, képet egyáltalán nem.
+
+| protokoll | csak GPS (kép nélkül) | v2 bajnok (képből) |
+|---|---|---|
+| véletlen 5-fold (régi) | **QWK 0.884**, MAE 0.203, AUC 0.960 | QWK 0.889, MAE 0.197, AUC 0.971 |
+| térbeli, 1 km cellák (új) | QWK 0.602, MAE 0.603, AUC 0.795 | **QWK 0.774**, MAE 0.405, AUC 0.934 |
+
+A régi protokollon a koordináta önmagában is majdnem a bajnok szintjét hozta,
+ezért nem tudta megkülönböztetni az útminőség-felismerést a helyfelismeréstől.
+A térbelin a kép érdemben hozzáad (0.60 → 0.77), vagyis a modell tényleg
+tanult valamit az útfelületről.
+
+### Koordináta minden képhez
+
+Mind az **1903** címkézett kép kapott koordinátát. 1238 kép a fájlnévből
+(`00001_47.4967_19.0694_67.jpg`), 665 `sv_*` kép a DB `street_view_images`
+táblájából (a `missing_labelled_mapped.csv` exportból vagy
+`build_coords.py --from-db`). Az eredmény a commitolt `ml/image_coords.csv`
+(`ml/build_coords.py`). Fontos felismerés: a címkék **csak négy gyűjtési
+területről** származnak, eltérő címke-eloszlással.
+
+| terület | képek | 1 / 2 / 3 / 4 |
+|---|---|---|
+| Budapest, VII–VIII. ker. (Keleti környéke) | 229 | 0 / 111 / 102 / 16 |
+| Törökbálint–Budaörs (az összes `sv_*` kép) | 665 | 302 / 291 / 62 / 10 |
+| Székesfehérvár déli része | 359 | 233 / 98 / 28 / 0 |
+| Tapolca környéke (Balaton-felvidék) | 650 | 5 / 280 / 189 / 176 |
+
+### Csoportosítás: miért 1 km-es rács?
+
+**Variogram** (két kép jegyeltérésének fele a távolság függvényében):
+
+| távolság | 0–20 m | 50–100 m | 200–500 m | 0.5–1 km | 1–2 km | 2–5 km | 5–10 km | >10 km |
+|---|---|---|---|---|---|---|---|---|
+| γ | 0.11 | 0.23 | 0.40 | 0.49 | 0.53 | 0.54 | 0.91 | 1.03 |
+
+A hasonlóság ~1 km-ig gyorsan fogy, 1 és 5 km között lapos (egy városon belül),
+5 km fölött pedig a városok közötti különbség jelenik meg.
+
+**Cellaméret-görbe** (bajnok recept, beágyazott vágópontok; ± = szórás 5
+eltolt rácson és fold-seeden):
+
+| protokoll | cellák | QWK | MAE | pontos | rossz-út AUC |
+|---|---|---|---|---|---|
+| véletlen 5-fold (régi) | – | 0.889 ± 0.002 | 0.197 | 80.6% | 0.971 |
+| 200 m | 152 | 0.829 ± 0.007 | 0.307 | 70.2% | 0.945 |
+| 500 m | 70 | 0.794 ± 0.007 | 0.377 | 63.4% | 0.934 |
+| **1 km (hivatalos)** | 35 | 0.792 ± 0.011 (hivatalos rács: **0.774**) | 0.385 | 63.1% | 0.934 |
+| 2 km | 21 | 0.770 ± 0.013 | 0.424 | 59.4% | 0.933 |
+| 3 km | 13 | 0.753 ± 0.012 | 0.464 | 55.7% | 0.927 |
+| egy régió kihagyva | 4 | 0.663 | 0.491 | 52.3% | 0.872 |
+
+A görbe 500 m és 1 km között ellaposodik, összhangban a variogrammal. Ezért
+**1 km a hivatalos cellaméret**: ez a plató konzervatív vége, és megszünteti az
+utca-szintű szivárgást. A 2–3 km-es cellák már városrészeket, illetve fél
+városokat tartanak vissza, így fokozatosan átmennek a régió-transzfer
+mérésébe. Ezt külön, a régió-kihagyásos teszt méri. A hivatalos (eltolás
+nélküli) rács 0.774-e a 0.792 ± 0.011-es sáv alsó részén van, tehát a kapu
+inkább szigorú, mint engedékeny. A cella-bootstrap 95%-os CI a hivatalos
+mérésre: **QWK [0.69, 0.83], MAE [0.34, 0.46], AUC [0.89, 0.97]**. Megjegyzés:
+km-es celláknál a StratifiedGroupKFold a seedtől függetlenül ugyanazt a
+fold-kiosztást adja, ezért a variancia mérésére a rács eltolása szolgál.
+
+### Az új kapu
+
+`ml/evaluate_artifact.py`: StratifiedGroupKFold (5 fold, 1 km cellák, seed=42).
+A vágópontokat minden külső fold tanító részén, **belső térbeli 4-fold** OOF
+predikciókon hangoljuk. Korábban a kapu az artifactba mentett, az összes
+címkén hangolt vágópontokat használta, ami szintén szivárgás volt. Új
+küszöbök: **QWK ≥ 0.774, MAE ≤ 0.405, bad-AUC ≥ 0.934** (tűrés ±0.005 /
+±0.005 / ±0.003). A bajnok PASS. Jelölt artifact esetén a kapu a bajnokkal
+**páros cella-bootstrapot** is futtat: a jelölt csak akkor „mérhetően jobb",
+ha a ΔQWK 95%-os CI-je 0 fölött van.
+
+### A kísérleti rács újra, térbeli CV-n
+
+`ml/experiments.py`: 7 jellemző-változat × 5 fej (Ridge, SVR C∈{0.3,1,3},
+**proporcionális esélyű ordinális logisztikus** fej, `ml/heads.py`) × 3
+backbone. Minden cella beágyazott vágópontokkal fut. Plusz egy **könnyű
+finomhangolás**: a DINOv2-small utolsó 2 blokkja + fej
+(`ml/finetune_lastblocks.py`, a fagyasztott rész kimenete gyorsítótárazva, 8
+epoch, patch-token dropout; 25 finomhangolás a beágyazott hangolás miatt, kb.
+1 óra MPS-en).
+
+| backbone | legjobb cella | QWK | MAE | AUC | a bajnok recept (cls+patch, SVR C=1) ezen a backbone-on |
+|---|---|---|---|---|---|
+| dinov2-small | all + ordlogit | 0.795 | 0.372 | 0.936 | **0.774 / 0.405 / 0.934 (bajnok)** |
+| dinov2-base | cls+patch+crop + ridge | 0.800 | 0.372 | 0.937 | 0.779 / 0.407 / 0.929 |
+| dinov3-small | cls+patch+crop + SVR C=3 | 0.781 | 0.400 | 0.932 | 0.746 / 0.448 / 0.921 |
+| small, utolsó 2 blokk finomhangolva | – | 0.787 | 0.393 | 0.940 | – |
+
+**Páros összevetés a bajnokkal** (azonos fold-ok, cella-bootstrap, ΔQWK 95% CI;
+`ml/compare_candidates.py`):
+
+| kihívó | ΔQWK [95% CI] | ΔMAE | ΔAUC | mérhetően jobb? |
+|---|---|---|---|---|
+| small, cls+patch flipavg + SVR | +0.014 [−0.001, +0.028] | −0.017 | +0.000 | nem |
+| small, cls+patch+crop + ordlogit | +0.014 [−0.006, +0.037] | −0.018 | +0.005 | nem |
+| small, all + ordlogit | +0.021 [+0.003, +0.036] | −0.033 | +0.002 | a hivatalos rácson igen, de lásd lent |
+| base, cls+patch + SVR | +0.005 [−0.026, +0.029] | +0.003 | −0.005 | nem |
+| base, all + ordlogit | +0.021 [−0.011, +0.055] | −0.036 | −0.005 | nem |
+| small, finomhangolás (2 blokk) | +0.012 [−0.007, +0.038] | −0.012 | +0.005 | nem |
+
+Az egyetlen „igen" (all + ordlogit) a ~100 cellából utólag kiválasztott
+legjobb, ezért a nyertes-torzítás miatt külön ellenőriztük 6 eltolt rácson: a
+ΔQWK 5-ből 6 esetben pozitív (átlag ~+0.015), de a CI csak 1 esetben van 0
+fölött, az AUC-különbség pedig mindenhol ~0. A base + Ridge 4 rácson
+−0.011 és +0.022 között mozog. Emellett az all + ordlogit élesítéséhez CLIP
+kellene inference-kor (második backbone) és új fejosztály a backendben.
+
+**Verdikt:** térbeli CV alatt minden értelmes recept egy ~0.77–0.80 QWK-s
+sávban van, a különbségek a mérési zajon belül maradnak. **A jelenlegi recept
+(DINOv2-small cls+patch + SVR) marad. Új modellt nem élesítettünk.** Amit a
+régi rács „nyertesnek" mutatott (SVR > minden más, small ≈ base), az térbeli
+CV-n sem cáfolódik, de nem is erősödik meg. A finomhangolás és a nagyobb
+backbone sem hoz mérhető javulást ennyi adaton. Az ordinális logisztikus fej
+olcsó és a bajnokkal egyenrangú (cls+patch: 0.775 vs 0.774), így jó tartalék.
+
+### Hibaelemzés (hivatalos protokoll, a bajnok OOF predikciói)
+
+**Régiónként** (azonos predikciók, régióra szűrve; régión belül kisebb a
+jegyek szórása, ezért a QWK itt alacsonyabb, mint az egészen):
+
+| régió | n | QWK | MAE | pontos | rossz-út AUC | torzítás (becsült − valós) |
+|---|---|---|---|---|---|---|
+| **Budapest** (VII–VIII.) | 229 | 0.404 | 0.397 | 62% | **0.776** | +0.13 |
+| **vidék + agglomeráció** együtt | 1674 | 0.783 | 0.406 | 61% | 0.947 | −0.06 |
+| – Törökbálint–Budaörs | 665 | 0.574 | 0.453 | 57% | 0.932 | −0.13 |
+| – Székesfehérvár | 359 | 0.561 | 0.326 | 68% | 0.931 | −0.09 |
+| – Tapolca környéke | 650 | 0.695 | 0.402 | 61% | 0.905 | +0.04 |
+
+**Ha egy egész régiót kihagyunk** (3 régión tanítunk, a 4.-en mérünk), a
+modell a tanítóhalmaz átlaga felé húz:
+
+| kihagyott régió | QWK | MAE | AUC | átlagos valós / becsült jegy |
+|---|---|---|---|---|
+| Budapest | **0.226** | 0.485 | **0.763** | 2.64 / 2.29 |
+| Törökbálint–Budaörs | 0.622 | 0.415 | 0.940 | 1.67 / 1.94 |
+| Székesfehérvár | 0.413 | 0.499 | 0.872 | 1.43 / 1.91 |
+| Tapolca környéke | 0.365 | 0.568 | **0.717** | 2.72 / 2.40 |
+
+**Budapest a gyenge pont.** Csak 229 kép, egyetlen városrészből, nincs benne
+1-es jegy, és a városi kép (villamossín, kockakő, parkoló autók, árnyék) más,
+mint a vidéki. Régión belül is csak AUC 0.78, egy új budapesti kerületben
+pedig QWK 0.23. A vidéki és agglomerációs utakon a jó/rossz döntés megbízható
+(AUC 0.95).
+
+**Osztályonként** (sor = valós, oszlop = becsült):
+
+| valós \ becsült | 1 | 2 | 3 | 4 | recall |
+|---|---|---|---|---|---|
+| 1 | 448 | 92 | 0 | 0 | 0.83 |
+| 2 | 254 | 335 | 176 | 15 | **0.43** |
+| 3 | 6 | 63 | 257 | 55 | 0.67 |
+| 4 | 0 | 7 | 74 | 121 | 0.60 |
+| precision | 0.63 | 0.67 | 0.51 | 0.63 | |
+
+A tévesztések továbbra is szinte mind szomszédosak (±1: 98.5%; 1↔4 nincs), de
+a **2-es a probléma**: a valódi 2-esek több mint fele 1-esnek vagy 3-asnak
+látszik. A régi „ha 1-est mond, sosem 3–4" garancia nagyjából tartja (6/708),
+a „ha 4-est mond, 80%-ban 4-es" viszont térbeli CV-n csak 63%.
+
+### Ajánlás: mi kell a megbízhatósághoz?
+
+1. **Független holdout régió, rögzítve.** Egy új, címkézetlen régiót (pl. egy
+   másik budapesti kerületet és egy új vidéki várost) előre jelöljünk ki tiszta
+   tesztnek, amelyen sosem tanítunk és hangolunk. A térbeli CV a fejlesztéshez
+   jó, de a „mennyire működik új helyen" kérdésre csak ez ad tiszta választ (ma
+   a régió-kihagyásos becslés: QWK 0.66 / AUC 0.87).
+2. **Több és szórtabb címke, nem több ugyanabból.** A 1903 kép valójában 4
+   terület ~35 km²-nyi utcája. A szomszédos képkockák alig adnak új
+   információt (a variogram 20 m-en belül γ=0.11). Hatékonyabb **sok helyről
+   kevés kép** (pl. 100–200 m-enként egy), sok különböző településről, és
+   célzottan **Budapestről** (minden útkategóriával, 1-esekkel is).
+3. **A 2-es osztály definíciójának élesítése.** A 2-esek 57%-át téveszti a
+   modell. Egy második címkéző ~200 képen megmutatná, mennyi ebből a
+   címkezaj (inter-annotátor egyezés); a `TrainingGuide.md` 1|2 és 2|3
+   határpéldáit érdemes bővíteni.
+4. **Szegmensszintű aggregálás a termékben.** Egy utcaszakaszra 10–50 képkocka
+   jut, és a szomszédos képek erősen korrelálnak. Ezért ne egyetlen képkocka
+   jegyét mutassuk: aggregáljunk ~100–200 m-es szakaszra (P(rossz) átlaga,
+   medián jegy). Ez a zajos 2|3 határesetek egy részét kisimítja. Mérni is
+   szakaszszinten kellene: a következő kiértékelés aggregált jegyre számoljon
+   QWK-t.
+5. **A kommunikált számok.** A modellkártya (`cv_metrics` a live artifactban)
+   még a régi 0.895-öt mutatja. A `save_model_v2.py` már térbeli számokat ír,
+   de a bajnokot nem mentettük újra, mert az a vágópontokat és a kalibrátort is
+   megváltoztatná. Ezt külön döntésként érdemes megtenni.
+
+Reprodukálás:
+
+```bash
+.venv/bin/python ml/build_coords.py          # -> ml/image_coords.csv
+.venv/bin/python ml/spatial_analysis.py      # variogram, cellaméret-görbe, GPS-baseline, régió-/osztályhibák
+.venv/bin/python ml/experiments.py --backbone small|base|v3small
+.venv/bin/python ml/finetune_lastblocks.py --images-dir data/images
+.venv/bin/python ml/compare_candidates.py    # páros összevetés a bajnokkal
+.venv/bin/python ml/evaluate_artifact.py     # kapu (PASS a bajnokra)
+```
+
+---
+
 ## Mi él most, és mi halott?
 
 | komponens | állapot | szerep |
@@ -219,6 +444,9 @@ kelljen még egyszer elvégezni.*
 2. **A kiértékelési protokoll az igazi termék:** fix seed-ű, rétegzett
    keresztvalidáció + azonos fold-ok nélkül a "javulás" gyakran csak zaj.
    Minden jövőbeli modellnek ugyanezen a mérésen kell vernie a mostanit.
+   **És a fold-oknak térben kell elválniuk:** sorozatfelvételeknél a véletlen
+   CV a helyet méri, nem a képességet. Egy csak GPS-t látó k-NN is QWK
+   0.88-at ért el rajta.
 3. **Az adat olcsóbb, mint az architektúra:** a +665 visszaszerzett kép többet
    ért, mint bármelyik architektúra-trükk.
 4. **Sorrendi skálát sorrendként kezelj** (regresszió + hangolt vágópontok),
