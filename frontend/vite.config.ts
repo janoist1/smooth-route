@@ -42,7 +42,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@graphql-typed-document-node/core': path.resolve('./src/modules/graphql/shim.ts'),
-      'modules': path.resolve(__dirname, './src/modules'),
+      'modules': path.resolve(import.meta.dirname, './src/modules'),
     },
   },
 })

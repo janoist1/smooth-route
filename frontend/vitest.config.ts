@@ -8,8 +8,8 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      '@graphql-typed-document-node/core': path.resolve(__dirname, './src/modules/graphql/shim.ts'),
-      modules: path.resolve(__dirname, './src/modules'),
+      '@graphql-typed-document-node/core': path.resolve(import.meta.dirname, './src/modules/graphql/shim.ts'),
+      modules: path.resolve(import.meta.dirname, './src/modules'),
     },
   },
   test: {
