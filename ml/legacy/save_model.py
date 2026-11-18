@@ -4,10 +4,10 @@ Train the final RQI head on ALL usable data and save a deployable artifact.
 
 Uses the cached DINOv2 features. Fits StandardScaler + Ridge on every RQI 1-4
 image that passes the road filter, then saves scaler + model + metadata to
-ml/cache/rqi_model.joblib. CV numbers (from ml/train.py) are the honest quality
+ml/cache/rqi_model.joblib. CV numbers (from ml/legacy/train.py) are the honest quality
 estimate; this artifact is that same recipe trained on 100% of the data.
 
-Usage:  .venv/bin/python ml/save_model.py
+Usage:  .venv/bin/python ml/legacy/save_model.py
 """
 import os
 import json
@@ -19,7 +19,7 @@ from sklearn.linear_model import Ridge
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 CACHE = os.path.join(ROOT, "ml", "cache")
 
 DROP_RQI5 = True

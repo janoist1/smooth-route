@@ -38,7 +38,7 @@ bash ml/export_labels.sh          # -> ml/labels.csv
 python ml/audit_labels.py
 
 # 3) Tanítás – a Mac-eden (a scriptet Claude írja meg a 2) után, az adathoz szabva)
-#    pl.:  python ml/train.py --backbone dinov2_vits14
+#    -> a v2 pipeline, ld. lent („Pipeline")
 ```
 
 ## RQI skála (megerősítve a `backend/config/analysis_settings.json`-ból)
@@ -97,7 +97,7 @@ bash ml/export_labels.sh                       # -> ml/labels.csv (Docker kell)
 .venv/bin/python ml/evaluate_artifact.py       # ÉLESÍTÉSI KAPU: PASS kell a shiphez
 ```
 
-Régi (v1) szkriptek: `extract_features.py`, `train.py`, `save_model.py` —
+Régi (v1) szkriptek: `ml/legacy/` (`extract_features.py`, `train.py`, `save_model.py`) —
 referenciának maradnak, az éles artifact a v2 receptből jön.
 
 ## Élesítési kapu (KÖTELEZŐ, ne lépd át)
@@ -180,5 +180,5 @@ vezess be, hogy a validáció és a modellkártya konzisztens maradjon.
 .venv/bin/python ml/predict.py data/images/<valami>.jpg
 # -> RQI=1..4 (excellent/good/fair/poor) + score + P(road) figyelmeztetés
 ```
-A modell a teljes recepttel (`ml/save_model.py`) van betanítva 100% adaton;
+A modell a teljes recepttel (`ml/save_model_v2.py`) van betanítva 100% adaton;
 a minőség-becslés a fenti CV-szám, nem ezeken a képeken mérve.

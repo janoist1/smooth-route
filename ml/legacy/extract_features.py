@@ -9,7 +9,7 @@ Outputs (cached, so training can iterate without re-running this):
 
 Runs on the Mac (MPS). First run downloads DINOv2-small + CLIP-B/32 weights.
 
-Usage:  .venv/bin/python ml/extract_features.py
+Usage:  .venv/bin/python ml/legacy/extract_features.py
 """
 import os
 import sys
@@ -19,7 +19,7 @@ import pandas as pd
 import torch
 from PIL import Image
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 LABELS = os.path.join(ROOT, "ml", "labels.csv")
 IMAGES = os.path.join(ROOT, "data", "images")
 CACHE = os.path.join(ROOT, "ml", "cache")

@@ -51,16 +51,10 @@ download-models:
 clear-jobs:
 	@echo "🧹 Clearing background jobs..."
 	DATABASE_URL=postgresql://postgres:postgres@localhost:5433/smooth_route \
-	$(PYTHON) clear_jobs.py
+	$(PYTHON) scripts/clear_jobs.py
 
 list-jobs:
-	$(PYTHON) list_jobs.py
-
-analyze-calibration:
-	$(PYTHON) analyze_calibration.py
-
-verify-real:
-	$(PYTHON) verify_real_images.py
+	$(PYTHON) scripts/list_jobs.py
 
 clean-orphans:
 	@echo "🧹 Cleaning orphaned points..."
