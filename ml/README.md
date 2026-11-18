@@ -1,8 +1,9 @@
 # Kátyúőr – RQI modell (tiszta újrakezdés)
 
 Cél: egy Street View képről 1–5 skálán megbecsülni az út minőségét (RQI).
-Ez a `ml/` mappa a régi kísérletektől független, tiszta pipeline. A régi kód
-(`backend/.../dino_service.py`, `train_dino_head.py`) referenciának marad.
+Ez a `ml/` mappa a régi kísérletektől független, tiszta pipeline. Az itt
+tanított artifactot a backend `dino_service.py`-ja tölti be; a régi webes
+`train_dino_head.py` törölve, a v1 szkriptek az `ml/legacy/`-ban.
 
 ## A választott irány (és miért)
 

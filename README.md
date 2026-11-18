@@ -15,9 +15,10 @@ Start here depending on what you need:
   story in plain language: what was tried, what shipped, and why.
 - **[docs/IMPROVEMENT_PLAN.md](docs/IMPROVEMENT_PLAN.md)** — architecture audit and
   the phased refactor/improvement plan.
-- **[docs/PUBLISH_PLAN.md](docs/PUBLISH_PLAN.md)** — publishing plan: auth (Clerk),
-  persistent job queue, download quotas/dedup, and the Hetzner+Cloudflare deploy
-  target, phased F0–F6.
+- **[docs/PUBLISH_PLAN.md](docs/PUBLISH_PLAN.md)** — publishing plan in two rounds:
+  round 1 = read-only public site (Vercel + Neon, R1.1–R1.4); round 2 = user
+  submissions (Clerk auth, job queue, quotas; F0–F6).
+- **[docs/LAUNCH.md](docs/LAUNCH.md)** — launch kit: name, copy, launch checklist.
 - **[docs/SESSION_PROMPTS.md](docs/SESSION_PROMPTS.md)** — copy-paste prompts to
   start a fresh AI session per phase (router-based, low context).
 - **[ml/README.md](ml/README.md)** — the RQI model pipeline, its CV results, and the
@@ -28,6 +29,9 @@ Start here depending on what you need:
 - **[frontend/ARCHITECTURE.md](frontend/ARCHITECTURE.md)** — frontend module boundaries.
 - **[docs/TrainingGuide.md](docs/TrainingGuide.md)** — how to produce good manual
   labels (applies to the YOLO damage-annotation branch).
+- **[DEVELOPMENT.md](DEVELOPMENT.md)** — developer reference: architecture, config,
+  CLI, data layout, toolchain.
+- `docs/archive/` — superseded strategy notes from before the v2 model (history only).
 
 ## The road-quality AI (RQI)
 
@@ -39,22 +43,39 @@ on the detail card, not the RQI). See [docs/MODEL_EXPERIMENTS.md](docs/MODEL_EXP
 
 ## Project Structure
 - `backend/`: FastAPI + Strawberry GraphQL app (route/point collection, image
-  download, YOLO + DINO analysis).
-- `frontend/`: Vite/React map & training UI (talks to `/graphql`).
-- `ml/`: the RQI model pipeline (feature extraction, experiments, artifact + gate).
-- `docker-compose.yml`: Orchestrates the backend and PostGIS database.
+  download, DINO RQI + YOLO damage analysis, Clerk auth, Alembic migrations).
+  `backend/api/index.py` + `vercel.json` are the read-only Vercel entrypoint;
+  `backend/scripts/publish.py` pushes local results to the public read DB.
+- `frontend/`: React 19 + Vite 8 + Redux Toolkit/redux-saga map, review and admin
+  UI (talks to `/graphql`).
+- `ml/`: the RQI model pipeline (feature extraction, experiments, artifact + gate);
+  `ml/legacy/` keeps the superseded v1 scripts for reference.
+- `scripts/`: DB/data maintenance helpers (`make clear-jobs`, `make purge-data`, …);
+  `scripts/legacy/` holds unmaintained one-off diagnostics.
+- `docker-compose.yml`: PostGIS database (`db`, on :5433) and an optional backend
+  container.
+
+## Public site (round 1)
+
+The public site is **read-only**: analysis runs locally on request, results are
+published to a Neon Postgres with `backend/scripts/publish.py`, and two Vercel
+projects serve the frontend and the API (`PUBLIC_READ_ONLY=1`, torch-free install
+from `backend/requirements.txt`). Point details link to Google Street View instead
+of hosting images. Details and the remaining DNS step: [docs/PUBLISH_PLAN.md](docs/PUBLISH_PLAN.md).
 
 ## Setup
 
 1.  **Prerequisites**:
-    - Docker & Docker Compose
+    - Docker & Docker Compose (PostGIS)
+    - Python 3.11+ (local backend; torch/MPS for the RQI model)
+    - Node.js 22+ (frontend; CI runs Node 22)
     - Google Maps API Key (Directions API & Street View Static API enabled)
 
 2.  **Environment Variables**:
-    Create a `.env` file in the root directory:
-    ```bash
-    GOOGLE_MAPS_API_KEY=your_api_key_here
-    ```
+    Copy `.env.example` to `.env` in the root directory and fill in at least
+    `GOOGLE_MAPS_API_KEY`. For local single-user development without a Clerk
+    instance set `AUTH_MODE=disabled` (every request acts as admin — never in
+    production).
 
 3.  **Run the application**:
 
@@ -80,41 +101,26 @@ on the detail card, not the RQI). See [docs/MODEL_EXPERIMENTS.md](docs/MODEL_EXP
     docker compose up --build
     ```
 
-    **Tests / gates** (see AGENTS.md):
+    **Tests / gates** (see AGENTS.md; CI runs pytest + typecheck/lint/test):
     ```bash
     cd backend && ../.venv/bin/python -m pytest -q
-    cd frontend && npm run typecheck && npm run lint && npm test
+    cd frontend && npm ci && npm run typecheck && npm run lint && npm test && npm run build
     ```
 
-4.  **CLI Usage** (Point-Based):
+4.  **CLI Usage**:
     ```bash
-    # Collect points along a route (route is only a tool!)
-    ./cli.sh collect-points "47.514700,19.040230" "47.513513,19.047038"
-    
-    # List all collected points
-    ./cli.sh list-points
-    
-    # Download images for all points that have URLs but no local files yet
-    ./cli.sh download-images
-    
-    # Limit number of downloads
-    ./cli.sh download-images --limit 100
-    
-    # Analyze points
-    ./cli.sh analyze-points --simple --save
-    
-    # Or using Docker
-    ./cli.sh docker collect-points "Start" "End"
-    ./cli.sh docker list-points
-    ./cli.sh docker download-images
-    
-    # After installing: smooth-route command is available
-    smooth-route --help
+    ./cli.sh list-points                                  # list collected points
+    ./cli.sh analyze-image data/images/<file>.jpg         # RQI + metadata for one image
+    ./cli.sh init-db                                      # create tables (tests/dev only; prod uses Alembic)
+    ./cli.sh docker list-points                           # same, inside the backend container
     ```
-    
-    **Note**: 
-    - The CLI is available as `smooth-route` command after installation, or via `./cli.sh` wrapper script.
-    - **Point-based architecture**: Routes are only tools to collect points. No routes are stored!
+
+    **Note**:
+    - Available as `smooth-route` after `pip install -e backend/`, or via `./cli.sh`.
+    - Route collection, image download and bulk analysis run from the **web UI**
+      (job queue + live progress). The CLI commands `collect-points`,
+      `download-images`, `fetch-missing-images` and `analyze-points` are currently
+      **broken**: they import a removed `processing_service` module.
 
 5.  **Data Storage** (Point-Based):
     - Images are stored **point-based**, NOT route-based
@@ -127,11 +133,8 @@ on the detail card, not the RQI). See [docs/MODEL_EXPERIMENTS.md](docs/MODEL_EXP
 6.  **Access**:
     - **CLI**: `smooth-route --help` or `./cli.sh --help`
     - **Web Interface**: the React app — `cd frontend && npm run dev` → `http://localhost:5173`
-      (map with RQI-coloured road quality, route collection, training/admin surfaces)
-    - **API**:
-      - API Docs: `http://localhost:8000/docs` (Swagger UI)
-      - Points API: `http://localhost:8000/api/v1/points`
-      - Process Route: `POST /api/v1/process-route`
-      - Job Status: `GET /api/v1/job/{job_id}`
-      - Config API: `http://localhost:8000/api/v1/config`
+      (map with RQI-coloured road quality, route collection, review/admin surfaces)
+    - **API**: GraphQL at `http://localhost:8000/graphql` is the product API; the
+      remaining REST endpoints (points, health, …) are listed in
+      [docs/API_SURFACE.md](docs/API_SURFACE.md). Swagger UI: `http://localhost:8000/docs`.
     - **Health check**: `http://localhost:8000/health`
