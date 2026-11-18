@@ -1,515 +1,190 @@
 /* eslint-disable */
-import type { TypedDocumentNode as DocumentNode } from '@graphql-typed-document-node/core';
-export type Maybe<T> = T | null;
-export type InputMaybe<T> = T | null | undefined;
-export type Exact<T extends { [key: string]: unknown }> = { [K in keyof T]: T[K] };
-export type MakeOptional<T, K extends keyof T> = Omit<T, K> & { [SubKey in K]?: Maybe<T[SubKey]> };
-export type MakeMaybe<T, K extends keyof T> = Omit<T, K> & { [SubKey in K]: Maybe<T[SubKey]> };
-export type MakeEmpty<T extends { [key: string]: unknown }, K extends keyof T> = { [_ in K]?: never };
+/** Internal type. DO NOT USE DIRECTLY. */
+type Exact<T extends { [key: string]: unknown }> = { [K in keyof T]: T[K] };
+/** Internal type. DO NOT USE DIRECTLY. */
 export type Incremental<T> = T | { [P in keyof T]?: P extends ' $fragmentName' | '__typename' ? T[P] : never };
-/** All built-in and custom scalars, mapped to their actual values */
-export type Scalars = {
-  ID: { input: string; output: string; }
-  String: { input: string; output: string; }
-  Boolean: { input: boolean; output: boolean; }
-  Int: { input: number; output: number; }
-  Float: { input: number; output: number; }
-  /** Date with time (isoformat) */
-  DateTime: { input: any; output: any; }
-  /** The `JSON` scalar type represents JSON values as specified by [ECMA-404](https://ecma-international.org/wp-content/uploads/ECMA-404_2nd_edition_december_2017.pdf). */
-  JSON: { input: any; output: any; }
-};
-
-export type AdminStats = {
-  __typename?: 'AdminStats';
-  adminUsers: Scalars['Int']['output'];
-  analyzedPoints: Scalars['Int']['output'];
-  billableThisMonth: Scalars['Int']['output'];
-  freeTierLimit: Scalars['Int']['output'];
-  imagesPerDay: Array<DailyCount>;
-  imagesThisMonth: Scalars['Int']['output'];
-  pendingAnalysis: Scalars['Int']['output'];
-  recentJobs: Array<JobSummary>;
-  rqiFair: Scalars['Int']['output'];
-  rqiGood: Scalars['Int']['output'];
-  rqiPoor: Scalars['Int']['output'];
-  totalImages: Scalars['Int']['output'];
-  totalPoints: Scalars['Int']['output'];
-  totalUsers: Scalars['Int']['output'];
-};
-
-export type Annotation = {
-  __typename?: 'Annotation';
-  id: Scalars['String']['output'];
-  label: Scalars['String']['output'];
-  points: Scalars['JSON']['output'];
-  score: Scalars['Float']['output'];
-  type: Scalars['String']['output'];
-};
-
-export type DailyCount = {
-  __typename?: 'DailyCount';
-  count: Scalars['Int']['output'];
-  day: Scalars['String']['output'];
-};
-
-export type DetectInput = {
-  classes?: InputMaybe<Array<Scalars['String']['input']>>;
-  confThreshold?: InputMaybe<Scalars['Float']['input']>;
-  filename: Scalars['String']['input'];
-};
-
-export type DetectPrediction = {
-  __typename?: 'DetectPrediction';
-  confidence: Scalars['Float']['output'];
-  label: Scalars['String']['output'];
-  points: Scalars['JSON']['output'];
-};
-
+import type { TypedDocumentNode as DocumentNode } from '@graphql-typed-document-node/core';
 export type FilterMode =
   | 'ALL'
   | 'PENDING'
   | 'REVIEWED';
 
-export type Job = {
-  __typename?: 'Job';
-  completedAt?: Maybe<Scalars['DateTime']['output']>;
-  createdAt: Scalars['DateTime']['output'];
-  currentStep?: Maybe<Scalars['String']['output']>;
-  details?: Maybe<Scalars['JSON']['output']>;
-  error?: Maybe<Scalars['String']['output']>;
-  id: Scalars['String']['output'];
-  message: Scalars['String']['output'];
-  progress: Scalars['Int']['output'];
-  result?: Maybe<Scalars['JSON']['output']>;
-  status: Scalars['String']['output'];
-  total: Scalars['Int']['output'];
-  type: Scalars['String']['output'];
-};
-
-export type JobSummary = {
-  __typename?: 'JobSummary';
-  completedAt?: Maybe<Scalars['DateTime']['output']>;
-  createdAt?: Maybe<Scalars['DateTime']['output']>;
-  id: Scalars['String']['output'];
-  message?: Maybe<Scalars['String']['output']>;
-  progress: Scalars['Int']['output'];
-  status: Scalars['String']['output'];
-  total: Scalars['Int']['output'];
-};
-
-export type Mutation = {
-  __typename?: 'Mutation';
-  applyPreset: Array<Setting>;
-  deleteTrainingData: Scalars['Boolean']['output'];
-  detectObjects: Array<DetectPrediction>;
-  performReviewAction: ReviewActionResult;
-  predictDinoRqi?: Maybe<Scalars['Int']['output']>;
-  processRoute: Job;
-  runAnalysis: Job;
-  saveTrainingData: Scalars['String']['output'];
-  startModelTraining: Job;
-  stopJob: Scalars['Boolean']['output'];
-  updateSetting: Setting;
-};
-
-
-export type MutationApplyPresetArgs = {
-  values: Scalars['JSON']['input'];
-};
-
-
-export type MutationDeleteTrainingDataArgs = {
-  imageFilename: Scalars['String']['input'];
-};
-
-
-export type MutationDetectObjectsArgs = {
-  input: DetectInput;
-};
-
-
-export type MutationPerformReviewActionArgs = {
-  input: ReviewActionInput;
-};
-
-
-export type MutationPredictDinoRqiArgs = {
-  imageFilename: Scalars['String']['input'];
-};
-
-
-export type MutationProcessRouteArgs = {
-  input: ProcessRouteInput;
-};
-
-
-export type MutationRunAnalysisArgs = {
-  input: RunAnalysisInput;
-};
-
-
-export type MutationSaveTrainingDataArgs = {
-  input: TrainingDataInput;
-};
-
-
-export type MutationStopJobArgs = {
-  jobId: Scalars['String']['input'];
-};
-
-
-export type MutationUpdateSettingArgs = {
-  input: UpdateSettingInput;
-};
-
-export type Point = {
-  __typename?: 'Point';
-  analysisMetadata?: Maybe<Scalars['JSON']['output']>;
-  createdAt: Scalars['DateTime']['output'];
-  damageCount: Scalars['Int']['output'];
-  damageTypes?: Maybe<Scalars['JSON']['output']>;
-  dinoPBad?: Maybe<Scalars['Float']['output']>;
-  dinoRqiScore?: Maybe<Scalars['Float']['output']>;
-  dinoScore?: Maybe<Scalars['Float']['output']>;
-  heading: Scalars['Float']['output'];
-  id: Scalars['Int']['output'];
-  imageUrl?: Maybe<Scalars['String']['output']>;
-  latitude: Scalars['Float']['output'];
-  localImagePath?: Maybe<Scalars['String']['output']>;
-  longitude: Scalars['Float']['output'];
-  manualAnnotations?: Maybe<Scalars['JSON']['output']>;
-  manualComment?: Maybe<Scalars['String']['output']>;
-  manualRqi?: Maybe<Scalars['Float']['output']>;
-  manualTags?: Maybe<Array<Scalars['String']['output']>>;
-  panoId?: Maybe<Scalars['String']['output']>;
-  pitch?: Maybe<Scalars['Float']['output']>;
-  rqiScore?: Maybe<Scalars['Float']['output']>;
-  rqiSource: Scalars['String']['output'];
-  streetViewUrl: Scalars['String']['output'];
-};
-
 export type ProcessRouteInput = {
-  destination: Scalars['String']['input'];
-  origin: Scalars['String']['input'];
-};
-
-export type Query = {
-  __typename?: 'Query';
-  activeJob?: Maybe<Job>;
-  adminStats: AdminStats;
-  availableModels: Array<Scalars['String']['output']>;
-  config: Scalars['String']['output'];
-  getRoute?: Maybe<RouteData>;
-  job?: Maybe<Job>;
-  me?: Maybe<Viewer>;
-  nextTrainingPoint?: Maybe<Scalars['Int']['output']>;
-  point?: Maybe<Point>;
-  points: Array<Point>;
-  roadQualityGrid: Scalars['JSON']['output'];
-  rqiModelInfo: RqiModelInfo;
-  settings: Array<Setting>;
-  trainingPoints: TrainingPointsResponse;
-  trainingStats: TrainingStats;
-};
-
-
-export type QueryGetRouteArgs = {
-  destination: Scalars['String']['input'];
-  origin: Scalars['String']['input'];
-};
-
-
-export type QueryJobArgs = {
-  id: Scalars['String']['input'];
-};
-
-
-export type QueryNextTrainingPointArgs = {
-  currentId: Scalars['Int']['input'];
-  mode?: FilterMode;
-  model?: Scalars['String']['input'];
-};
-
-
-export type QueryPointArgs = {
-  id: Scalars['Int']['input'];
-};
-
-
-export type QueryPointsArgs = {
-  bbox?: InputMaybe<Array<Scalars['Float']['input']>>;
-  limit?: Scalars['Int']['input'];
-  offset?: Scalars['Int']['input'];
-};
-
-
-export type QueryRoadQualityGridArgs = {
-  bbox?: InputMaybe<Array<Scalars['Float']['input']>>;
-  zoom: Scalars['Int']['input'];
-};
-
-
-export type QueryTrainingPointsArgs = {
-  limit?: Scalars['Int']['input'];
-  mode?: FilterMode;
-  model?: Scalars['String']['input'];
-  offset?: Scalars['Int']['input'];
-};
-
-
-export type QueryTrainingStatsArgs = {
-  isDino?: Scalars['Boolean']['input'];
-  mode?: FilterMode;
+  destination: string;
+  origin: string;
 };
 
 export type ReviewActionInput = {
-  actionType: Scalars['String']['input'];
-  parameters: Scalars['JSON']['input'];
-};
-
-export type ReviewActionResult = {
-  __typename?: 'ReviewActionResult';
-  annotations?: Maybe<Array<Annotation>>;
-  message?: Maybe<Scalars['String']['output']>;
-  processedImageUrl?: Maybe<Scalars['String']['output']>;
-  success: Scalars['Boolean']['output'];
-};
-
-export type RouteData = {
-  __typename?: 'RouteData';
-  points: Array<RouteStep>;
-};
-
-export type RouteStep = {
-  __typename?: 'RouteStep';
-  lat: Scalars['Float']['output'];
-  lng: Scalars['Float']['output'];
-};
-
-export type RqiModelInfo = {
-  __typename?: 'RqiModelInfo';
-  available: Scalars['Boolean']['output'];
-  backbone?: Maybe<Scalars['String']['output']>;
-  badRoadAcc?: Maybe<Scalars['Float']['output']>;
-  badRoadAuc?: Maybe<Scalars['Float']['output']>;
-  exactAcc?: Maybe<Scalars['Float']['output']>;
-  head?: Maybe<Scalars['String']['output']>;
-  mae?: Maybe<Scalars['Float']['output']>;
-  nTrain?: Maybe<Scalars['Int']['output']>;
-  qwk?: Maybe<Scalars['Float']['output']>;
-  recipe?: Maybe<Scalars['String']['output']>;
-  scaleMeaning?: Maybe<Scalars['String']['output']>;
-  version?: Maybe<Scalars['Int']['output']>;
+  actionType: string;
+  parameters: unknown;
 };
 
 export type RunAnalysisInput = {
-  limit?: Scalars['Int']['input'];
-  reanalyze?: Scalars['Boolean']['input'];
-  strategy: Scalars['String']['input'];
-};
-
-export type Setting = {
-  __typename?: 'Setting';
-  category?: Maybe<Scalars['String']['output']>;
-  description?: Maybe<Scalars['String']['output']>;
-  example?: Maybe<Scalars['String']['output']>;
-  explanation?: Maybe<Scalars['String']['output']>;
-  key: Scalars['String']['output'];
-  value: Scalars['JSON']['output'];
+  limit?: number;
+  reanalyze?: boolean;
+  strategy: string;
 };
 
 export type TrainingDataInput = {
-  annotations?: InputMaybe<Scalars['JSON']['input']>;
-  imageFilename: Scalars['String']['input'];
-  manualComment?: InputMaybe<Scalars['String']['input']>;
-  manualRqi?: InputMaybe<Scalars['Float']['input']>;
-  metaData?: InputMaybe<Scalars['JSON']['input']>;
-  tags?: InputMaybe<Array<Scalars['String']['input']>>;
-};
-
-export type TrainingPointsResponse = {
-  __typename?: 'TrainingPointsResponse';
-  hasMore: Scalars['Boolean']['output'];
-  items: Array<Point>;
-  totalCount: Scalars['Int']['output'];
-};
-
-export type TrainingStats = {
-  __typename?: 'TrainingStats';
-  annotated: Scalars['Int']['output'];
-  avgRqi: Scalars['Float']['output'];
-  fairCount: Scalars['Int']['output'];
-  goodCount: Scalars['Int']['output'];
-  pending: Scalars['Int']['output'];
-  pendingAnalysis: Scalars['Int']['output'];
-  poorCount: Scalars['Int']['output'];
-  rqi1Count: Scalars['Int']['output'];
-  rqi2Count: Scalars['Int']['output'];
-  rqi3Count: Scalars['Int']['output'];
-  rqi4Count: Scalars['Int']['output'];
-  rqi5Count: Scalars['Int']['output'];
-  total: Scalars['Int']['output'];
+  annotations?: unknown;
+  imageFilename: string;
+  manualComment?: string | null | undefined;
+  manualRqi?: number | null | undefined;
+  metaData?: unknown;
+  tags?: Array<string> | null | undefined;
 };
 
 export type UpdateSettingInput = {
-  key: Scalars['String']['input'];
-  value: Scalars['JSON']['input'];
-};
-
-export type Viewer = {
-  __typename?: 'Viewer';
-  clerkId: Scalars['String']['output'];
-  email?: Maybe<Scalars['String']['output']>;
-  role: Scalars['String']['output'];
+  key: string;
+  value: unknown;
 };
 
 export type AdminStatsQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type AdminStatsQuery = { __typename?: 'Query', adminStats: { __typename?: 'AdminStats', totalImages: number, imagesThisMonth: number, freeTierLimit: number, billableThisMonth: number, totalPoints: number, analyzedPoints: number, pendingAnalysis: number, rqiGood: number, rqiFair: number, rqiPoor: number, totalUsers: number, adminUsers: number, imagesPerDay: Array<{ __typename?: 'DailyCount', day: string, count: number }>, recentJobs: Array<{ __typename?: 'JobSummary', id: string, status: string, message?: string | null, progress: number, total: number }> } };
+export type AdminStatsQuery = { adminStats: { totalImages: number, imagesThisMonth: number, freeTierLimit: number, billableThisMonth: number, totalPoints: number, analyzedPoints: number, pendingAnalysis: number, rqiGood: number, rqiFair: number, rqiPoor: number, totalUsers: number, adminUsers: number, imagesPerDay: Array<{ day: string, count: number }>, recentJobs: Array<{ id: string, status: string, message: string | null, progress: number, total: number }> } };
 
 export type GetJobQueryVariables = Exact<{
-  id: Scalars['String']['input'];
+  id: string;
 }>;
 
 
-export type GetJobQuery = { __typename?: 'Query', job?: { __typename?: 'Job', id: string, status: string, progress: number, total: number, message: string, result?: any | null, error?: string | null, createdAt: any, completedAt?: any | null } | null };
+export type GetJobQuery = { job: { id: string, status: string, progress: number, total: number, message: string, result: unknown, error: string | null, createdAt: unknown, completedAt: unknown } | null };
 
 export type ViewerQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type ViewerQuery = { __typename?: 'Query', me?: { __typename?: 'Viewer', clerkId: string, email?: string | null, role: string } | null };
+export type ViewerQuery = { me: { clerkId: string, email: string | null, role: string } | null };
 
 export type GetPointsQueryVariables = Exact<{
-  limit?: InputMaybe<Scalars['Int']['input']>;
-  bbox?: InputMaybe<Array<Scalars['Float']['input']> | Scalars['Float']['input']>;
+  limit?: number | null | undefined;
+  bbox?: Array<number> | number | null | undefined;
 }>;
 
 
-export type GetPointsQuery = { __typename?: 'Query', points: Array<{ __typename?: 'Point', id: number, latitude: number, longitude: number, rqiScore?: number | null, dinoRqiScore?: number | null, rqiSource: string, heading: number }> };
+export type GetPointsQuery = { points: Array<{ id: number, latitude: number, longitude: number, rqiScore: number | null, dinoRqiScore: number | null, rqiSource: string, heading: number }> };
 
 export type GetRoadQualityGridQueryVariables = Exact<{
-  zoom: Scalars['Int']['input'];
-  bbox?: InputMaybe<Array<Scalars['Float']['input']> | Scalars['Float']['input']>;
+  zoom: number;
+  bbox?: Array<number> | number | null | undefined;
 }>;
 
 
-export type GetRoadQualityGridQuery = { __typename?: 'Query', roadQualityGrid: any };
+export type GetRoadQualityGridQuery = { roadQualityGrid: unknown };
 
 export type GetPointDetailQueryVariables = Exact<{
-  id: Scalars['Int']['input'];
+  id: number;
 }>;
 
 
-export type GetPointDetailQuery = { __typename?: 'Query', point?: { __typename?: 'Point', id: number, latitude: number, longitude: number, rqiScore?: number | null, dinoRqiScore?: number | null, dinoScore?: number | null, dinoPBad?: number | null, rqiSource: string, heading: number, pitch?: number | null, imageUrl?: string | null, streetViewUrl: string, manualRqi?: number | null, manualTags?: Array<string> | null, manualAnnotations?: any | null, damageCount: number, damageTypes?: any | null, analysisMetadata?: any | null, createdAt: any } | null };
+export type GetPointDetailQuery = { point: { id: number, latitude: number, longitude: number, rqiScore: number | null, dinoRqiScore: number | null, dinoScore: number | null, dinoPBad: number | null, rqiSource: string, heading: number, pitch: number | null, imageUrl: string | null, streetViewUrl: string, manualRqi: number | null, manualTags: Array<string> | null, manualAnnotations: unknown, damageCount: number, damageTypes: unknown, analysisMetadata: unknown, createdAt: unknown } | null };
 
 export type GetRouteQueryVariables = Exact<{
-  origin: Scalars['String']['input'];
-  destination: Scalars['String']['input'];
+  origin: string;
+  destination: string;
 }>;
 
 
-export type GetRouteQuery = { __typename?: 'Query', getRoute?: { __typename?: 'RouteData', points: Array<{ __typename?: 'RouteStep', lat: number, lng: number }> } | null };
+export type GetRouteQuery = { getRoute: { points: Array<{ lat: number, lng: number }> } | null };
 
 export type ProcessRouteMutationVariables = Exact<{
   input: ProcessRouteInput;
 }>;
 
 
-export type ProcessRouteMutation = { __typename?: 'Mutation', processRoute: { __typename?: 'Job', id: string, status: string, message: string } };
+export type ProcessRouteMutation = { processRoute: { id: string, status: string, message: string } };
 
 export type GetActiveJobQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type GetActiveJobQuery = { __typename?: 'Query', activeJob?: { __typename?: 'Job', id: string, type: string, status: string, progress: number, total: number, details?: any | null, result?: any | null } | null };
+export type GetActiveJobQuery = { activeJob: { id: string, type: string, status: string, progress: number, total: number, details: unknown, result: unknown } | null };
 
 export type GetAvailableModelsQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type GetAvailableModelsQuery = { __typename?: 'Query', availableModels: Array<string> };
+export type GetAvailableModelsQuery = { availableModels: Array<string> };
 
 export type GetSettingsQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type GetSettingsQuery = { __typename?: 'Query', settings: Array<{ __typename?: 'Setting', key: string, value: any, description?: string | null, example?: string | null, category?: string | null, explanation?: string | null }> };
+export type GetSettingsQuery = { settings: Array<{ key: string, value: unknown, description: string | null, example: string | null, category: string | null, explanation: string | null }> };
 
 export type UpdateSettingMutationVariables = Exact<{
   input: UpdateSettingInput;
 }>;
 
 
-export type UpdateSettingMutation = { __typename?: 'Mutation', updateSetting: { __typename?: 'Setting', key: string, value: any, description?: string | null, example?: string | null, category?: string | null, explanation?: string | null } };
+export type UpdateSettingMutation = { updateSetting: { key: string, value: unknown, description: string | null, example: string | null, category: string | null, explanation: string | null } };
 
 export type GetRqiModelInfoQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type GetRqiModelInfoQuery = { __typename?: 'Query', rqiModelInfo: { __typename?: 'RqiModelInfo', available: boolean, version?: number | null, backbone?: string | null, recipe?: string | null, head?: string | null, nTrain?: number | null, qwk?: number | null, mae?: number | null, exactAcc?: number | null, badRoadAcc?: number | null, badRoadAuc?: number | null, scaleMeaning?: string | null } };
+export type GetRqiModelInfoQuery = { rqiModelInfo: { available: boolean, version: number | null, backbone: string | null, recipe: string | null, head: string | null, nTrain: number | null, qwk: number | null, mae: number | null, exactAcc: number | null, badRoadAcc: number | null, badRoadAuc: number | null, scaleMeaning: string | null } };
 
 export type GetTrainingDataQueryVariables = Exact<{
-  id: Scalars['Int']['input'];
+  id: number;
 }>;
 
 
-export type GetTrainingDataQuery = { __typename?: 'Query', point?: { __typename?: 'Point', imageUrl?: string | null, manualRqi?: number | null, manualTags?: Array<string> | null, manualAnnotations?: any | null, manualComment?: string | null } | null };
+export type GetTrainingDataQuery = { point: { imageUrl: string | null, manualRqi: number | null, manualTags: Array<string> | null, manualAnnotations: unknown, manualComment: string | null } | null };
 
 export type SaveTrainingDataMutationVariables = Exact<{
   input: TrainingDataInput;
 }>;
 
 
-export type SaveTrainingDataMutation = { __typename?: 'Mutation', saveTrainingData: string };
+export type SaveTrainingDataMutation = { saveTrainingData: string };
 
 export type DeleteTrainingDataMutationVariables = Exact<{
-  imageFilename: Scalars['String']['input'];
+  imageFilename: string;
 }>;
 
 
-export type DeleteTrainingDataMutation = { __typename?: 'Mutation', deleteTrainingData: boolean };
+export type DeleteTrainingDataMutation = { deleteTrainingData: boolean };
 
 export type GetTrainingPointsQueryVariables = Exact<{
-  mode?: InputMaybe<FilterMode>;
-  limit?: InputMaybe<Scalars['Int']['input']>;
-  offset?: InputMaybe<Scalars['Int']['input']>;
-  model?: InputMaybe<Scalars['String']['input']>;
+  mode?: FilterMode | null | undefined;
+  limit?: number | null | undefined;
+  offset?: number | null | undefined;
+  model?: string | null | undefined;
 }>;
 
 
-export type GetTrainingPointsQuery = { __typename?: 'Query', trainingPoints: { __typename?: 'TrainingPointsResponse', totalCount: number, hasMore: boolean, items: Array<{ __typename?: 'Point', id: number, latitude: number, longitude: number, imageUrl?: string | null, rqiScore?: number | null, dinoRqiScore?: number | null, manualRqi?: number | null }> } };
+export type GetTrainingPointsQuery = { trainingPoints: { totalCount: number, hasMore: boolean, items: Array<{ id: number, latitude: number, longitude: number, imageUrl: string | null, rqiScore: number | null, dinoRqiScore: number | null, manualRqi: number | null }> } };
 
 export type GetTrainingStatsQueryVariables = Exact<{
-  mode?: InputMaybe<FilterMode>;
-  isDino?: InputMaybe<Scalars['Boolean']['input']>;
+  mode?: FilterMode | null | undefined;
+  isDino?: boolean | null | undefined;
 }>;
 
 
-export type GetTrainingStatsQuery = { __typename?: 'Query', trainingStats: { __typename?: 'TrainingStats', total: number, pending: number, annotated: number, avgRqi: number, goodCount: number, fairCount: number, poorCount: number, pendingAnalysis: number, rqi1Count: number, rqi2Count: number, rqi3Count: number, rqi4Count: number, rqi5Count: number } };
+export type GetTrainingStatsQuery = { trainingStats: { total: number, pending: number, annotated: number, avgRqi: number, goodCount: number, fairCount: number, poorCount: number, pendingAnalysis: number, rqi1Count: number, rqi2Count: number, rqi3Count: number, rqi4Count: number, rqi5Count: number } };
 
 export type RunAnalysisMutationVariables = Exact<{
   input: RunAnalysisInput;
 }>;
 
 
-export type RunAnalysisMutation = { __typename?: 'Mutation', runAnalysis: { __typename?: 'Job', id: string } };
+export type RunAnalysisMutation = { runAnalysis: { id: string } };
 
 export type StartModelTrainingMutationVariables = Exact<{ [key: string]: never; }>;
 
 
-export type StartModelTrainingMutation = { __typename?: 'Mutation', startModelTraining: { __typename?: 'Job', id: string } };
+export type StartModelTrainingMutation = { startModelTraining: { id: string } };
 
 export type StopJobMutationVariables = Exact<{
-  jobId: Scalars['String']['input'];
+  jobId: string;
 }>;
 
 
-export type StopJobMutation = { __typename?: 'Mutation', stopJob: boolean };
+export type StopJobMutation = { stopJob: boolean };
 
 export type PerformReviewActionMutationVariables = Exact<{
   input: ReviewActionInput;
 }>;
 
 
-export type PerformReviewActionMutation = { __typename?: 'Mutation', performReviewAction: { __typename?: 'ReviewActionResult', success: boolean, message?: string | null, processedImageUrl?: string | null, annotations?: Array<{ __typename?: 'Annotation', id: string, label: string, score: number, type: string, points: any }> | null } };
+export type PerformReviewActionMutation = { performReviewAction: { success: boolean, message: string | null, processedImageUrl: string | null, annotations: Array<{ id: string, label: string, score: number, type: string, points: unknown }> | null } };
 
 
 export const AdminStatsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"AdminStats"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"adminStats"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"totalImages"}},{"kind":"Field","name":{"kind":"Name","value":"imagesThisMonth"}},{"kind":"Field","name":{"kind":"Name","value":"freeTierLimit"}},{"kind":"Field","name":{"kind":"Name","value":"billableThisMonth"}},{"kind":"Field","name":{"kind":"Name","value":"totalPoints"}},{"kind":"Field","name":{"kind":"Name","value":"analyzedPoints"}},{"kind":"Field","name":{"kind":"Name","value":"pendingAnalysis"}},{"kind":"Field","name":{"kind":"Name","value":"rqiGood"}},{"kind":"Field","name":{"kind":"Name","value":"rqiFair"}},{"kind":"Field","name":{"kind":"Name","value":"rqiPoor"}},{"kind":"Field","name":{"kind":"Name","value":"totalUsers"}},{"kind":"Field","name":{"kind":"Name","value":"adminUsers"}},{"kind":"Field","name":{"kind":"Name","value":"imagesPerDay"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"day"}},{"kind":"Field","name":{"kind":"Name","value":"count"}}]}},{"kind":"Field","name":{"kind":"Name","value":"recentJobs"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"message"}},{"kind":"Field","name":{"kind":"Name","value":"progress"}},{"kind":"Field","name":{"kind":"Name","value":"total"}}]}}]}}]}}]} as unknown as DocumentNode<AdminStatsQuery, AdminStatsQueryVariables>;
