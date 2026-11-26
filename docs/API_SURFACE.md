@@ -53,9 +53,9 @@ Violations are `BAD_USER_INPUT` errors raised before any resolver runs.
 | `settings` | admin | no | all settings rows |
 | `availableModels` | admin | no | YOLO weight files in `data/models` |
 | `rqiModelInfo` | admin | no | model card of the live RQI artifact ([model](#rqi-model-admin)) |
-| `adminStats` | admin | no | usage / coverage / job stats for the admin page |
+| `adminStats` | admin | no | usage / coverage / job stats; DINO-only RQI, separate unknown / unusable counts ([statistics](#admin-statistics)) |
 | `trainingPoints` | admin | no | paged frames for the review screen, by `FilterMode` |
-| `trainingStats` | admin | no | label counts for the review screen |
+| `trainingStats` | admin | no | label counts and RQI distribution: manual labels first, then usable DINO; `isDino` only selects the pending analysis engine |
 | `nextTrainingPoint` | admin | no | id of the next frame in review order |
 | `labelQueue` | admin | no | next frames to label, by strategy ([labelling](#labelling-admin)) |
 | `labelExamples` | admin | no | rubric thumbnails per scale level |
@@ -109,6 +109,20 @@ and for older rows by `backend/scripts/backfill_capture_date.py`
 (rate-limited, re-runnable, only `NULL`s; without a `pano_id` it writes a date
 only when the panorama live today predates our download month). `publish.py`
 carries it to Neon. The frontend warns for images older than 4 years.
+
+<a id="admin-statistics"></a>
+## Admin statistics (`adminStats`)
+
+`analyzedPoints` and the existing `rqiGood` / `rqiFair` / `rqiPoor` buckets count
+only frames with a `dinoRqiScore` that pass the same `frame_usable()` check as
+`Point`. Buckets use the canonical scale helpers: Jó or better, Közepes, and
+worse than Közepes. YOLO's legacy `rqi_score` never contributes to RQI counts.
+
+`rqiUnknown` counts usable frames without a DINO class (also `pendingAnalysis`).
+`rqiUnusable` counts rejected frames, whether scored or not; these are excluded
+from both the distribution and pending analysis. The groups are disjoint:
+`totalPoints = analyzedPoints + rqiUnknown + rqiUnusable`, and `analyzedPoints`
+is the sum of the three RQI buckets. Usage, user and job statistics are unchanged.
 
 <a id="road-segment-layer"></a>
 ## Road-segment layer (`roadSegments`, `routeQuality`, `segmentFrames`)

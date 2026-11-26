@@ -43,6 +43,8 @@ const ADMIN_STATS_QUERY = gql(`
       rqiGood
       rqiFair
       rqiPoor
+      rqiUnknown
+      rqiUnusable
       totalUsers
       adminUsers
       imagesPerDay {
@@ -147,7 +149,7 @@ const AdminStatsPage: React.FC = () => {
               value={s.totalImages.toLocaleString()}
               theme="blue"
               icon={<MapPin size={16} />}
-              subtext={`${s.pendingAnalysis} elemzésre vár`}
+              subtext={`${s.pendingAnalysis} DINO-elemzésre vár`}
             />
             <StatCard
               label="Felhasználók"
@@ -202,6 +204,9 @@ const AdminStatsPage: React.FC = () => {
                   </div>
                 </div>
               ))}
+              <p style={{ color: '#9ca3af', fontSize: '0.8rem' }}>
+                Nincs DINO RQI: {s.rqiUnknown.toLocaleString()} · Nem használható kép: {s.rqiUnusable.toLocaleString()}
+              </p>
             </div>
           </div>
 

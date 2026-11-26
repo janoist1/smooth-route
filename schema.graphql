@@ -12,6 +12,8 @@ type AdminStats {
   rqiGood: Int!
   rqiFair: Int!
   rqiPoor: Int!
+  rqiUnknown: Int!
+  rqiUnusable: Int!
   totalUsers: Int!
   adminUsers: Int!
   recentJobs: [JobSummary!]!

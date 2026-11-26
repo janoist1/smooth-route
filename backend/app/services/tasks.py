@@ -83,7 +83,7 @@ def run_route_processing(job_id: str, origin: str, destination: str,
         # Step 3: Analyze points.
         # YOLO gives damage polygons/types for the detail card; CLASSIFICATION
         # (frozen DINOv2 + trained ordinal head, see ml/) produces the RQI shown
-        # on the map (rqi_display_source defaults to "dino").
+        # on the map, regardless of the legacy rqi_display_source setting.
         print(f"DEBUG: Calling analyze_points (YOLO) for job {job_id}")
         road_quality_service.analyze_points(job_id=job_id, strategy="YOLO")
         print(f"DEBUG: Calling analyze_points (DINO CLASSIFICATION) for job {job_id}")
