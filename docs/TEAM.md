@@ -25,6 +25,8 @@ address of their own: reach them only through the lead.
 | Labelling queue | session `local_a23ad50a-216c-412f-a858-146cfad23089` (`label-queue`) "Labelling: active-learning queue + mobile quick-rate" | smart unlabelled-frame queue + mobile quick-rate page for the owner | active | `SendMessage` |
 | Frame quality | session `local_03836c8c-9acc-4c99-aacf-13f6d4bfce53` (`frame-quality`) "Data: frame quality audit" | flags unusable frames (non-road, dark, blurred, duplicates) in `analysis_metadata.frame_quality` so segments skip them | active | `SendMessage` |
 | VLM attributes | session `local_cceb44fa-3d54-4217-86df-83d46d2458f1` (`ml-vlm-attrs`) "ML: VLM image-analysis features" | Fable subagents describe each labelled frame with a fixed attribute schema; tested as model features (+ distillation) under the spatial gate; also a label-audit list | active | `SendMessage` |
+| RQI scale | session `local_233868f2-f73d-4ce7-96c7-f91cc96a4bf1` (`rqi-scale`) "RQI scale: one canonical 1–5 scale everywhere" | single source of truth for the 5-level scale (`shared/rqi_scale.json`), phase 2 = numeric direction flip if the owner decides so | active | `SendMessage` |
+| Security review | session `local_ff4aa73d-c156-4010-82d4-8ae7499fe822` (`security-review`) "Security & cost review: public read-only API" | GraphQL limits, input caps, secrets scan, dependency audit, owner dashboard checklist | active | `SendMessage` |
 | ML segment aggregation | lead's subagent, Fable 5.2 | `ml/segment_eval.py`, `ml/segment_recipe.json` | in progress | via lead |
 | Backend road segments | lead's subagent, Fable 5.2 | `road_segments`, `roadSegments`/`routeQuality` GraphQL | in progress | via lead |
 | Frontend segment layer | lead's subagent, Fable 5.2 | map segment layer | in progress | via lead |
@@ -53,6 +55,10 @@ address of their own: reach them only through the lead.
   implementation to Fable subagents (Fable has its own weekly usage bucket).
 - When the model choice itself is the question, run a small comparison pilot first
   (the labelling pilot compared four labellers on two models).
+- **Bandwidth:** every image an agent views stays in its context and is re-uploaded
+  with each later request. Keep image-reading agents small (≤ 20 images per agent,
+  ≤ 2 in parallel) when the owner's connection is limited; no large downloads or
+  uploads (model weights, datasets, remote GPU) without checking the connection.
 
 ## How work flows
 
