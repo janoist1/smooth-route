@@ -61,6 +61,8 @@ Both projects auto-deploy on every push to `master`.
   full-replaces the public columns of `street_view_images` (`image_url`, `location`
   → NULL). Target from `PUBLISH_DATABASE_URL` (unpooled Neon URL; never in the repo):
   `cd backend && PUBLISH_DATABASE_URL='postgresql://…' ../.venv/bin/python scripts/publish.py`.
+  A release that changes the schema (migrations + `master` push together): the
+  ordered steps, rollback and smoke checks are in [RELEASE.md](RELEASE.md).
 - **R1.4 — DNS + hardening (OPEN, owner's infra steps).**
   - [ ] DNS: `simaut.hu` + `www` → Vercel #1, `api.simaut.hu` → Vercel #2.
   - [ ] Then set `VITE_API_URL=https://api.simaut.hu` and

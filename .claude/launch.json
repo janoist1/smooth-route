@@ -4,14 +4,24 @@
     {
       "name": "frontend",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 5173,
       "cwd": "frontend"
     },
     {
       "name": "frontend-preview",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--", "--port", "5199", "--strictPort"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5199",
+        "--strictPort"
+      ],
       "port": 5199,
       "autoPort": false,
       "cwd": "frontend"
@@ -19,7 +29,13 @@
     {
       "name": "api-readonly-8004",
       "runtimeExecutable": "/Users/i/Dev/smooth-route/.venv/bin/python",
-      "runtimeArgs": ["-m", "uvicorn", "app.main:app", "--port", "8004"],
+      "runtimeArgs": [
+        "-m",
+        "uvicorn",
+        "app.main:app",
+        "--port",
+        "8004"
+      ],
       "port": 8004,
       "autoPort": false,
       "cwd": "backend",
@@ -31,6 +47,35 @@
         "CLERK_JWKS_URL": "",
         "GOOGLE_MAPS_API_KEY": "",
         "ALLOWED_ORIGINS": "https://simaut.hu,https://smooth-route-chi.vercel.app"
+      }
+    },
+    {
+      "name": "api-rehearsal-8006",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": [
+        "run",
+        "--no-project",
+        "--with-requirements",
+        "requirements.txt",
+        "python",
+        "-m",
+        "uvicorn",
+        "app.main:app",
+        "--port",
+        "8006"
+      ],
+      "port": 8006,
+      "autoPort": false,
+      "cwd": "backend",
+      "env": {
+        "PUBLIC_READ_ONLY": "1",
+        "RUN_MIGRATIONS_ON_STARTUP": "false",
+        "AUTH_MODE": "clerk",
+        "CLERK_ISSUER": "",
+        "CLERK_JWKS_URL": "",
+        "GOOGLE_MAPS_API_KEY": "",
+        "ALLOWED_ORIGINS": "https://simaut.hu",
+        "DATABASE_URL": "postgresql://web_ro:rehearsal@127.0.0.1:5440/neondb"
       }
     }
   ]
