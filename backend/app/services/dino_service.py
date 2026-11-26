@@ -170,6 +170,23 @@ class DinoInferenceService:
             print(f"DinoInferenceService ERROR: {e}")
             return None
 
+    @torch.no_grad()
+    def extract_features(self, image_path: str) -> Optional[np.ndarray]:
+        """The exact feature vector the head sees for an image, shape (1, D),
+        or None on failure. `score_from_features` on it equals `predict_score`
+        — for tools that need the vector as well as the score in ONE pass."""
+        try:
+            self.load_model()
+            img = Image.open(image_path).convert("RGB")
+            return self._features(img)
+        except Exception as e:
+            print(f"DinoInferenceService ERROR: {e}")
+            return None
+
+    def score_from_features(self, features: np.ndarray) -> float:
+        """Continuous RQI estimate from an `extract_features` vector."""
+        return float(self.pipeline.predict(features)[0])
+
     def predict_rqi(self, image_path: str) -> Optional[int]:
         """RQI class (1-4) via tuned ordinal cut-points, or None on failure."""
         score = self.predict_score(image_path)

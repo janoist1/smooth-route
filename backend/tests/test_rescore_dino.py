@@ -84,3 +84,43 @@ def test_read_log_keeps_the_original_old_value_and_the_latest_new_one(tmp_path):
 @pytest.mark.parametrize("value, label", [(2.0, "2"), ("3.0", "3"), (2.5, "2.5"), (None, "-"), ("", "-")])
 def test_class_labels(value, label):
     assert rescore._class_label(value) == label
+
+
+# --- feature vectors --------------------------------------------------------
+
+def test_merge_features_new_wins():
+    old = {1: ("a", True), 2: ("b", True)}
+    assert rescore.merge_features(old, {2: ("B", False), 3: ("c", True)}) == {
+        1: ("a", True), 2: ("B", False), 3: ("c", True)}
+    assert rescore.merge_features(None, {5: ("x", True)}) == {5: ("x", True)}
+    assert old == {1: ("a", True), 2: ("b", True)}          # input untouched
+
+
+def test_save_features_round_trip_merge_and_artifact_change(tmp_path):
+    np = pytest.importorskip("numpy")
+    path = tmp_path / "cache" / "frame_feats.npz"
+    first = {3: (np.ones(4, dtype="float32"), False), 1: (np.arange(4, dtype="float32"), True)}
+    assert rescore.save_features(path, first, "art1", "cls+patch", ["cls", "patch"]) == 2
+
+    with np.load(path) as data:
+        assert data["ids"].tolist() == [1, 3]                       # sorted by id
+        assert data["ids"].dtype == np.int32
+        assert data["feats"].shape == (2, 4) and data["feats"].dtype == np.float16
+        assert data["feats"][0].tolist() == [0.0, 1.0, 2.0, 3.0]
+        assert data["usable"].tolist() == [True, False]
+        assert (str(data["artifact"]), str(data["recipe"])) == ("art1", "cls+patch")
+        assert data["keys"].tolist() == ["cls", "patch"]
+
+    # Same artifact: update frame 3, add frame 2, keep frame 1.
+    more = {3: (np.zeros(4), True), 2: (np.full(4, 2.0), True)}
+    assert rescore.save_features(path, more, "art1", "cls+patch", ["cls", "patch"]) == 3
+    with np.load(path) as data:
+        assert data["ids"].tolist() == [1, 2, 3]
+        assert data["feats"][2].tolist() == [0.0] * 4
+        assert data["usable"].tolist() == [True, True, True]
+
+    # Another artifact: its vectors are not comparable → the file is replaced.
+    assert rescore.save_features(path, {9: (np.ones(4), True)}, "art2", "cls", ["cls"]) == 1
+    with np.load(path) as data:
+        assert data["ids"].tolist() == [9] and str(data["artifact"]) == "art2"
+    assert not list(path.parent.glob("*.tmp*"))                      # atomic write

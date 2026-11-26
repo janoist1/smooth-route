@@ -83,3 +83,31 @@ def test_validate_artifact_missing_v2_metadata_warns_not_raises():
     warnings = validate_artifact({"pipeline": object()})
     assert warnings  # non-empty
     assert any("thresholds" in w for w in warnings)
+
+
+# --- feature vector + score from one pass -----------------------------------
+
+def test_extract_features_and_score_match_predict_score(tmp_path):
+    import numpy as np
+    from PIL import Image
+
+    vector = np.arange(6, dtype="float32")[None, :]
+
+    class Head:
+        def predict(self, features):
+            return np.array([features.sum() / 10.0])
+
+    svc = make_service()
+    svc.load_model = lambda: None
+    svc._features = lambda img: vector
+    svc.pipeline = Head()
+
+    image = tmp_path / "frame.jpg"
+    Image.new("RGB", (8, 8)).save(image)
+
+    features = svc.extract_features(str(image))
+    assert features is vector
+    assert svc.score_from_features(features) == pytest.approx(1.5)
+    # Same number as the product path, so a tool may take both from one pass.
+    assert svc.predict_score(str(image)) == pytest.approx(svc.score_from_features(features))
+    assert svc.extract_features(str(tmp_path / "missing.jpg")) is None
