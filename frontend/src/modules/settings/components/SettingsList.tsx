@@ -10,6 +10,10 @@ const GET_AVAILABLE_MODELS = gql(`
   }
 `)
 
+// Settings whose value is a model file from `availableModels` (rendered as a
+// dropdown). Keys must match backend/app/core/settings_registry.py.
+const MODEL_SETTING_KEYS = new Set(['yolo_model', 'yolo_cleaner_model'])
+
 interface SettingsListProps {
   items: SystemSetting[]
   categories: string[]
@@ -244,7 +248,7 @@ const SettingsList: React.FC<SettingsListProps> = ({
                           flex: 1,
                           maxWidth: typeof item.value === 'string' ? '400px' : '150px',
                         }}>
-                        {item.key === 'ai_model' || item.key === 'cleaner_model' ? (
+                        {MODEL_SETTING_KEYS.has(item.key) ? (
                           <Select
                             value={String(localValues[item.key] ?? '')}
                             options={modelOptions}
