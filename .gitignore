@@ -25,6 +25,8 @@ ml/cache/feats_v2_*.npz
 ml/cache/clip_v2.npz
 ml/cache/dataset_v2.csv
 ml/cache/experiments_*.csv
+# gate candidates (38 MB+; rebuild with save_model_v2.py --out ...)
+ml/cache/rqi_model_candidate*.joblib
 ml/cache/oof_*.npy
 ml/cache/oof_table.csv
 ml/cache/spatial_analysis.json

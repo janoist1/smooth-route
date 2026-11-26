@@ -6,7 +6,9 @@ Wraps the frozen DINOv2 backbone + trained head produced by the `ml/` pipeline
 machine-readable `feature_recipe` (which views/tokens to extract) plus the
 sklearn pipeline, tuned ordinal cut-points and an isotonic P(bad) calibrator;
 this service interprets that recipe, so retraining with a different recipe
-does not require code changes here.
+does not require code changes here. Recipes may also name hi-resolution views
+(`feature_recipe["hires_views"]`, era 8): one extra backbone pass on a
+cropped/resized frame, pooled as described in hires_views.py.
 
 v2 model (2026-07-03, 1903 images). Honest spatial CV (1 km grid cells,
 re-measured 2026-11-18, ml/spatial_cv.py): QWK 0.774, MAE 0.405, exact 61%,
@@ -32,6 +34,9 @@ import torch
 from PIL import Image
 
 from app.core.rqi_scale import SCALE, SEVERITY
+from app.services.hires_views import (MID_POOLS, needed_views, pool_tokens,
+                                      preprocess, split_key,
+                                      validate_hires_recipe)
 
 
 def _project_root() -> str:
@@ -72,6 +77,8 @@ def validate_artifact(artifact: dict) -> list:
             "RQI artifact feature_recipe has no 'keys' list; the service cannot "
             "know which features to build. Retrain with ml/save_model_v2.py."
         )
+    if recipe is not None:
+        validate_hires_recipe(recipe)  # ValueError on a broken hi-res spec
     return [f"missing '{k}'" for k in EXPECTED_V2_KEYS if k not in artifact]
 
 
@@ -139,6 +146,14 @@ class DinoInferenceService:
             return self.backbone(**inp).pooler_output.float().cpu().numpy()
 
         keys = self.recipe["keys"]
+        hires = self.recipe.get("hires_views") or {}
+        classic = [k for k in keys if not split_key(k, hires)]
+        pool = self._classic_features(img, classic) if classic else {}
+        pool.update(self._hires_features(img))
+        return np.concatenate([pool[k] for k in keys])[None, :]
+
+    def _classic_features(self, img: Image.Image, keys: list) -> dict:
+        """224-px HF-processor views (original / flip / bottom crop)."""
         views = [img]  # slot 0: original
         need_flip = any(k.endswith("_flip") or k.endswith("_avg") for k in keys)
         need_crop = any(k.endswith("_crop") for k in keys)
@@ -168,8 +183,26 @@ class DinoInferenceService:
         if self.recipe.get("needs_clip"):
             raise NotImplementedError(
                 "CLIP-concat recipes are not wired into the backend service")
+        return pool
 
-        return np.concatenate([pool[k] for k in keys])[None, :]
+    def _hires_features(self, img: Image.Image) -> dict:
+        """Hi-res views (feature_recipe["hires_views"], see hires_views.py):
+        one extra backbone pass per view on the cropped, resized frame."""
+        out = {}
+        n_reg = getattr(self.backbone.config, "num_register_tokens", 0) or 0
+        start = 1 + n_reg
+        for view, pools in needed_views(self.recipe).items():
+            spec = self.recipe["hires_views"][view]
+            x = torch.from_numpy(preprocess(img, spec)[None]).to(self.device)
+            need_mid = bool(pools & set(MID_POOLS))
+            o = self.backbone(pixel_values=x, output_hidden_states=need_mid)
+            tokens = o.last_hidden_state[0, start:].float().cpu().numpy()
+            mid = (o.hidden_states[spec["mid_layer"]][0, start:].float().cpu().numpy()
+                   if need_mid else None)
+            cls = o.pooler_output[0].float().cpu().numpy()
+            for p, v in pool_tokens(pools, cls, tokens, mid, spec).items():
+                out[f"{view}_{p}"] = v
+        return out
 
     # ----- scale boundary: artifact orientation <-> canonical ---------------
     def _to_canonical(self, raw: float) -> float:
