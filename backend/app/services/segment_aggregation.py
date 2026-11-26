@@ -45,6 +45,11 @@ Confidence
 distance of the aggregated score from the nearest class threshold, age from
 the segment's NEWEST capture date (no age factor when unknown). Segments with
 fewer than ``min_images`` frames keep their class but are always "low".
+
+Unlabelled areas (``unlabelled_area: {radius_km, cap_level}``): a segment
+with no human-labelled frame within ``radius_km`` has its confidence capped at
+the top of ``cap_level``; when that lowers it, the stored flag makes the
+reason "unlabelled_area" (see ``apply_unlabelled_area``).
 """
 from __future__ import annotations
 
@@ -68,6 +73,10 @@ REASON_FEW_IMAGES = "few_images"
 REASON_DISAGREEMENT = "disagreement"
 REASON_NEAR_THRESHOLD = "near_threshold"
 REASON_OLD_IMAGES = "old_images"
+# Product honesty rule (not a fitted factor): no human label within
+# unlabelled_area.radius_km -> confidence capped at the top of cap_level.
+REASON_UNLABELLED_AREA = "unlabelled_area"
+CAP_LEVELS = (LEVEL_MEDIUM, LEVEL_LOW)
 
 
 # --------------------------------------------------------------------------
@@ -150,6 +159,21 @@ class AgeConfig:
 
 
 @dataclass(frozen=True)
+class UnlabelledAreaConfig:
+    """Cap the confidence of segments with no human-labelled frame within
+    ``radius_km`` at the top of ``cap_level`` ("medium" or "low").
+
+    Not a fitted error model: under spatial CV distance to labels does not
+    predict error at 0.1–1.25 km (T-41). It is an honesty rule backed by the
+    region-level evidence (leave-region-out QWK 0.66, Budapest 0.24).
+    ``radius_km`` 0 switches the rule off.
+    """
+
+    radius_km: float = 0.0
+    cap_level: str = LEVEL_MEDIUM
+
+
+@dataclass(frozen=True)
 class SegmentConfig:
     # Scale-dependent: REQUIRED in the file, no defaults here (see module doc).
     thresholds: tuple[float, ...]
@@ -163,6 +187,7 @@ class SegmentConfig:
     min_images: int = 3
     confidence: ConfidenceConfig = field(default_factory=ConfidenceConfig)
     age: AgeConfig = field(default_factory=AgeConfig)
+    unlabelled_area: UnlabelledAreaConfig = field(default_factory=UnlabelledAreaConfig)
 
     def classify(self, score: float) -> int:
         return self.scale.classify(score, self.thresholds)
@@ -176,6 +201,18 @@ def _sub(cls, data: Any, name: str):
         raise ValueError(f"'{name}' must be an object")
     known = {k: float(v) for k, v in data.items() if k in cls.__dataclass_fields__}
     return cls(**known)
+
+
+def _unlabelled_area(data: Any) -> UnlabelledAreaConfig:
+    if data is None:
+        return UnlabelledAreaConfig()
+    if not isinstance(data, Mapping):
+        raise ValueError("'unlabelled_area' must be an object")
+    d = UnlabelledAreaConfig()
+    return UnlabelledAreaConfig(
+        radius_km=float(data.get("radius_km", d.radius_km)),
+        cap_level=str(data.get("cap_level", d.cap_level)),
+    )
 
 
 def _scale(data: Any) -> RqiScale:
@@ -221,6 +258,7 @@ def config_from_dict(data: Mapping[str, Any]) -> SegmentConfig:
             min_images=int(data.get("min_images", f["min_images"].default)),
             confidence=_sub(ConfidenceConfig, data.get("confidence"), "confidence"),
             age=_sub(AgeConfig, data.get("age"), "age"),
+            unlabelled_area=_unlabelled_area(data.get("unlabelled_area")),
         )
     except (TypeError, ValueError) as exc:
         raise ValueError(f"invalid segment aggregation config: {exc}") from exc
@@ -246,6 +284,11 @@ def config_from_dict(data: Mapping[str, Any]) -> SegmentConfig:
         raise ValueError("confidence levels must satisfy 0 <= medium <= high <= 1")
     if cfg.age.grace_years < 0 or cfg.age.half_life_years <= 0:
         raise ValueError("age.grace_years must be >= 0 and half_life_years > 0")
+    u = cfg.unlabelled_area
+    if not (math.isfinite(u.radius_km) and u.radius_km >= 0):
+        raise ValueError("unlabelled_area.radius_km must be >= 0 (0 = off)")
+    if u.cap_level not in CAP_LEVELS:
+        raise ValueError(f"unlabelled_area.cap_level must be one of {CAP_LEVELS}")
     return cfg
 
 
@@ -266,6 +309,7 @@ def config_to_dict(cfg: SegmentConfig) -> dict:
         },
         "confidence": dict(vars(cfg.confidence)),
         "age": dict(vars(cfg.age)),
+        "unlabelled_area": dict(vars(cfg.unlabelled_area)),
     }
 
 
@@ -455,6 +499,26 @@ def age_factor(newest_capture: Optional[dt.date], today: dt.date, a: AgeConfig) 
     return 0.5 ** (max(0.0, years - a.grace_years) / a.half_life_years)
 
 
+def unlabelled_cap(cfg: SegmentConfig) -> float:
+    """The highest confidence that still reads as ``unlabelled_area.cap_level``."""
+    edge = (cfg.confidence.high if cfg.unlabelled_area.cap_level == LEVEL_MEDIUM
+            else cfg.confidence.medium)
+    return max(0.0, math.nextafter(edge, 0.0))
+
+
+def apply_unlabelled_area(
+    confidence: float, label_nearby: bool, cfg: SegmentConfig
+) -> tuple[float, bool]:
+    """(confidence, capped). Capped only when the rule is on, no human label
+    is within ``radius_km`` and the cap actually LOWERS the confidence."""
+    if cfg.unlabelled_area.radius_km <= 0 or label_nearby:
+        return confidence, False
+    cap = unlabelled_cap(cfg)
+    if confidence > cap:
+        return cap, True
+    return confidence, False
+
+
 def confidence_level(confidence: float, n_images: int, cfg: SegmentConfig) -> str:
     """"high" | "medium" | "low"; below ``min_images`` it is always "low"."""
     if n_images < cfg.min_images:
@@ -473,6 +537,7 @@ def confidence_reason(
     newest_capture: Optional[dt.date],
     built_on: dt.date,
     cfg: SegmentConfig,
+    unlabelled_area: bool = False,
 ) -> Optional[str]:
     """Why the confidence is not high: the factor of the formula that pulls it
     down the most. None for a "high" segment (nothing to explain).
@@ -481,7 +546,9 @@ def confidence_reason(
     scores is not stored, but the confidence is the product of the four
     factors, so the spread factor is what remains after dividing out the other
     three. ``built_on`` is the day the confidence was computed (the age factor
-    is evaluated as of that day).
+    is evaluated as of that day). ``unlabelled_area`` = the stored flag that
+    the unlabelled-area cap lowered this segment's confidence; then the cap is
+    what limits it.
     """
     if n_images <= 0 or score is None:
         return REASON_FEW_IMAGES
@@ -489,6 +556,8 @@ def confidence_reason(
         return None
     if n_images < cfg.min_images:
         return REASON_FEW_IMAGES
+    if unlabelled_area:
+        return REASON_UNLABELLED_AREA
     factors = {
         REASON_FEW_IMAGES: count_factor(n_images, cfg.confidence),
         REASON_NEAR_THRESHOLD: margin_factor(

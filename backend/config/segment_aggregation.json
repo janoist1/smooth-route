@@ -18,6 +18,10 @@
     "high": 0.8,
     "medium": 0.55
   },
+  "unlabelled_area": {
+    "radius_km": 3,
+    "cap_level": "medium"
+  },
   "age": {
     "grace_years": 3,
     "half_life_years": 5

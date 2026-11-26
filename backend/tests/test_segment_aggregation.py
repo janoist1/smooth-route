@@ -472,3 +472,61 @@ def test_reason_names_the_single_factor_that_was_pushed_down():
     assert explain(**{**ideal, "spread": 1.2}) == "disagreement"
     assert explain(**{**ideal, "score": 2.48}) == "near_threshold"
     assert explain(**{**ideal, "capture": dt.date(2005, 1, 1)}) == "old_images"
+
+
+# --- unlabelled-area cap (product honesty rule, T-44) ------------------------
+
+from app.services.segment_aggregation import (  # noqa: E402
+    REASON_UNLABELLED_AREA,
+    apply_unlabelled_area,
+    confidence_reason,
+    confidence_level,
+    unlabelled_cap,
+)
+
+
+def test_unlabelled_area_defaults_off_and_validates():
+    assert make_config().unlabelled_area.radius_km == 0     # absent -> rule off
+    cfg = make_config(unlabelled_area={"radius_km": 3, "cap_level": "medium"})
+    assert (cfg.unlabelled_area.radius_km, cfg.unlabelled_area.cap_level) == (3.0, "medium")
+    for bad in ({"radius_km": -1}, {"radius_km": 3, "cap_level": "high"},
+                {"radius_km": float("nan")}, "3 km"):
+        with pytest.raises(ValueError):
+            make_config(unlabelled_area=bad)
+
+
+def test_unlabelled_cap_sits_at_the_top_of_its_level():
+    med = make_config(unlabelled_area={"radius_km": 3, "cap_level": "medium"})
+    low = make_config(unlabelled_area={"radius_km": 3, "cap_level": "low"})
+    assert confidence_level(unlabelled_cap(med), 10, med) == "medium"
+    assert unlabelled_cap(med) == pytest.approx(med.confidence.high)
+    assert confidence_level(unlabelled_cap(low), 10, low) == "low"
+    assert unlabelled_cap(low) == pytest.approx(low.confidence.medium)
+
+
+def test_apply_unlabelled_area_only_caps_when_it_lowers():
+    cfg = make_config(unlabelled_area={"radius_km": 3, "cap_level": "medium"})
+    cap = unlabelled_cap(cfg)
+    assert apply_unlabelled_area(0.95, False, cfg) == (cap, True)    # high -> medium
+    assert apply_unlabelled_area(0.95, True, cfg) == (0.95, False)   # label nearby
+    assert apply_unlabelled_area(0.40, False, cfg) == (0.40, False)  # already below
+    off = make_config()
+    assert apply_unlabelled_area(0.95, False, off) == (0.95, False)  # rule off
+
+
+def test_confidence_reason_reports_unlabelled_area_from_the_stored_flag():
+    cfg = make_config(unlabelled_area={"radius_km": 3, "cap_level": "medium"})
+    day = dt.date(2026, 11, 1)
+    conf, capped = apply_unlabelled_area(0.95, False, cfg)
+    assert confidence_reason(conf, 12, 1.8, day, day, cfg, unlabelled_area=capped) \
+        == REASON_UNLABELLED_AREA
+    # without the flag the same numbers are explained by another factor
+    assert confidence_reason(conf, 12, 1.8, day, day, cfg) != REASON_UNLABELLED_AREA
+    # too few images still wins (that level is "low" regardless of the cap)
+    assert confidence_reason(conf, 2, 1.8, day, day, cfg, unlabelled_area=True) == "few_images"
+
+
+def test_shipped_config_enables_the_unlabelled_area_rule():
+    from app.services.segment_aggregation import load_config
+    u = load_config().unlabelled_area
+    assert u.radius_km == 3 and u.cap_level == "medium"

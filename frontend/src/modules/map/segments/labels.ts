@@ -23,15 +23,25 @@ const CONFIDENCE_HU: Record<string, string> = {
 export const confidenceLabelHu = (level?: string | null): string =>
   (level && CONFIDENCE_HU[level]) || 'ismeretlen'
 
+/** Card text for the "unlabelled_area" confidence reason. */
+export const UNLABELLED_AREA_HU =
+  'Ezen a környéken még nincs ellenőrző (emberi) címke, ezért a becslés bizonytalanabb.'
+
 /**
- * One plain sentence on WHY the confidence is what it is. The API only gives
- * the level and the frame count, so the wording names both possible causes
- * (few frames / disagreeing frames) instead of guessing one.
+ * One plain sentence on WHY the confidence is what it is. Without a specific
+ * reason the wording names both usual causes (few frames / disagreeing
+ * frames); the "unlabelled_area" reason (no human label nearby, capped by the
+ * backend) gets its own sentence.
  */
-export const confidenceExplanation = (level: string | null | undefined, nImages: number): string => {
+export const confidenceExplanation = (
+  level: string | null | undefined,
+  nImages: number,
+  reason?: string | null,
+): string => {
   const n = Math.max(0, Math.round(nImages))
   if (n === 0) return 'Nincs hozzá képkocka – a becslés nem ellenőrizhető.'
   const basis = `${n} képkocka alapján`
+  if (reason === 'unlabelled_area' && level !== 'high') return `${basis}. ${UNLABELLED_AREA_HU}`
   switch (level) {
     case 'high':
       return `${basis}; a képek egybehangzóan ugyanazt mutatják.`

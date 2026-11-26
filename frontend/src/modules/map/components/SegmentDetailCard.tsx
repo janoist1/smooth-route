@@ -110,7 +110,7 @@ const SegmentDetailCard: React.FC<SegmentDetailCardProps> = ({ segment, onClose,
             </span>
           </div>
           <div className="road-card__dim" style={{ marginTop: 2 }}>
-            {confidenceExplanation(segment.confidenceLevel, segment.nImages)}
+            {confidenceExplanation(segment.confidenceLevel, segment.nImages, segment.confidenceReason)}
           </div>
         </div>
 

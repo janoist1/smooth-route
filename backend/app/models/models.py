@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import BigInteger, CheckConstraint, Column, Date, Integer, String, Float, DateTime, JSON, UniqueConstraint, Uuid, func
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, Column, Date, Integer, String, Float, DateTime, JSON, UniqueConstraint, Uuid, false, func
 from sqlalchemy.orm import declarative_base
 from geoalchemy2 import Geometry
 
@@ -98,6 +98,9 @@ class RoadSegment(Base):
     rqi = Column(Integer, nullable=True)  # canonical RQI level (shared/rqi_scale.json)
     p_bad = Column(Float, nullable=True)
     confidence = Column(Float, nullable=False, default=0.0, server_default="0")
+    # True when the unlabelled-area rule capped `confidence` (no human label
+    # within segment_aggregation.json unlabelled_area.radius_km).
+    unlabelled_area = Column(Boolean, nullable=False, default=False, server_default=false())
     capture_date_min = Column(Date, nullable=True)
     capture_date_max = Column(Date, nullable=True)
     updated_at = Column(DateTime, nullable=False, default=utcnow, server_default=func.now())

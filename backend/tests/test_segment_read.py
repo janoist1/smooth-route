@@ -403,3 +403,23 @@ def test_segment_frames_unknown_id_is_empty(monkeypatch, no_db):
     )
     assert result.errors is None
     assert result.data["segmentFrames"] == []
+
+
+def test_record_maps_the_unlabelled_area_flag_to_the_reason():
+    import datetime as dt
+
+    from app.services.segment_read import _record
+    from geo_helpers import make_config
+
+    cfg = make_config(unlabelled_area={"radius_km": 3, "cap_level": "medium"})
+    base = dict(id="1:0", geojson='{"type":"LineString","coordinates":[[19.0,47.5],[19.001,47.5]]}',
+                rqi=2, score=1.8, p_bad=0.1, confidence=0.6599, n_images=12,
+                length_m=150.0, road_name="X", highway="residential",
+                capture_date_min=None, capture_date_max=None,
+                updated_at=dt.datetime(2026, 11, 26), mid_lat=None, mid_lng=None,
+                mid_heading=None)
+    flagged = _record(SimpleNamespace(**base, unlabelled_area=True), cfg)
+    assert flagged.confidence_level == "medium"
+    assert flagged.confidence_reason == "unlabelled_area"
+    plain = _record(SimpleNamespace(**base, unlabelled_area=False), cfg)
+    assert plain.confidence_reason != "unlabelled_area"

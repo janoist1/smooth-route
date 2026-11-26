@@ -197,7 +197,8 @@ def _record(row, cfg: SegmentConfig) -> SegmentRecord:
         confidence=row.confidence,
         confidence_level=confidence_level(row.confidence, row.n_images, cfg),
         confidence_reason=confidence_reason(
-            row.confidence, row.n_images, row.score, row.capture_date_max, built_on, cfg
+            row.confidence, row.n_images, row.score, row.capture_date_max, built_on, cfg,
+            unlabelled_area=bool(getattr(row, "unlabelled_area", False)),
         ),
         n_images=row.n_images,
         length_m=row.length_m,
@@ -237,7 +238,7 @@ def match_frames_to_segment(
 # The midpoint and the bearing around it come from the stored (unsimplified)
 # geometry, so they do not move with the zoom-dependent simplification.
 _COLUMNS = (
-    "s.id, s.rqi, s.score, s.p_bad, s.confidence, s.n_images, s.length_m, "
+    "s.id, s.rqi, s.score, s.p_bad, s.confidence, s.unlabelled_area, s.n_images, s.length_m, "
     "s.road_name, s.highway, s.capture_date_min, s.capture_date_max, s.updated_at, "
     "ST_Y(ST_LineInterpolatePoint(s.geom, 0.5)) AS mid_lat, "
     "ST_X(ST_LineInterpolatePoint(s.geom, 0.5)) AS mid_lng, "

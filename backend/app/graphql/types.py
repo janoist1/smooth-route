@@ -297,7 +297,8 @@ class RoadSegment:
     capture_date_min: Optional[str]
     capture_date_max: Optional[str]
     # Why the confidence is not high — the factor that limits it most:
-    # "few_images" | "disagreement" | "near_threshold" | "old_images".
+    # "few_images" | "disagreement" | "near_threshold" | "old_images" |
+    # "unlabelled_area" (no human label within the configured radius).
     # Null for a high-confidence segment.
     confidence_reason: Optional[str] = None
     # Midpoint of the piece + the road's bearing there (for streetViewUrl).

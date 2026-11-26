@@ -34,6 +34,7 @@ import datetime as dt
 import hashlib
 import json
 import logging
+import math
 import re
 import time
 from collections import Counter, defaultdict
@@ -64,6 +65,7 @@ from app.services.segment_aggregation import (
     FrameObs,
     SegmentConfig,
     aggregate_frames,
+    apply_unlabelled_area,
     confidence_level,
     config_to_dict,
     frame_p_bad,
@@ -88,7 +90,7 @@ REBUILD_LOCK_KEY = 7245002
 # Bump when the matching / stitching / cutting logic changes in a way that
 # alters the rows: stored rows built by an older engine then force a full
 # rebuild instead of being mixed with new ones by a bbox rebuild.
-ENGINE_VERSION = 2
+ENGINE_VERSION = 3  # 3: unlabelled_area cap + column
 
 Bounds = tuple[float, float, float, float]  # (south, west, north, east)
 
@@ -127,6 +129,9 @@ class BuildStats:
     class_km: dict[int, float] = field(default_factory=dict)
     level_counts: dict[str, int] = field(default_factory=dict)
     level_km: dict[str, float] = field(default_factory=dict)
+    labelled_points: Optional[int] = None   # None = unlabelled-area rule off
+    capped_segments: int = 0
+    capped_km: float = 0.0
     km: float = 0.0
     median_length_m: float = 0.0
     median_images: float = 0.0
@@ -166,6 +171,12 @@ class BuildStats:
                 for lvl in ("high", "medium", "low")
             )
         )
+        if self.labelled_points is not None:
+            out.append(
+                f"unlabelled area:     {self.capped_segments} segments "
+                f"({self.capped_km:.1f} km) capped — no human label nearby "
+                f"({self.labelled_points} labelled frames)"
+            )
         out.append(f"written to DB:       {'yes' if self.written else 'no (dry run)'}")
         out.append(f"duration:            {self.seconds:.1f} s")
         return out
@@ -174,6 +185,34 @@ class BuildStats:
 # --------------------------------------------------------------------------
 # Pure core
 # --------------------------------------------------------------------------
+
+class LabelIndex:
+    """Grid hash of human-labelled frame positions: "is any label within
+    ``radius_km`` of this point?" in O(1) per query."""
+
+    def __init__(self, points: Iterable[LatLon], radius_km: float):
+        self.r_m = radius_km * 1000.0
+        self.cell = max(self.r_m, 1.0)
+        self.grid: dict[tuple[int, int], list[tuple[float, float]]] = defaultdict(list)
+        for lat, lon in points:
+            x, y = self._xy(lat, lon)
+            self.grid[(int(x // self.cell), int(y // self.cell))].append((x, y))
+
+    @staticmethod
+    def _xy(lat: float, lon: float) -> tuple[float, float]:
+        return (lon * 111_320.0 * math.cos(math.radians(47.0)), lat * 111_320.0)
+
+    def any_within(self, lat: float, lon: float) -> bool:
+        x, y = self._xy(lat, lon)
+        cx, cy = int(x // self.cell), int(y // self.cell)
+        r2 = self.r_m * self.r_m
+        for i in (cx - 1, cx, cx + 1):
+            for j in (cy - 1, cy, cy + 1):
+                for px, py in self.grid.get((i, j), ()):
+                    if (px - x) ** 2 + (py - y) ** 2 <= r2:
+                        return True
+        return False
+
 
 def segment_id(osm_way_id: int, piece_index: int) -> str:
     return f"{osm_way_id}:{piece_index}"
@@ -196,6 +235,7 @@ def build_rows(
     only_ids: Optional[set[int]] = None,
     max_distance_m: float = DEFAULT_MAX_DISTANCE_M,
     max_bearing_diff_deg: float = DEFAULT_MAX_BEARING_DIFF_DEG,
+    labelled: Optional[Sequence[LatLon]] = None,
 ) -> tuple[list[dict], BuildStats]:
     """Snap ``frames`` to ``lines``, cut and aggregate. Returns (rows, stats).
 
@@ -205,9 +245,16 @@ def build_rows(
     ``only_ids`` limits which lines are turned into rows (bbox rebuild);
     matching still considers EVERY line, so a frame is never pulled onto a
     target line just because its true, nearer line is not being rebuilt.
+
+    ``labelled`` = positions of human-labelled frames for the unlabelled-area
+    cap (``cfg.unlabelled_area``); None leaves the rule off.
     """
     today = today or dt.date.today()
     stats = BuildStats(lines=len(lines), frames_total=len(frames))
+    label_index = None
+    if labelled is not None and cfg.unlabelled_area.radius_km > 0:
+        label_index = LabelIndex(labelled, cfg.unlabelled_area.radius_km)
+        stats.labelled_points = len(labelled)
     index = LineIndex(lines.values())
 
     by_line: dict[int, list[tuple[float, Frame]]] = defaultdict(list)
@@ -251,6 +298,15 @@ def build_rows(
                 list(line.coords) if n_pieces == 1
                 else line_substring(line.coords, cum, i * piece_len, (i + 1) * piece_len)
             )
+            confidence, capped = agg.confidence, False
+            if label_index is not None:
+                mid_lat = sum(c[0] for c in coords) / len(coords)
+                mid_lon = sum(c[1] for c in coords) / len(coords)
+                confidence, capped = apply_unlabelled_area(
+                    agg.confidence, label_index.any_within(mid_lat, mid_lon), cfg)
+            if capped:
+                stats.capped_segments += 1
+                stats.capped_km += piece_len / 1000.0
             rows.append({
                 "id": segment_id(line_id, i),
                 "osm_way_id": line_id,
@@ -263,11 +319,12 @@ def build_rows(
                 "score": agg.score,
                 "rqi": agg.rqi,
                 "p_bad": agg.p_bad,
-                "confidence": agg.confidence,
+                "confidence": confidence,
+                "unlabelled_area": capped,
                 "capture_date_min": agg.capture_date_min,
                 "capture_date_max": agg.capture_date_max,
             })
-            level = confidence_level(agg.confidence, agg.n_images, cfg)
+            level = confidence_level(confidence, agg.n_images, cfg)
             class_counts[agg.rqi] += 1
             class_km[agg.rqi] += piece_len / 1000.0
             level_counts[level] += 1
@@ -396,6 +453,40 @@ def frames_from_rows(rows: Iterable, cfg: SegmentConfig) -> FrameLoad:
     return load
 
 
+_LEGACY_NAME_RE = re.compile(r"^\d+_(-?\d+\.\d+)_(-?\d+\.\d+)_")
+
+
+def load_labelled_points(db) -> list[LatLon]:
+    """Positions of every human-labelled frame (training_data.manual_rqi set).
+
+    Same join as ml/export_labels.sh (street_view_images.image_url =
+    'images/' || image_filename); legacy ``<seq>_<lat>_<lon>_<heading>.jpg``
+    files without a DB row carry their position in the name.
+    """
+    rows = db.execute(text(
+        """
+        SELECT td.image_filename, svi.latitude, svi.longitude
+        FROM training_data td
+        LEFT JOIN street_view_images svi ON svi.image_url = 'images/' || td.image_filename
+        WHERE td.manual_rqi IS NOT NULL
+        """
+    )).fetchall()
+    return labelled_points_from_rows(rows)
+
+
+def labelled_points_from_rows(rows: Iterable) -> list[LatLon]:
+    """(image_filename, latitude, longitude) rows → positions. Pure."""
+    out: list[LatLon] = []
+    for name, lat, lon in rows:
+        if lat is not None and lon is not None:
+            out.append((float(lat), float(lon)))
+            continue
+        m = _LEGACY_NAME_RE.match(name or "")
+        if m:
+            out.append((float(m.group(1)), float(m.group(2))))
+    return out
+
+
 _FINGERPRINT_RE = re.compile(r"^[0-9a-f]{40}$")
 _COMMENT_PREFIX = "build:"
 
@@ -417,12 +508,12 @@ _INSERT = text(
     """
     INSERT INTO road_segments
         (id, osm_way_id, piece_index, geom, length_m, road_name, highway,
-         n_images, score, rqi, p_bad, confidence,
+         n_images, score, rqi, p_bad, confidence, unlabelled_area,
          capture_date_min, capture_date_max, updated_at)
     VALUES
         (:id, :osm_way_id, :piece_index, ST_GeomFromText(:wkt, 4326), :length_m,
          :road_name, :highway, :n_images, :score, :rqi, :p_bad, :confidence,
-         :capture_date_min, :capture_date_max, now())
+         :unlabelled_area, :capture_date_min, :capture_date_max, now())
     """
 )
 
@@ -540,7 +631,10 @@ def rebuild_segments(
         no_osm = len(frames) - len(covered)
         frames = covered
 
-    rows, stats = build_rows(lines, frames, cfg, today, only_ids=only_ids)
+    labelled = (load_labelled_points(db) if cfg.unlabelled_area.radius_km > 0
+                else None)
+    rows, stats = build_rows(lines, frames, cfg, today, only_ids=only_ids,
+                             labelled=labelled)
     stats.mode = "full" if bbox is None else f"bbox {bbox} ({len(only_ids or ())} lines)"
     stats.tiles = len(tiles)
     stats.tiles_missing = len(missing)

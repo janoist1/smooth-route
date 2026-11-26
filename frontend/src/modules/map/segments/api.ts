@@ -33,6 +33,7 @@ export const GET_ROAD_SEGMENTS = gql(`
       pBad
       confidence
       confidenceLevel
+      confidenceReason
       nImages
       lengthM
       roadName
@@ -66,6 +67,7 @@ export const GET_ROUTE_QUALITY = gql(`
         pBad
         confidence
         confidenceLevel
+        confidenceReason
         nImages
         lengthM
         roadName

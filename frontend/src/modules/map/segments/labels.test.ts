@@ -65,6 +65,22 @@ describe('confidence wording', () => {
     )
   })
 
+  it('explains the unlabelled-area cap in its own words', () => {
+    expect(confidenceExplanation('medium', 12, 'unlabelled_area')).toBe(
+      '12 képkocka alapján. Ezen a környéken még nincs ellenőrző (emberi) címke, ezért a becslés bizonytalanabb.',
+    )
+    // other reasons keep the generic wording; a high segment has no caveat
+    expect(confidenceExplanation('medium', 9, 'disagreement')).toBe(
+      '9 képkocka alapján; a képek nem teljesen egyeznek, vagy kevés a kép.',
+    )
+    expect(confidenceExplanation('high', 24, 'unlabelled_area')).toBe(
+      '24 képkocka alapján; a képek egybehangzóan ugyanazt mutatják.',
+    )
+    expect(confidenceExplanation('medium', 0, 'unlabelled_area')).toBe(
+      'Nincs hozzá képkocka – a becslés nem ellenőrizhető.',
+    )
+  })
+
   it('handles zero frames and unknown levels', () => {
     expect(confidenceExplanation('low', 0)).toBe('Nincs hozzá képkocka – a becslés nem ellenőrizhető.')
     expect(confidenceExplanation('weird', 5)).toBe('5 képkocka alapján.')

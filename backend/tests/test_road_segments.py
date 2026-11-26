@@ -359,3 +359,57 @@ def test_job_wrapper_picks_the_right_refresh_and_swallows_errors(monkeypatch):
     monkeypatch.setattr(road_segments, "refresh_segments_full", boom)
     tasks.refresh_road_segments("job-3", start)              # must not raise
     tasks.refresh_road_segments("job-4")
+
+
+# --- unlabelled-area cap ----------------------------------------------------
+
+from app.services.road_segments import LabelIndex, labelled_points_from_rows  # noqa: E402
+from app.services.segment_aggregation import unlabelled_cap  # noqa: E402
+
+
+def test_label_index_radius():
+    idx = LabelIndex([at(0, 0)], radius_km=1.0)
+    assert idx.any_within(*at(900, 0))
+    assert idx.any_within(*at(0, -990))
+    assert not idx.any_within(*at(1100, 0))
+    assert not idx.any_within(*at(800, 800))       # 1131 m diagonal
+    assert not LabelIndex([], 1.0).any_within(*at(0, 0))
+
+
+def test_labelled_points_from_db_rows_and_legacy_names():
+    rows = [("sv_12_ab.jpg", 47.1, 19.2),
+            ("00001_47.496700_19.069360_67.jpg", None, None),
+            ("sv_99_zz.jpg", None, None)]                # no position anywhere
+    assert labelled_points_from_rows(rows) == [(47.1, 19.2), (47.4967, 19.06936)]
+
+
+def test_build_rows_caps_segments_far_from_any_label():
+    # n_ref 1: the 8 agreeing frames of the first piece reach "high"
+    cfg = make_config(unlabelled_area={"radius_km": 1, "cap_level": "medium"},
+                      confidence={"n_ref": 1, "spread_ref": 0.6, "margin_ref": 0.3,
+                                  "high": 0.66, "medium": 0.33})
+    frames = main_frames()
+    # labels only near the start of MAIN -> both pieces are within 1 km
+    rows, stats = build_rows(WAYS, frames, cfg, TODAY, labelled=[at(0, 50)])
+    assert not any(r["unlabelled_area"] for r in rows)
+    assert stats.capped_segments == 0 and stats.labelled_points == 1
+    uncapped = {r["id"]: r["confidence"] for r in rows}
+
+    # labels 5 km away -> pieces above the cap are lowered and flagged
+    rows, stats = build_rows(WAYS, frames, cfg, TODAY, labelled=[at(5000, 0)])
+    cap = unlabelled_cap(cfg)
+    for r in rows:
+        if uncapped[r["id"]] > cap:
+            assert r["unlabelled_area"] and r["confidence"] == cap
+        else:
+            assert not r["unlabelled_area"] and r["confidence"] == uncapped[r["id"]]
+    assert stats.capped_segments == sum(r["unlabelled_area"] for r in rows)
+    assert any(r["unlabelled_area"] for r in rows)
+    assert any("unlabelled area:" in line for line in stats.report())
+
+
+def test_build_rows_without_labels_leaves_the_rule_off():
+    cfg = make_config(unlabelled_area={"radius_km": 1, "cap_level": "medium"})
+    rows, stats = build_rows(WAYS, main_frames(), cfg, TODAY)
+    assert stats.labelled_points is None
+    assert not any(r["unlabelled_area"] for r in rows)

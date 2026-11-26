@@ -24,6 +24,11 @@ export interface RoadSegment {
   confidence: number
   /** 'high' | 'medium' | 'low' (kept as string: tolerate unknown values). */
   confidenceLevel: ConfidenceLevel | (string & {})
+  /**
+   * Why the confidence is not high: 'few_images' | 'disagreement' |
+   * 'near_threshold' | 'old_images' | 'unlabelled_area'; null when high.
+   */
+  confidenceReason?: string | null
   /** Number of Street View frames the estimate is based on. */
   nImages: number
   lengthM: number
