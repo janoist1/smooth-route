@@ -104,7 +104,17 @@ class RoadQualityService:
                     img.rqi_score = result.rqi_score
                     img.damage_count = result.damage_count
                     img.damage_types = result.damage_types
-                    img.analysis_metadata = result.analysis_metadata
+                    # YOLO owns damage metadata, never DINO outputs or the
+                    # frame-quality pass's exclusion. Assign a fresh dict so
+                    # SQLAlchemy persists the JSON change.
+                    img.analysis_metadata = {
+                        **(img.analysis_metadata or {}),
+                        **{
+                            key: value
+                            for key, value in (result.analysis_metadata or {}).items()
+                            if key != "frame_quality" and not key.startswith("dino_")
+                        },
+                    }
                     analyzed_count += 1
 
             db.commit()

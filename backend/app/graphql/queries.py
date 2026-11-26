@@ -10,7 +10,7 @@ from app.models.models import StreetViewImage, TrainingData as TrainingDataModel
 from app.core.config import settings
 from app.services.job_service import get_job
 from app.services.map_aggregation import grid_cell_size_for_zoom
-from app.core.settings_manager import settings_manager
+from app.services.segment_aggregation import frame_usable
 
 from .types import Point, Job, TrainingStats, TrainingPointsResponse, FilterMode, Setting, RqiModelInfo, RoadSegment, RouteQuality
 
@@ -142,24 +142,15 @@ def _points_from_images(db, results) -> List[Point]:
         for td in td_results:
             training_map[td.image_filename] = td
 
-    # Fetch setting once
-    rqi_display_source = settings_manager.get_setting("rqi_display_source", "both")
-
     final_points = []
     for x in results:
         fname = get_filename(x.image_url)
         td = training_map.get(fname)
 
-        # Logic for score selection
-        final_rqi_score = x.rqi_score
-        rqi_source = "yolo"
-
-        if rqi_display_source == "dino":
-            if x.dino_rqi_score is not None:
-                final_rqi_score = x.dino_rqi_score
-                rqi_source = "dino"
-            else:
-                rqi_source = "yolo_fallback"
+        # Product RQI is DINO-only. Keep rejected/unscored frames available
+        # for inspection without presenting their damage analysis as quality.
+        final_rqi_score = x.dino_rqi_score if frame_usable(x.analysis_metadata) else None
+        rqi_source = "dino" if final_rqi_score is not None else "unknown"
 
         final_points.append(Point(
             id=x.id,
@@ -262,71 +253,7 @@ class Query:
             if not p:
                 return None
             
-            image_url = p.image_url
-            filename_for_training = None
-            if image_url:
-                if image_url.startswith("images/"):
-                    filename_for_training = image_url.replace("images/", "")
-                elif "/data/images/" in image_url:
-                    filename_for_training = image_url.split("/data/images/")[-1]
-                elif image_url.startswith("http"):
-                    filename_for_training = image_url.split("/")[-1]
-                else:
-                    import os
-                    filename_for_training = os.path.basename(image_url)
-
-            manual_rqi = None
-            manual_tags = None
-            manual_annotations = None
-            manual_comment = None
-
-            if filename_for_training:
-                td = db.query(TrainingDataModel).filter(TrainingDataModel.image_filename == filename_for_training).first()
-                if td:
-                    manual_rqi = td.manual_rqi
-                    manual_tags = td.tags
-                    manual_annotations = td.annotations
-                    manual_comment = td.comment
-
-            # Determine RQI source
-            rqi_display_source = settings_manager.get_setting("rqi_display_source", "both")
-            
-            final_rqi_score = p.rqi_score
-            rqi_source = "yolo"
-
-            if rqi_display_source == "dino":
-                if p.dino_rqi_score is not None:
-                    final_rqi_score = p.dino_rqi_score
-                    rqi_source = "dino"
-                else:
-                     rqi_source = "yolo_fallback"
-            
-            # If 'both' or 'yolo', we keep rqi_score as is (YOLO), and user can use dino_rqi_score separately.
-            # But we set source explicitly.
-            elif rqi_display_source == "both":
-                rqi_source = "yolo" # Default primary is YOLO in 'both' mode
-
-            return Point(
-                id=p.id,
-                latitude=p.latitude,
-                longitude=p.longitude,
-                heading=p.heading,
-                pitch=p.pitch,
-                image_url=f"images/{filename_for_training}" if filename_for_training else p.image_url,
-                rqi_score=final_rqi_score,
-                dino_rqi_score=p.dino_rqi_score,
-                damage_count=p.damage_count or 0,
-                damage_types=p.damage_types,
-                analysis_metadata=p.analysis_metadata,
-                created_at=p.created_at,
-                rqi_source=rqi_source,
-                pano_id=p.pano_id,
-                capture_date_value=p.capture_date,
-                manual_rqi=manual_rqi,
-                manual_tags=manual_tags,
-                manual_annotations=manual_annotations,
-                manual_comment=manual_comment
-            )
+            return _points_from_images(db, [p])[0]
         finally:
             db.close()
 
@@ -360,12 +287,17 @@ class Query:
         is density-independent on purpose: a densely-sampled good road stays
         green (a summed heatmap would falsely light it up). Coverage is shown by
         which cells are filled, quality by their colour. Anonymous like
-        `points`. Effective score = dino_rqi_score → yolo rqi_score; cells with
-        neither are skipped. `swLat/swLng` = the cell's south-west corner.
+        `points`. Only DINO-scored frames not marked unusable contribute.
+        `swLat/swLng` = the cell's south-west corner.
         """
         cell = grid_cell_size_for_zoom(zoom)
         params = {"cell": cell}
-        where = ["COALESCE(dino_rqi_score, rqi_score) IS NOT NULL"]
+        where = [
+            "dino_rqi_score IS NOT NULL",
+            # Match segment_aggregation.frame_usable, including legacy JSON
+            # strings and missing keys (which remain usable).
+            "COALESCE(lower(trim(analysis_metadata->'frame_quality'->>'usable')), '') <> 'false'",
+        ]
         if bbox and len(bbox) == 4:
             min_lng, min_lat, max_lng, max_lat = bbox
             where.append("longitude BETWEEN :min_lng AND :max_lng")
@@ -379,7 +311,7 @@ class Query:
             SELECT
               floor(latitude / :cell) * :cell AS sw_lat,
               floor(longitude / :cell) * :cell AS sw_lng,
-              AVG(COALESCE(dino_rqi_score, rqi_score)) AS avg_rqi
+              AVG(dino_rqi_score) AS avg_rqi
             FROM street_view_images
             WHERE {" AND ".join(where)}
             GROUP BY floor(latitude / :cell), floor(longitude / :cell)
@@ -592,46 +524,7 @@ class Query:
             total_count = query.count()
             items_db = query.offset(offset).limit(limit).all()
             
-            # Helper to map to GraphQL type
-            def map_point(p, td):
-                return Point(
-                    id=p.id,
-                    latitude=p.latitude,
-                    longitude=p.longitude,
-                    heading=p.heading,
-                    pitch=p.pitch,
-                    image_url=p.image_url, # Assuming simple mapping, fix if needed
-                    rqi_score=p.rqi_score,
-                    dino_rqi_score=p.dino_rqi_score,
-                    damage_count=p.damage_count or 0,
-                    damage_types=p.damage_types,
-                    analysis_metadata=p.analysis_metadata,
-                    created_at=p.created_at,
-                    pano_id=p.pano_id,
-                    capture_date_value=p.capture_date,
-                    manual_rqi=td.manual_rqi if td else None,
-                    manual_tags=td.tags if td else None,
-                    manual_annotations=td.annotations if td else None,
-                    manual_comment=td.comment if td else None
-                )
-
-            # Helper to extract filename
-
-            # Need to fetch training data for mapped items to populate manual fields
-            # Optimization: Fetch TrainingData for these IDs/files
-            filenames = [get_filename(p.image_url) for p in items_db]
-            filenames = [f for f in filenames if f] # Filter Nones
-            
-            if filenames:
-                tds = db.query(TrainingDataModel).filter(TrainingDataModel.image_filename.in_(filenames)).all()
-                td_map = {t.image_filename: t for t in tds}
-            else:
-                td_map = {}
-
-            items = []
-            for p in items_db:
-                fname = get_filename(p.image_url)
-                items.append(map_point(p, td_map.get(fname)))
+            items = _points_from_images(db, items_db)
 
             return TrainingPointsResponse(
                 items=items,
@@ -822,4 +715,3 @@ class Query:
                     
         finally:
             db.close()
-
