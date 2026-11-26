@@ -177,6 +177,17 @@ const MapView: React.FC<MapViewProps> = ({ onTrain, onMapMove }) => {
   const dots = layers.frames ? points : layers.segments && selectedSegment ? segmentFrames : []
   const pointCardOpen = Boolean(selectedPointDetail || loadingDetail)
 
+  // Keyboard: Escape closes the open card (point card first, then segment).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      if (pointCardOpen) selectPoint(null)
+      else if (selectedSegment) selectSegment(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [pointCardOpen, selectedSegment, selectPoint, selectSegment])
+
   // The route is drawn UNDER the segments. SegmentLayer re-sorts its lines in
   // its own effects; this parent effect runs after them on every render and
   // puts the route back at the very bottom of the shared canvas.

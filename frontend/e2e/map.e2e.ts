@@ -98,6 +98,9 @@ test('clicking a road segment opens its card', async ({ page, isMobile }) => {
     'href',
     /^https:\/\/www\.google\.com\/maps\//,
   )
+  // Keyboard users close the card with Escape.
+  await page.keyboard.press('Escape')
+  await expect(card).toBeHidden()
 })
 
 test('clicking a frame dot opens the point card', async ({ page, isMobile }) => {
