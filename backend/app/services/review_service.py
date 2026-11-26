@@ -40,7 +40,12 @@ class ReviewService:
 
     def _handle_auto_detect(self, params: Dict[str, Any]) -> Dict[str, Any]:
         filename = params.get('filename')
-        conf_threshold = params.get('confThreshold', 0.25)
+        conf_threshold = params.get('confThreshold')
+        if conf_threshold is None:
+            # Display rule (Era 14): YOLO polygons are indicative; by default
+            # only suggest those at/above the configured display threshold.
+            from app.core.settings_manager import settings_manager
+            conf_threshold = settings_manager.get_setting("yolo_display_conf", 0.5)
         classes = params.get('classes')
         
         if not filename:

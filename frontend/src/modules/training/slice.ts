@@ -1,4 +1,5 @@
 import { createSlice, createAction } from '@reduxjs/toolkit'
+import { YOLO_DISPLAY_CONF } from './yoloDisplay'
 import type { PayloadAction, SerializedError } from '@reduxjs/toolkit'
 import { createSagaAction } from 'saga-toolkit'
 import type { TrainingState, Annotation, TrainingPoint, TrainingStats, DamageLabel } from './types'
@@ -75,7 +76,7 @@ const initialState: TrainingState = {
   offset: 0,
   activeMode: 'all',
   globalStats: null,
-  autoDetectConf: 0.25,
+  autoDetectConf: YOLO_DISPLAY_CONF,
   autoDetectClasses: [
     'long_crack',
     'trans_crack',

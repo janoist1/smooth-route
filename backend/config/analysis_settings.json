@@ -32,6 +32,14 @@
         "explanation": "Meghatározza a minimális magabiztossági szintet minden YOLO alapú észlelésnél."
     },
     {
+        "key": "yolo_display_conf",
+        "value": 0.5,
+        "description": "YOLO Megjelenítési Küszöb",
+        "example": "0.5",
+        "category": "YOLO (Objektum Detektálás)",
+        "explanation": "Ennél kisebb magabiztosságú YOLO-poligonokat alapból nem mutatunk (a nyers észlelések megmaradnak). A modell még kevés jelölt képből tanult (Era 14: új képeken mask mAP50 0.26), ezért a poligonok tájékoztató jellegűek."
+    },
+    {
         "key": "yolo_training_epochs",
         "value": 50,
         "description": "YOLO Epochok Száma",

@@ -1,4 +1,5 @@
 import React from 'react'
+import { YOLO_DISPLAY_CONF } from '../yoloDisplay'
 import type { DamageLabel } from '../types'
 import {
   CircleDashed,
@@ -122,7 +123,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
   onApplyPrevious,
   onRunAction,
   loading,
-  autoDetectConf = 0.25,
+  autoDetectConf = YOLO_DISPLAY_CONF,
   onConfChange,
   autoDetectClasses = [],
   onClassesChange,

@@ -55,6 +55,13 @@ SETTING_REGISTRY = {
             "InferenceService, RoadDamageAnalyzer",
         ),
         _definition(
+            "yolo_display_conf",
+            float,
+            0.5,
+            "YOLO (Objektum Detektálás)",
+            "ReviewService (auto-detect default), review canvas",
+        ),
+        _definition(
             "yolo_training_epochs",
             int,
             50,

@@ -6,6 +6,7 @@ import { LoaderOverlay, StatusToast } from '../../../ui'
 import { ImageNavigation } from './ImageNavigation'
 import { BottomPanel } from './BottomPanel'
 import { Canvas } from './Canvas'
+import { YOLO_INDICATIVE_NOTE_HU, hasAiSuggestions } from '../../yoloDisplay'
 
 interface TrainingViewProps {
   allIds: (string | number)[]
@@ -290,6 +291,26 @@ const TrainingView: React.FC<TrainingViewProps> = ({ allIds, onNext, onPrev, onC
           }}>
           Hibák jelölése (poligonok)
         </div>
+        {hasAiSuggestions(annotations) && (
+          <div
+            role="note"
+            style={{
+              position: 'absolute',
+              top: '56px',
+              left: '20px',
+              zIndex: 90,
+              maxWidth: '420px',
+              padding: '6px 10px',
+              borderRadius: '8px',
+              background: 'rgba(120, 53, 15, 0.85)',
+              border: '1px solid rgba(251, 191, 36, 0.4)',
+              color: '#fde68a',
+              fontSize: '12px',
+              pointerEvents: 'none',
+            }}>
+            {YOLO_INDICATIVE_NOTE_HU}
+          </div>
+        )}
 
         {/* Canvas & Navigation */}
         <Canvas
