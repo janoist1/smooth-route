@@ -90,6 +90,7 @@ runs the build on push, so run it locally too. **Not green = not done.**
 - **RQI:** honest spatial-CV numbers QWK 0.774 / MAE 0.405 / AUC 0.934; weak in
   Budapest; the v2 champion stays. Next steps: [docs/MODEL_EXPERIMENTS.md](docs/MODEL_EXPERIMENTS.md).
 - **In progress** (integration branch `claude/analysis-layer`): road-segment
-  aggregation (ML + backend + frontend), high-res road-crop features, labelling
+  aggregation (ML + backend + frontend), high-res road-crop features, VLM attribute
+  features, frame-quality audit (`analysis_metadata.frame_quality`), labelling
   queue + mobile quick-rate. Who is on what: [docs/TEAM.md](docs/TEAM.md).
 - **Open, no owner:** YOLO retrain + FastSAM decision ([DEVELOPMENT.md](DEVELOPMENT.md)).

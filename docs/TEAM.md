@@ -23,6 +23,8 @@ address of their own: reach them only through the lead.
 | QA | session `local_1abdbc43-3382-4c7e-8c1b-a17dc66c9648` (`qa`) "QA: integrációs ág ellenőrzése" | runtime smoke tests + review of the integration branch | active | `SendMessage` |
 | ML high-res features | session `local_d7ff59b2-1888-4337-a822-3cd0f9770565` (`ml-hires`) "ML: high-res road-crop features" | higher-resolution road-region DINOv2 features + YOLO damage features, under the spatial gate | active | `SendMessage` |
 | Labelling queue | session `local_a23ad50a-216c-412f-a858-146cfad23089` (`label-queue`) "Labelling: active-learning queue + mobile quick-rate" | smart unlabelled-frame queue + mobile quick-rate page for the owner | active | `SendMessage` |
+| Frame quality | session `local_03836c8c-9acc-4c99-aacf-13f6d4bfce53` (`frame-quality`) "Data: frame quality audit" | flags unusable frames (non-road, dark, blurred, duplicates) in `analysis_metadata.frame_quality` so segments skip them | active | `SendMessage` |
+| VLM attributes | session `local_cceb44fa-3d54-4217-86df-83d46d2458f1` (`ml-vlm-attrs`) "ML: VLM image-analysis features" | Fable subagents describe each labelled frame with a fixed attribute schema; tested as model features (+ distillation) under the spatial gate; also a label-audit list | active | `SendMessage` |
 | ML segment aggregation | lead's subagent, Fable 5.2 | `ml/segment_eval.py`, `ml/segment_recipe.json` | in progress | via lead |
 | Backend road segments | lead's subagent, Fable 5.2 | `road_segments`, `roadSegments`/`routeQuality` GraphQL | in progress | via lead |
 | Frontend segment layer | lead's subagent, Fable 5.2 | map segment layer | in progress | via lead |
@@ -47,6 +49,8 @@ address of their own: reach them only through the lead.
 - **Premium model** (Opus 5.5, Fable 5.2) for design-heavy work: new features, ML
   experiments, architecture, reviews. **Cheaper model** (Sonnet) for mechanical work:
   type fixes, renames, dependency bumps, translations of settled text.
+- **Usual pattern:** sessions run on Opus and delegate heavy image reading and
+  implementation to Fable subagents (Fable has its own weekly usage bucket).
 - When the model choice itself is the question, run a small comparison pilot first
   (the labelling pilot compared four labellers on two models).
 
