@@ -65,6 +65,7 @@ lint:
 	@echo "🧹 Linting..."
 	cd frontend && npm run lint
 	$(PYTHON) -m ruff check backend
+	$(PYTHON) -m ruff check ml scripts
 
 clean:
 	rm -rf frontend/dist

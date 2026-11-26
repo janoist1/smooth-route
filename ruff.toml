@@ -1,0 +1,15 @@
+# Lint gate for the Python that lives outside backend/ — the ml/ pipeline and the
+# top-level scripts/ (CI: `ruff check ml scripts` from the repo root).
+#
+# Same rule set as backend/pyproject.toml ([tool.ruff.lint]) so the whole repo
+# is held to one bar: F = pyflakes (undefined names, unused imports/variables,
+# redefinitions), E9 = syntax / IO errors. Kept small on purpose: style rules
+# would churn files other branches are editing. backend/ keeps its own config
+# (ruff uses the closest one, they are not merged).
+target-version = "py311"
+
+# Reference-only / unmaintained code (see AGENTS.md and scripts/legacy/README.md).
+extend-exclude = ["ml/legacy", "scripts/legacy"]
+
+[lint]
+select = ["F", "E9"]

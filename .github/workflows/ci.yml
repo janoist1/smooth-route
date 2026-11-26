@@ -26,6 +26,20 @@ jobs:
       # Vercel builds on push; build here too so a broken build fails the PR.
       - run: npm run build
 
+  ml-lint:
+    name: ML pipeline + scripts (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # Lint only: ruff parses the files without importing them, so no torch /
+      # sklearn install. Rules live in the root ruff.toml (F + E9, same as the
+      # backend); ml/legacy and scripts/legacy are excluded there.
+      - run: pip install ruff
+      - run: ruff check ml scripts
+
   backend:
     name: Backend (ruff / pytest + coverage)
     runs-on: ubuntu-latest

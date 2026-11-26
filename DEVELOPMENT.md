@@ -187,7 +187,9 @@ Other `make` targets: `retrain` ([ml/README.md](ml/README.md#one-command-retrain
 
 `.github/workflows/ci.yml` runs the backend tests on Python 3.12 with a minimal,
 **torch-free** dependency set, after `ruff check .` (rules in `backend/pyproject.toml`:
-pyflakes `F` + syntax `E9`), and prints coverage (`pytest-cov`). The frontend job runs
+pyflakes `F` + syntax `E9`), and prints coverage (`pytest-cov`). A separate `ml-lint`
+job runs `ruff check ml scripts` with the same rule set (root `ruff.toml`; `ml/legacy`
+and `scripts/legacy` are excluded) — ruff only, nothing is imported. The frontend job runs
 typecheck/lint/test and the production build (`npm run build`) on Node 22.
 Torch-dependent tests skip themselves there. When a test needs a new package,
 add it to the `pip install` line in `ci.yml` too (simulate the CI env locally:
