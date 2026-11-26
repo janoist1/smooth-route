@@ -10,7 +10,8 @@ import strawberry
 
 from app.graphql.types import Point
 from app.services import capture_date as cd
-from app.services.image_downloader import fill_capture_metadata
+from app.services.image_downloader import get_capture_metadata
+from app.services.sv_client import StreetViewError
 
 BACKFILL_PATH = Path(__file__).resolve().parents[1] / "scripts" / "backfill_capture_date.py"
 
@@ -179,14 +180,14 @@ def _img(**kw):
     return SimpleNamespace(**base)
 
 
-def test_fill_capture_metadata_at_download_sets_date_and_pano():
+def test_get_capture_metadata_at_download_resolves_date_and_pano():
     img = _img()
-    fill_capture_metadata(img, lookup=lambda *a, **kw: {"date": "2021-09", "pano_id": "PX"})
-    assert img.capture_date == dt.date(2021, 9, 1)
-    assert img.pano_id == "PX"
+    assert get_capture_metadata(img, lookup=lambda *a, **kw: {
+        "date": "2021-09", "pano_id": "PX"}) == ("PX", dt.date(2021, 9, 1))
+    assert img.capture_date is None and img.pano_id is None
 
 
-def test_fill_capture_metadata_prefers_pano_id_and_keeps_existing():
+def test_get_capture_metadata_rejects_a_different_panorama():
     seen = {}
 
     def lookup(*a, **kw):
@@ -194,21 +195,19 @@ def test_fill_capture_metadata_prefers_pano_id_and_keeps_existing():
         return {"date": "2021-09", "pano_id": "OTHER"}
 
     img = _img(pano_id="P1")
-    fill_capture_metadata(img, lookup=lookup)
+    with pytest.raises(StreetViewError, match="panorama id mismatch"):
+        get_capture_metadata(img, lookup=lookup)
     assert seen == {"pano_id": "P1"} and img.pano_id == "P1"
 
-    dated = _img(capture_date=dt.date(2015, 1, 1))
-    fill_capture_metadata(dated, lookup=lambda *a, **kw: pytest.fail("no lookup needed"))
-    assert dated.capture_date == dt.date(2015, 1, 1)
 
-
-def test_fill_capture_metadata_swallows_lookup_errors():
+def test_get_capture_metadata_propagates_lookup_errors():
     img = _img()
 
     def boom(*a, **kw):
         raise RuntimeError("network")
 
-    fill_capture_metadata(img, lookup=boom)
+    with pytest.raises(RuntimeError, match="network"):
+        get_capture_metadata(img, lookup=boom)
     assert img.capture_date is None
 
 

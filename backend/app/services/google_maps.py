@@ -169,7 +169,8 @@ class GoogleMapsService:
         
         return R * c
 
-    def get_street_view_url(self, lat: float, lng: float, heading: float = 0, pitch: Optional[float] = None) -> str:
+    def get_street_view_url(self, lat: float, lng: float, heading: float = 0,
+                            pitch: Optional[float] = None, *, pano_id: Optional[str] = None) -> str:
         """
         Street View Static request URL for a point — WITHOUT the API key.
 
@@ -182,8 +183,13 @@ class GoogleMapsService:
             from app.core.settings_manager import settings_manager
             pitch = settings_manager.get_setting("google_maps_pitch", -20.0)
 
+        from urllib.parse import urlencode
+
         base_url = "https://maps.googleapis.com/maps/api/streetview"
-        return f"{base_url}?size=600x400&location={lat},{lng}&heading={heading}&pitch={pitch}"
+        selector = {"pano": pano_id} if pano_id else {"location": f"{lat},{lng}"}
+        params = {"size": "600x400", **selector, "heading": heading, "pitch": pitch,
+                  "return_error_code": "true"}
+        return f"{base_url}?{urlencode(params, safe=',')}"
 
     def calculate_heading(self, p1: Tuple[float, float], p2: Tuple[float, float]) -> float:
         """
@@ -272,8 +278,9 @@ class GoogleMapsService:
                 final_lat = sv_meta['lat']
                 final_lng = sv_meta['lng']
                 
-                # Re-generate URL with exact coords
-                url = self.get_street_view_url(final_lat, final_lng, heading=heading, pitch=-20.0)
+                # Pin the request to the panorama that supplied the capture date.
+                url = self.get_street_view_url(final_lat, final_lng, heading=heading,
+                                              pitch=-20.0, pano_id=pano_id)
                 
                 metadata.append({
                     "latitude": final_lat,

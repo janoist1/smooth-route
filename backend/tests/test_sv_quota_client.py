@@ -1,8 +1,10 @@
 """Street View budget counter and the gentle client (no network, no DB)."""
 import datetime as dt
 import json
+from io import BytesIO
 
 import pytest
+from PIL import Image, ImageDraw
 
 from app.services.sv_client import (
     SteadyRate,
@@ -205,7 +207,23 @@ def test_rate_from_env(monkeypatch):
 
 # ---- client ---------------------------------------------------------------
 
-JPEG = b"\xff\xd8\xff\xe0 fake jpeg"
+def image_bytes(*, placeholder=False, format="JPEG", background=(228, 226, 222)):
+    """Decoded image fixtures: a grey error card or a varied road-like frame."""
+    image = Image.new("RGB", (600, 400), background)
+    draw = ImageDraw.Draw(image)
+    if placeholder:
+        draw.text((180, 195), "Sorry, we have no imagery here.", fill=(70, 70, 70))
+        draw.text((8, 389), "Google", fill=(100, 100, 100))
+    else:
+        draw.rectangle((0, 0, 599, 150), fill=(140, 170, 210))
+        draw.polygon([(220, 150), (380, 150), (599, 399), (0, 399)], fill=(70, 70, 70))
+        draw.line([(300, 150), (300, 399)], fill=(230, 230, 230), width=5)
+    output = BytesIO()
+    image.save(output, format=format)
+    return output.getvalue()
+
+
+JPEG = image_bytes()
 OK_IMAGE = (200, "image/jpeg", JPEG)
 
 
@@ -355,6 +373,7 @@ def test_stored_url_is_fetched_through_the_guard_with_the_configured_key(tmp_pat
     params = http.calls[0][1]
     assert params["key"] == "SECRET-KEY" and params["location"] == "47.5,19.05"
     assert params["heading"] == "67.6" and params["pitch"] == "-20.0"
+    assert params["return_error_code"] == "true"
     with pytest.raises(QuotaExceeded):
         c.image_from_url(stored)               # cap of 1 is used up
     with pytest.raises(StreetViewError):
@@ -370,10 +389,66 @@ def test_queued_urls_carry_no_key_and_still_download(tmp_path):
     svc = GoogleMapsService.__new__(GoogleMapsService)
     url = svc.get_street_view_url(47.5, 19.05, heading=67.6, pitch=-20.0)
     assert url == ("https://maps.googleapis.com/maps/api/streetview"
-                   "?size=600x400&location=47.5,19.05&heading=67.6&pitch=-20.0")
+                   "?size=600x400&location=47.5,19.05&heading=67.6&pitch=-20.0"
+                   "&return_error_code=true")
     assert "key=" not in url
 
     http = FakeHttp(OK_IMAGE)
     c, _t, _logs = client(tmp_path, http)
     assert c.image_from_url(url) == JPEG
     assert http.calls[0][1]["key"] == "SECRET-KEY"            # added only at request time
+
+
+@pytest.mark.parametrize("error_param", ["", "&return_error_code=false", "&return_error_code="])
+def test_queued_url_always_requests_errors_instead_of_placeholder(tmp_path, error_param):
+    http = FakeHttp((404, "text/plain", b"no imagery"))
+    c, _t, _logs = client(tmp_path, http)
+    with pytest.raises(StreetViewError, match="404"):
+        c.image_from_url("https://maps.googleapis.com/maps/api/streetview?location=1,2" + error_param)
+    assert http.calls[0][1]["return_error_code"] == "true"
+    assert c.quota.used() == 1
+
+
+@pytest.mark.parametrize("queued", [True, False])
+@pytest.mark.parametrize("format", ["JPEG", "PNG"])
+@pytest.mark.parametrize("background", [(228, 226, 222), (240, 240, 240)])
+def test_http_200_no_imagery_card_is_rejected_and_counted(tmp_path, queued, format, background):
+    body = image_bytes(placeholder=True, format=format, background=background)
+    http = FakeHttp((200, f"image/{format.lower()}", body))
+    c, _t, _logs = client(tmp_path, http)
+    job = JobBudget(cap=2)
+    with pytest.raises(StreetViewError, match="no-imagery placeholder"):
+        if queued:
+            c.image_from_url("https://maps.googleapis.com/maps/api/streetview?pano=P", job=job)
+        else:
+            c.image(pano_id="P", heading=0, job=job)
+    assert c.quota.used() == job.used == 1
+
+
+def test_http_200_corrupt_image_is_rejected(tmp_path):
+    c, _t, _logs = client(tmp_path, FakeHttp((200, "image/jpeg", b"\xff\xd8broken")))
+    with pytest.raises(StreetViewError, match="unreadable image"):
+        c.image(pano_id="P", heading=0)
+
+
+def test_textured_grey_photo_is_accepted_without_changing_the_bytes(tmp_path):
+    image = Image.new("RGB", (600, 400))
+    image.putdata([(v, v, v) for y in range(400) for x in range(600)
+                   for v in [180 + (x + y) % 60]])
+    output = BytesIO()
+    image.save(output, format="JPEG")
+    body = output.getvalue()
+    c, _t, _logs = client(tmp_path, FakeHttp((200, "image/jpeg", body)))
+    assert c.image(pano_id="P", heading=0) == body
+
+
+def test_pinning_queued_url_removes_location_selectors_and_preserves_camera(tmp_path):
+    http = FakeHttp(OK_IMAGE)
+    c, _t, _logs = client(tmp_path, http)
+    stored = ("https://maps.googleapis.com/maps/api/streetview?size=600x400&location=1,2"
+              "&pano=OTHER&radius=50&source=outdoor&heading=67.6&pitch=-20.0&key=OLD")
+    assert c.image_from_url(stored, pano_id="STORED") == JPEG
+    assert http.calls[0][1] == {
+        "size": "600x400", "pano": "STORED", "heading": "67.6", "pitch": "-20.0",
+        "return_error_code": "true", "key": "SECRET-KEY",
+    }

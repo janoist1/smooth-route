@@ -51,6 +51,46 @@ class StreetViewError(RuntimeError):
     """This one request failed for good (bad request, no image); skip it."""
 
 
+class StreetViewPlaceholder(StreetViewError):
+    """The response is the no-imagery card rather than a panorama photo."""
+
+
+def validate_image(body: bytes) -> None:
+    """Reject broken images and the flat grey Street View no-imagery card.
+
+    The card has a nearly uniform neutral background around a small central
+    message. Inspect pixels as well as HTTP status: old URLs and cached
+    responses can still return that card with HTTP 200. Validation never
+    changes the bytes passed to the scorer.
+    """
+    from io import BytesIO
+
+    from PIL import Image
+
+    try:
+        with Image.open(BytesIO(body)) as source:
+            source.load()
+            sample = source.convert("RGB").resize((64, 64))
+    except (OSError, ValueError) as exc:
+        raise StreetViewError("Street View image: unreadable image") from exc
+
+    # Mostly uniform borders distinguish the error card from a road with a
+    # large grey sky. Allow a small footer, JPEG ringing and warm grey tones.
+    pixels = [sample.getpixel((x, y)) for y in range(64) for x in range(64)]
+    background = pixels[0]
+    if not (180 <= min(background) and max(background) - min(background) <= 12):
+        return
+
+    def matches(pixel) -> bool:
+        return max(abs(a - b) for a, b in zip(pixel, background)) <= 8
+
+    border = [pixels[y * 64 + x] for y in range(64) for x in range(64)
+              if x in (0, 63) or y in (0, 63)]
+    if (sum(matches(pixel) for pixel in border) >= len(border) * 0.95
+            and sum(matches(pixel) for pixel in pixels) >= len(pixels) * 0.9):
+        raise StreetViewPlaceholder("Street View image: no-imagery placeholder")
+
+
 def rate_from_env(default: float = DEFAULT_RATE_PER_S) -> float:
     try:
         rate = float(os.environ.get("GOOGLE_SV_RATE_PER_S", default))
@@ -187,12 +227,15 @@ class StreetViewClient:
     # -- images (billed) ----------------------------------------------------
     def _image_request(self, url: str, params: dict, job: Optional[JobBudget]) -> bytes:
         status, content_type, body = self._request(
-            url, params, "image",
+            # Enforce this for every entry point, including legacy queued URLs
+            # that omit it or explicitly ask for the grey placeholder.
+            url, {**params, "return_error_code": "true"}, "image",
             # Every ATTEMPT is booked: a request that timed out on our side may
             # still have been billed, so the counter must never run behind.
             before_attempt=lambda: self.quota.reserve(1, job),
         )
         if status == 200 and content_type.startswith("image") and body:
+            validate_image(body)
             return body
         text = body[:200].decode("utf-8", "replace").lower() if body else ""
         if any(word in text for word in ("quota", "billing", "exceeded", "not authorized")):
@@ -224,16 +267,23 @@ class StreetViewClient:
             params["source"] = "outdoor"
         return self._image_request(IMAGE_URL, params, job)
 
-    def image_from_url(self, url: str, job: Optional[JobBudget] = None) -> bytes:
+    def image_from_url(self, url: str, job: Optional[JobBudget] = None,
+                       *, pano_id: Optional[str] = None) -> bytes:
         """Fetch a previously built Street View Static URL (rows queued by the
         route collector store one) through the same budget and pacing. The key
-        inside the stored URL is dropped and re-added from the config."""
+        inside the stored URL is dropped and re-added from the config.
+        ``pano_id`` pins legacy location URLs to their stored panorama while
+        preserving camera settings; it takes precedence over URL selectors."""
         from urllib.parse import parse_qsl, urlsplit
 
         parts = urlsplit(url)
         if parts.netloc != "maps.googleapis.com" or not parts.path.startswith("/maps/api/streetview"):
             raise StreetViewError("not a Street View Static URL")
         params = {k: v for k, v in parse_qsl(parts.query) if k != "key"}
+        if pano_id:
+            for selector in ("location", "radius", "source"):
+                params.pop(selector, None)
+            params["pano"] = pano_id
         return self._image_request(IMAGE_URL, params, job)
 
 
