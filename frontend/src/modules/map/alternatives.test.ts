@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import reducer, { actions } from './slice'
-import { defaultRouteIndex, extraDurationLabel, formatDuration, routePlanErrorMessage, type RouteAlternative } from './alternatives'
+import { defaultRouteIndex, extraDurationLabel, formatDuration, rankRouteAlternatives, routePlanErrorMessage, type RouteAlternative } from './alternatives'
+import { rqiValue } from '../ui/utils/rqiScale'
 
-const quality = { totalLengthM: 1000, coveredLengthM: 800, lengthByRqi: [800, 0, 0, 0], meanScore: 4, worstSegments: [] }
+const quality = { totalLengthM: 1000, coveredLengthM: 800, lengthByRqi: [800, 0, 0, 0], meanScore: rqiValue('good'), worstSegments: [] }
 const route = (index: number, durationS: number, extra: Partial<RouteAlternative> = {}): RouteAlternative => ({
   index,
   points: [[47.5, 19 + index * 0.01], [47.49, 19.05]],
@@ -17,6 +18,40 @@ const route = (index: number, durationS: number, extra: Partial<RouteAlternative
 })
 
 describe('route alternatives helpers', () => {
+  it('refreshes coverage and badges using impact, excluding poorly covered and slow routes', () => {
+    const candidate = (index: number, durationS: number, coveredLengthM: number, impactScore: number) =>
+      route(index, durationS, {
+        coverage: 0,
+        isSmoothest: true,
+        quality: { ...quality, coveredLengthM, impactScore, meanScore: rqiValue('good') },
+      })
+    const ranked = rankRouteAlternatives([
+      candidate(0, 600, 800, 1), candidate(1, 720, 500, 0.5),
+      candidate(2, 721, 1000, 0), candidate(3, 650, 499, 0),
+    ])
+    expect(ranked.map(r => r.coverage)).toEqual([0.8, 0.5, 1, 0.499])
+    expect(ranked.filter(r => r.isSmoothest).map(r => r.index)).toEqual([1])
+    expect(ranked.filter(r => r.isFastest).map(r => r.index)).toEqual([0])
+  })
+
+  it('falls back to canonical mean scores when any measured route lacks impact', () => {
+    const ranked = rankRouteAlternatives([
+      route(0, 600, { quality: { ...quality, meanScore: rqiValue('poor'), impactScore: 0 } }),
+      route(1, 650, { quality: { ...quality, meanScore: rqiValue('excellent'), impactScore: null } }),
+    ])
+    expect(ranked.filter(r => r.isSmoothest).map(r => r.index)).toEqual([1])
+  })
+
+  it('breaks equal quality by duration, then original order, and removes obsolete badges without coverage', () => {
+    const ranked = rankRouteAlternatives([route(7, 650), route(4, 600), route(9, 600)])
+    expect(ranked.filter(r => r.isSmoothest).map(r => r.index)).toEqual([4])
+    expect(ranked.filter(r => r.isFastest).map(r => r.index)).toEqual([4])
+    expect(rankRouteAlternatives([
+      route(0, 600, { isSmoothest: true, quality: { ...quality, totalLengthM: 0, coveredLengthM: 0, meanScore: null } }),
+    ])[0]).toMatchObject({ coverage: 0, isSmoothest: false, isFastest: true })
+    expect(rankRouteAlternatives([])).toEqual([])
+  })
+
   it('shows the smoothest first, else the fastest, else Google’s first', () => {
     const routes = [route(0, 600), route(1, 650)]
     expect(defaultRouteIndex({ routes, fastestIndex: 0, smoothestIndex: 1 })).toBe(1)

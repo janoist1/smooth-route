@@ -59,6 +59,7 @@ export const GET_ROUTE_QUALITY = gql(`
       coveredLengthM
       lengthByRqi
       meanScore
+      impactScore
       worstSegments {
         id
         path
@@ -79,10 +80,9 @@ export const GET_ROUTE_QUALITY = gql(`
   }
 `) as unknown as TypedDocumentNode<RouteQualityData, RouteQualityVariables>
 
-// Frame dots around a selected segment: the existing `points` query with the
-// segment's bbox (own operation name — GetPoints lives in ../sagas.ts).
+// Membership, heading and usability are resolved by the segment builder's rule.
 export interface SegmentFramesData {
-  points: Array<{
+  segmentFrames: Array<{
     id: number
     latitude: number
     longitude: number
@@ -93,13 +93,12 @@ export interface SegmentFramesData {
   }>
 }
 export interface SegmentFramesVariables {
-  limit: number
-  bbox: number[]
+  segmentId: string
 }
 
 export const GET_SEGMENT_FRAMES = gql(`
-  query GetSegmentFrames($limit: Int, $bbox: [Float!]) {
-    points(limit: $limit, bbox: $bbox) {
+  query GetSegmentFrames($segmentId: ID!) {
+    segmentFrames(segmentId: $segmentId) {
       id
       latitude
       longitude

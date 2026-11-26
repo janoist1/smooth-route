@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { runSaga } from 'redux-saga'
 import type { SagaPendingAction } from 'saga-toolkit'
 import type { RoadSegment } from './types'
+import { rqiValue } from '../../ui/utils/rqiScale'
+import { GET_SEGMENT_FRAMES } from './api'
 
 // The network layer is replaced: gqlQuery hands back whatever the test queued.
 const gqlQueryMock = vi.hoisted(() => vi.fn())
@@ -30,8 +32,8 @@ const segment = (over: Partial<RoadSegment> = {}): RoadSegment => ({
     [47.5, 19.04],
     [47.501, 19.04],
   ],
-  rqi: 2,
-  score: 2.1,
+  rqi: rqiValue('good'),
+  score: rqiValue('good'),
   pBad: 0.1,
   confidence: 0.9,
   confidenceLevel: 'high',
@@ -121,12 +123,19 @@ describe('fetchSegmentFramesWorker', () => {
     gqlQueryMock.mockReset()
   })
 
-  it('keeps only the frames lying on the segment', async () => {
+  it('loads segment membership from segmentFrames, excluding nearby parallel, crossing and unusable frames', async () => {
+    const member = {
+      id: 1, latitude: 47.5005, longitude: 19.04, heading: 0,
+      rqiScore: rqiValue('good'), rqiSource: 'dino', captureDate: '2024-01',
+    }
     gqlQueryMock.mockReturnValue({
+      segmentFrames: [member],
+      // Every nonmember is within the old 25 m distance filter.
       points: [
-        { id: 1, latitude: 47.5005, longitude: 19.04, rqiScore: 2, captureDate: '2024-01' },
-        // ~75 m east of the segment: inside the bbox query, but another road.
-        { id: 2, latitude: 47.5005, longitude: 19.041, rqiScore: 4, captureDate: null },
+        member,
+        { ...member, id: 2, longitude: 19.0401, rqiScore: rqiValue('poor') },
+        { ...member, id: 3, heading: 90 },
+        { ...member, id: 4, rqiScore: null },
       ],
     })
     const { task } = run(
@@ -135,12 +144,13 @@ describe('fetchSegmentFramesWorker', () => {
     )
     const frames = (await task.toPromise()) as Array<{ id: number }>
     expect(frames.map(f => f.id)).toEqual([1])
-    expect(frames[0]).toMatchObject({ latitude: 47.5005, rqi_score: 2, capture_date: '2024-01' })
-
-    const { bbox, limit } = gqlQueryMock.mock.calls[0][0].variables
-    expect(limit).toBeGreaterThan(0)
-    expect(bbox[0]).toBeLessThan(19.04) // padded around the path
-    expect(bbox[3]).toBeGreaterThan(47.501)
+    expect(frames[0]).toEqual({
+      id: 1, latitude: member.latitude, longitude: member.longitude, heading: 0,
+      rqi_score: member.rqiScore, rqi_source: 'dino', capture_date: '2024-01',
+    })
+    expect(gqlQueryMock).toHaveBeenCalledExactlyOnceWith({
+      query: GET_SEGMENT_FRAMES, variables: { segmentId: 'seg-1' },
+    })
   })
 
   it('returns no frames (instead of failing) when the query errors', async () => {

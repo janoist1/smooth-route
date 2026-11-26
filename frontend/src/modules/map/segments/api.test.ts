@@ -1,11 +1,27 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
+import { print } from 'graphql'
 import {
+  GET_SEGMENT_FRAMES,
+  GET_ROUTE_QUALITY,
   SegmentApiUnsupportedError,
   errorText,
   isUnknownFieldError,
   loadSegmentMocks,
   segmentMocksEnabled,
 } from './api'
+
+describe('segment query documents', () => {
+  it('requests authoritative membership by segment id without a nearby points fallback', () => {
+    const source = print(GET_SEGMENT_FRAMES)
+    expect(source).toContain('query GetSegmentFrames($segmentId: ID!)')
+    expect(source).toContain('segmentFrames(segmentId: $segmentId)')
+    expect(source).not.toMatch(/\bpoints\(/)
+  })
+
+  it('requests the impact score needed to refresh alternative rankings', () => {
+    expect(print(GET_ROUTE_QUALITY)).toContain('impactScore')
+  })
+})
 
 describe('errorText', () => {
   it('is empty for no error and returns a string error as it is', () => {

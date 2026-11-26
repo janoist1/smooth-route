@@ -1,6 +1,7 @@
 // Route alternatives (Google's alternative routes + their road quality).
 // Pure helpers, unit-tested in alternatives.test.ts.
 import type { RouteQuality } from './segments/types'
+import { betterThan } from '../ui/utils/rqiScale'
 
 export interface RouteAlternative {
   index: number
@@ -27,6 +28,53 @@ export const defaultRouteIndex = (res: RouteAlternativesResult): number | null =
   return res.smoothestIndex ?? res.fastestIndex ?? res.routes[0].index
 }
 
+/** Re-rank stored paths after quality changes, using the API's default policy
+ * (docs/API_SURFACE.md, Routes; backend rank_routes). Impact is a cost;
+ * canonical mean scores use the scale helper when impact is unavailable. */
+export const rankRouteAlternatives = (
+  routes: RouteAlternative[],
+  maxExtraDuration = 0.2,
+  minCoverage = 0.5,
+): RouteAlternative[] => {
+  if (routes.length === 0) return []
+  const refreshed = routes.map(route => ({
+    ...route,
+    coverage:
+      route.quality.totalLengthM > 0
+        ? route.quality.coveredLengthM / route.quality.totalLengthM
+        : 0,
+  }))
+  const fastest = refreshed.reduce((best, route) =>
+    route.durationS < best.durationS ? route : best,
+  )
+  const useImpact = refreshed.every(
+    route => route.quality.meanScore === null || route.quality.impactScore != null,
+  )
+  let smoothest: RouteAlternative | undefined
+  for (const route of refreshed) {
+    const { meanScore, impactScore } = route.quality
+    if (
+      meanScore === null ||
+      route.coverage < minCoverage ||
+      route.durationS > fastest.durationS * (1 + maxExtraDuration) + 1e-9
+    )
+      continue
+    if (smoothest) {
+      const bestMean = smoothest.quality.meanScore!
+      const bestImpact = smoothest.quality.impactScore!
+      const better = useImpact ? impactScore! < bestImpact : betterThan(meanScore, bestMean)
+      const tie = useImpact ? impactScore === bestImpact : meanScore === bestMean
+      if (!better && !(tie && route.durationS < smoothest.durationS)) continue
+    }
+    smoothest = route
+  }
+  return refreshed.map(route => ({
+    ...route,
+    isFastest: route.index === fastest.index,
+    isSmoothest: route.index === smoothest?.index,
+  }))
+}
+
 /** "23 perc" / "1 ó 05 perc". */
 export const formatDuration = (seconds: number): string => {
   const minutes = Math.max(1, Math.round(seconds / 60))
@@ -35,7 +83,10 @@ export const formatDuration = (seconds: number): string => {
 }
 
 /** "+4 perc" against the fastest route; "" for the fastest itself. */
-export const extraDurationLabel = (route: RouteAlternative, fastest: RouteAlternative | undefined): string => {
+export const extraDurationLabel = (
+  route: RouteAlternative,
+  fastest: RouteAlternative | undefined,
+): string => {
   if (!fastest || route.index === fastest.index) return ''
   const extra = Math.round((route.durationS - fastest.durationS) / 60)
   return extra > 0 ? `+${extra} perc` : ''
