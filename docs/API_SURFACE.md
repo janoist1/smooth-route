@@ -122,6 +122,15 @@ one small query per point — request it on a single `point`, not on a long
   Frame P(bad) = `analysis_metadata.dino_p_bad`, else 1/0 for a bad / good
   ordinal class. Frames with `analysis_metadata.frame_quality.usable = false`
   are skipped (no such key → used).
+- The ordinal fallback is a stopgap: an integer class used as a score lands
+  on (or next to) a class threshold and reads as "near_threshold".
+  `backend/scripts/rescore_dino.py` re-scores stored frames with the live
+  artifact (same inference path as the product, raw images, local device) and
+  writes `dino_score`, `dino_p_bad` and the class; the class a frame had
+  before is kept once in `analysis_metadata.dino_rqi_score_prev`, and
+  `analysis_metadata.dino_artifact` records which artifact produced the
+  numbers. Resumable, `--dry-run`; take a DB backup first and rebuild the
+  segments afterwards.
 - `aggregator`: `median_score` (current) | `mean_score` |
   `trimmed_mean_score` (`trim_fraction` from each end) | `mean_p_bad` (class
   from the median score, but mean P(bad) ≥ `p_bad_threshold` forces a bad
