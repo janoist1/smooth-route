@@ -1,9 +1,7 @@
 import os
 import sys
-import requests
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from pathlib import Path
 
 # Add backend to path so we can import app
 project_root = os.getcwd()
@@ -14,7 +12,8 @@ sys.path.append(backend_dir)
 try:
     from app.core.config import settings
     from app.models.models import StreetViewImage
-    from app.services.google_maps import google_maps_service
+    from app.services.sv_client import StreetViewError, StreetViewFatal, default_client
+    from app.services.sv_quota import DEFAULT_JOB_CAP, JobBudget, QuotaExceeded, cap_from_env
 except ImportError as e:
     print(f"❌ Error importing backend modules: {e}")
     print("Ensure you are running this from the project root.")
@@ -39,7 +38,10 @@ def redownload_all_images(new_pitch=-20.0):
         
         success_count = 0
         error_count = 0
-        
+        client = default_client()
+        budget = JobBudget(cap_from_env("GOOGLE_SV_JOB_CAP", DEFAULT_JOB_CAP))
+        print(client.quota.summary(), f"| this run: at most {budget.cap} images")
+
         for i, img in enumerate(images):
             print(f"[{i+1}/{len(images)}] ID: {img.id} | {img.latitude}, {img.longitude} | Heading: {img.heading}")
             
@@ -47,34 +49,34 @@ def redownload_all_images(new_pitch=-20.0):
             filename = f"{img.id:05d}_{img.latitude:.6f}_{img.longitude:.6f}_{int(img.heading)}.jpg"
             filepath = os.path.join(images_dir, filename)
             
-            # Generate new URL with the desired pitch
-            url = google_maps_service.get_street_view_url(
-                img.latitude, 
-                img.longitude, 
-                heading=img.heading, 
-                pitch=new_pitch
-            )
-            
-            # Download and overwrite
+            # Download (with the desired pitch) and overwrite. Every request
+            # goes through the shared Street View client: booked on the monthly
+            # quota counter and this run's cap first, paced at ~1 request/s.
+            # NOTE: this script re-fetches EVERY image — with the default caps
+            # it stops long before finishing; that is intended.
             try:
-                response = requests.get(url, timeout=30)
-                if response.status_code == 200:
-                    with open(filepath, 'wb') as f:
-                        f.write(response.content)
-                    
-                    # Update DB record
-                    img.pitch = new_pitch
-                    # Store RELATIVE path for portability
-                    img.image_url = f"images/{filename}"
-                    success_count += 1
-                    print(f"  ✅ Saved to {filename}")
-                else:
-                    print(f"  ❌ Failed to download: HTTP {response.status_code}")
-                    error_count += 1
-            except Exception as e:
-                print(f"  ❌ Error: {e}")
+                body = client.image(
+                    lat=img.latitude, lng=img.longitude,
+                    heading=img.heading, pitch=new_pitch, job=budget,
+                )
+            except (QuotaExceeded, StreetViewFatal) as stop:
+                db.commit()
+                print(f"\n🛑 Stopped after {success_count} images: {stop}")
+                return
+            except StreetViewError as e:
+                print(f"  ❌ Skipped: {e}")
                 error_count += 1
-                
+            else:
+                with open(filepath, 'wb') as f:
+                    f.write(body)
+
+                # Update DB record
+                img.pitch = new_pitch
+                # Store RELATIVE path for portability
+                img.image_url = f"images/{filename}"
+                success_count += 1
+                print(f"  ✅ Saved to {filename}")
+
             # Commit periodically
             if (i + 1) % 10 == 0:
                 db.commit()
