@@ -413,6 +413,64 @@ same model without pairs).
   a *label-queue filter* (which unsure frames the human should grade first) than
   as a training signal.
 
+## Era 14 — The YOLO defect model measured on the owner's polygons (T-67, 2026-11-26)
+
+The defect polygons on the detail card come from the owner-trained
+`data/models/yolov8m-seg-best-20260105.pt` (9 classes, trained on Colab
+2026-01-05 18:21; 364 train / 78 val frames). Ground truth = `training_data.annotations`:
+**400 frames, 1,341 polygons** (plus 884 "ignore" regions). Per class (frames /
+polygons): degradation 226/288, alligator_crack 139/179, patch 120/198, shadow
+118/170, trans_crack 99/115, pothole 72/130, marking 63/189, manhole 40/50,
+long_crack 20/22. Every annotation was made 2026-01-03…05, so most frames are
+the model's own training data. The only clean held-out set is the **50 frames
+edited after the training run** (236 polygons). `ml/yolo_eval.py`, ultralytics
+validator, conf 0.001.
+
+| class | held-out n | box P / R | box mAP50 | mask mAP50 | in-sample mask mAP50 |
+|---|---|---|---|---|---|
+| trans_crack | 20 | 0.58 / 0.35 | 0.35 | 0.44 | 0.87 |
+| alligator_crack | 24 | 0.67 / 0.21 | 0.20 | 0.15 | 0.76 |
+| pothole | 12 | 0.57 / 0.17 | 0.21 | 0.23 | 0.87 |
+| patch | 23 | 0.42 / 0.13 | 0.15 | 0.12 | 0.87 |
+| degradation | 37 | 0.70 / 0.39 | 0.46 | 0.21 | 0.84 |
+| shadow | 29 | 0.53 / 0.45 | 0.50 | 0.50 | 0.90 |
+| manhole | 4 | 0.84 / 0.50 | 0.56 | 0.56 | 0.94 |
+| marking | 84 | 0.39 / 0.02 | 0.19 | 0.15 | 0.61 |
+| long_crack | 3 | – / 0.00 | 0.00 | 0.00 | 0.65 |
+| **all** | 236 | 0.63 / 0.25 | **0.29** | **0.26** | 0.85 |
+
+- **Heavily overfit.** In-sample mask mAP50 is 0.85, held-out 0.26 (the
+  checkpoint's own Colab val: 0.38). It memorised 364 frames.
+- **The failure is missing defects, not mislabelling them.** On held-out frames
+  most true polygons get no detection (recall 0.25). Damage classes are rarely
+  confused with each other. Lane markings are almost never detected (2/84), so
+  the "marking" class does not stop marking → crack false positives (seen in
+  Era 8). False positives on clean road come mostly from shadow (10) and
+  degradation/patch (9).
+- The held-out set is small (3–37 polygons per damage class), so per-class
+  numbers are rough; the in-sample/held-out gap is not.
+- YOLO adds nothing to the RQI score (Era 8); its value is the explanatory
+  polygons on the card.
+
+**Plan (if defect marking matters):**
+1. **Retrain, yes, but data first.** Target ≥ 300 polygons and ≥ 150 frames per
+   kept class (today 22–288 polygons): about 1,200–1,500 annotated frames (~4×
+   today). Spread them over many places, incl. Budapest, plus ~200 hard-negative
+   frames (good roads with lane markings, crosswalks, shadows, manholes) and
+   their "ignore"/background areas.
+2. **Fewer classes:** merge long_crack + trans_crack → **crack**; keep
+   alligator_crack, pothole, patch, degradation; keep manhole and shadow as
+   distractors; **drop marking as a class** and use hard negatives instead.
+   That leaves 5 damage + 2 distractor classes.
+3. **Smaller model + honest split:** yolov8s-seg (11 M params instead of 27 M),
+   strong augmentation, and a held-out split by 1 km cell or area (like the RQI
+   gate), never random frames. Gate on held-out mask mAP50 per class.
+4. **GPU:** the existing Colab export (`backend/app/services/training/colab_provider.py`) is
+   enough. yolov8s-seg on ~1.5 k frames × 100 epochs is about 1–1.5 h on a
+   Colab T4 (half a day on the M1 MPS). No GPU purchase needed.
+5. Until then, show YOLO polygons only at conf ≥ 0.5 and label them on the card
+   as indicative.
+
 ## Lessons
 
 1. **With little data the recipe matters, not model size** — the same backbone gave
