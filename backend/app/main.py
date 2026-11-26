@@ -57,9 +57,8 @@ if settings.RUN_MIGRATIONS_ON_STARTUP:
     from app.core.migrations import ensure_database_schema
     ensure_database_schema()
 
-# Legacy REST API: local only. The public read-only deploy serves /graphql
-# alone — GET /api/v1/points returned the whole table unbounded, and the
-# image/export/job endpoints have nothing to serve there.
+# REST: only the job-progress SSE stream (app/api/routes.py), local only. The
+# public read-only deploy serves /graphql alone.
 if not _public:
     app.include_router(api_router)
 
@@ -95,7 +94,7 @@ async def root():
         "message": "Welcome to Kátyúőr API",
         "version": "0.1.0",
         "endpoints": {
-            "api": "/api/v1/points",
+            "graphql": "/graphql",
             "docs": "/docs"
         }
     }

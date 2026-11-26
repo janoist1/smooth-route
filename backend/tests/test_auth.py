@@ -211,25 +211,3 @@ class TestRestGuards:
         resp = client.get("/probe-user", headers={"Authorization": "Bearer tok"})
         assert resp.status_code == 200
         assert resp.json() == {"role": "user"}
-
-    def test_protected_api_routes_reject_anonymous(self, clerk_mode):
-        """The real router's mutating endpoints 401 before touching handlers."""
-        from app.api.routes import router
-
-        app = FastAPI()
-        app.include_router(router)
-        client = TestClient(app)
-
-        resp = client.post(
-            "/api/v1/process-route",
-            json={
-                "origin_lat": 47.5,
-                "origin_lng": 19.0,
-                "destination_lat": 47.6,
-                "destination_lng": 19.1,
-            },
-        )
-        assert resp.status_code == 401
-
-        resp = client.post("/api/v1/job/whatever/stop")
-        assert resp.status_code == 401
