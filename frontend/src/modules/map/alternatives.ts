@@ -40,3 +40,17 @@ export const extraDurationLabel = (route: RouteAlternative, fastest: RouteAltern
   const extra = Math.round((route.durationS - fastest.durationS) / 60)
   return extra > 0 ? `+${extra} perc` : ''
 }
+
+/**
+ * User-facing message for a failed route plan. routeAlternatives needs a
+ * signed-in user on the full API (anonymous only on the public read-only
+ * deploy), and that GraphQL error used to surface as a generic
+ * "Hiba a szerver kommunikációban (No Data)".
+ */
+export const routePlanErrorMessage = (error: unknown): string => {
+  const errors = (error as { errors?: { extensions?: { code?: unknown } }[] } | null)?.errors
+  if (Array.isArray(errors) && errors.some(e => e?.extensions?.code === 'UNAUTHENTICATED')) {
+    return 'Az útvonaltervezéshez jelentkezz be.'
+  }
+  return 'Az útvonaltervezés nem sikerült, próbáld újra később.'
+}

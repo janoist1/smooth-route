@@ -1,5 +1,5 @@
 import { put, takeLatest, select, takeEvery } from 'redux-saga/effects'
-import { defaultRouteIndex, type RouteAlternative } from './alternatives'
+import { defaultRouteIndex, routePlanErrorMessage, type RouteAlternative } from './alternatives'
 import type { SagaIterator } from 'redux-saga'
 import { takeLatestAsync } from 'saga-toolkit'
 import type { SagaActionFromCreator } from 'saga-toolkit'
@@ -199,8 +199,8 @@ function* planRouteWorker(action: SagaActionFromCreator<typeof actions.planRoute
     variables: { origin, destination },
   })
 
-  if (!result.data) {
-    throw new Error('Hiba a szerver kommunikációban (No Data)')
+  if (!result.data?.routeAlternatives) {
+    throw new Error(routePlanErrorMessage(result.error))
   }
 
   const res = result.data.routeAlternatives
