@@ -98,17 +98,27 @@ class Mutation:
             completed_at=None
         )
 
-    @strawberry.mutation(permission_classes=[IsAuthenticated])
+    @strawberry.mutation(permission_classes=[IsAdmin])
     def process_route(self, input: ProcessRouteInput) -> Job:
+        from app.graphql.limits import InputLimitError, validate_route_endpoints, validate_route_endpoint, validate_route_path
         from app.services.job_runner import job_runner
         from app.services.tasks import run_route_processing
+
+        origin, destination = validate_route_endpoints(input.origin, input.destination)
+        path = None
+        if input.path is not None:
+            path = validate_route_path(input.path)
+            if len(path) < 2:
+                raise InputLimitError("path must contain at least two points")
+            for lat, lng in path:
+                validate_route_endpoint(f"{lat},{lng}", "path point")
         
         job_id = create_job()
         
         # Start background task
         job_runner.run_background_task(
             target=run_route_processing, 
-            args=(job_id, input.origin, input.destination)
+            args=(job_id, origin, destination, path)
         )
         
         # Return initial job state

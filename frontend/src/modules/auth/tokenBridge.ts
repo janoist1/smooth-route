@@ -23,6 +23,22 @@ let getterWaiters: Array<() => void> = []
 
 let settled = true
 const settledListeners = new Set<Listener>()
+let fallbackTimer: ReturnType<typeof setTimeout> | undefined
+
+export const cancelAuthFallback = (): void => {
+  clearTimeout(fallbackTimer)
+  fallbackTimer = undefined
+}
+
+/** Settle anonymously if the lazy Clerk island never mounts. */
+export const startAuthFallback = (): void => {
+  cancelAuthFallback()
+  fallbackTimer = setTimeout(() => {
+    fallbackTimer = undefined
+    expectSession(false)
+    setAuthSettled(true)
+  }, 15_000)
+}
 
 export const setAuthTokenGetter = (getter: TokenGetter | null): void => {
   currentGetter = getter

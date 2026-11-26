@@ -35,6 +35,7 @@ export const initialState: LabelingState = {
   pairsLoading: false,
   pairsExhausted: false,
   pairsJudged: 0,
+  pairsFetchSeq: null,
   retrainAck: 0,
 }
 
@@ -52,10 +53,11 @@ export const fetchQueue = createSagaAction<LabelQueuePage>('labeling/fetchQueue'
 export const fetchExamples = createSagaAction<LabelExample[]>('labeling/fetchExamples')
 export const fetchPairs = createSagaAction<{ pairs: PairItem[]; judged: number }>('labeling/fetchPairs')
 
-const bumpStats = (state: LabelingState, delta: number) => {
+const bumpStats = (state: LabelingState, delta: number, isSprint = false) => {
   if (!state.stats) return
   state.stats.totalLabelled = Math.max(0, state.stats.totalLabelled + delta)
   state.stats.labelledToday = Math.max(0, state.stats.labelledToday + delta)
+  if (isSprint) state.stats.sprintLabelled = Math.max(0, (state.stats.sprintLabelled ?? 0) + delta)
 }
 
 const errorMessage = (action: unknown, fallback: string): string => {
@@ -87,6 +89,7 @@ const slice = createSlice({
         status: 'saving',
         revealed: state.reveal,
         isNew,
+        isSprint: state.strategy === 'SPRINT',
       })
       state.outbox.push({
         seq,
@@ -99,7 +102,7 @@ const slice = createSlice({
         elapsedMs: action.payload.elapsedMs,
       })
       state.sessionRated += 1
-      if (isNew) bumpStats(state, +1) // server truth arrives with the next queue page
+      if (isNew) bumpStats(state, +1, state.strategy === 'SPRINT') // server truth arrives with the next queue page
       state.lastResult = { item: current, rqi: action.payload.rqi }
       state.error = null
     },
@@ -119,7 +122,7 @@ const slice = createSlice({
       if (entry.kind === 'rated') {
         state.outbox.push({ seq: state.nextSeq++, kind: 'undo', id: entry.item.id, saveSeq: entry.seq })
         state.sessionRated = Math.max(0, state.sessionRated - 1)
-        if (entry.isNew) bumpStats(state, -1)
+        if (entry.isNew) bumpStats(state, -1, entry.isSprint)
       } else {
         state.skipped = state.skipped.filter(id => id !== entry.item.id)
       }
@@ -134,6 +137,15 @@ const slice = createSlice({
       const write = state.outbox.find(w => w.seq === action.payload.seq)
       state.outbox = state.outbox.filter(w => w.seq !== action.payload.seq)
       if (write?.kind === 'pair' || write?.kind === 'pairUndo') {
+        if (write.kind === 'pair') {
+          state.outbox = state.outbox.filter(w => w.kind !== 'pairUndo' || w.clientId !== write.clientId)
+          const idx = state.pairHistory.findIndex(h => h.clientId === write.clientId)
+          if (idx >= 0) {
+            const [entry] = state.pairHistory.splice(idx, 1)
+            state.pairs.unshift(entry.pair)
+            state.pairsJudged = Math.max(0, state.pairsJudged - 1)
+          }
+        }
         state.error = `A páros döntés mentése nem sikerült: ${action.payload.message}`
         return
       }
@@ -153,7 +165,7 @@ const slice = createSlice({
         const [entry] = state.history.splice(idx, 1)
         state.queue.unshift(entry.item)
         state.sessionRated = Math.max(0, state.sessionRated - 1)
-        if (entry.kind === 'rated' && entry.isNew) bumpStats(state, -1)
+        if (entry.kind === 'rated' && entry.isNew) bumpStats(state, -1, entry.isSprint)
       }
       state.lastResult = null
       state.error = `Mentés sikertelen: ${action.payload.message}`
@@ -219,6 +231,11 @@ const slice = createSlice({
     })
     builder.addCase(fetchPairs.pending, state => {
       state.pairsLoading = true
+      // A page requested during a save may carry the old count even if that
+      // save has finished by the time the response arrives.
+      state.pairsFetchSeq = state.outbox.some(w => w.kind === 'pair' || w.kind === 'pairUndo')
+        ? null
+        : state.nextSeq
     })
     builder.addCase(fetchPairs.fulfilled, (state, action: PayloadAction<{ pairs: PairItem[]; judged: number }>) => {
       state.pairsLoading = false
@@ -227,7 +244,11 @@ const slice = createSlice({
       const fresh = action.payload.pairs.filter(p => !held.has(p.a.id) && !held.has(p.b.id))
       state.pairs = [...state.pairs, ...fresh]
       state.pairsExhausted = fresh.length === 0
-      if (state.outbox.every(w => w.kind !== 'pair' && w.kind !== 'pairUndo')) state.pairsJudged = action.payload.judged
+      if (
+        state.pairsFetchSeq === state.nextSeq &&
+        state.outbox.every(w => w.kind !== 'pair' && w.kind !== 'pairUndo')
+      ) state.pairsJudged = action.payload.judged
+      state.pairsFetchSeq = null
     })
     builder.addCase(fetchPairs.rejected, (state, action) => {
       state.pairsLoading = false

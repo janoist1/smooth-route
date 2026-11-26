@@ -37,8 +37,7 @@ const RoutePlanner = () => {
   } = useMap()
   // processRoute needs a signed-in user (and does not exist on the public
   // read-only API), so anonymous visitors only get the route preview.
-  const { viewer } = useViewer()
-  const canAnalyze = viewer !== null
+  const { isAdmin: canAnalyze } = useViewer()
   
   const { routeQuality, routeQualityLoading, routeQualityError, focusSegment } = useRoadSegments()
 

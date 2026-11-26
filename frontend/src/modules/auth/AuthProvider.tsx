@@ -1,6 +1,6 @@
 import React, { Suspense, lazy } from 'react'
 import { authEnabled } from './config'
-import { expectSession, hasClerkSessionCookie, setAuthSettled } from './tokenBridge'
+import { cancelAuthFallback, expectSession, hasClerkSessionCookie, setAuthSettled, startAuthFallback } from './tokenBridge'
 
 // Clerk (~90 kB) is not in the first download: the island loads in its own
 // chunk right after the app starts, beside the app rather than around it.
@@ -8,6 +8,7 @@ import { expectSession, hasClerkSessionCookie, setAuthSettled } from './tokenBri
 // fall back to an empty island and settle as anonymous.
 const ClerkIsland = lazy(() =>
   import('./ClerkIsland').catch(() => {
+    cancelAuthFallback()
     expectSession(false)
     setAuthSettled(true)
     const Empty: React.FC = () => null
@@ -21,10 +22,7 @@ if (authEnabled && typeof document !== 'undefined') {
   setAuthSettled(false)
   expectSession(hasClerkSessionCookie(document.cookie))
   // If Clerk never loads (blocked CDN, offline), stop waiting: anonymous.
-  setTimeout(() => {
-    expectSession(false)
-    setAuthSettled(true)
-  }, 15_000)
+  startAuthFallback()
 }
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => (

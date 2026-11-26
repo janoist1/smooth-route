@@ -105,6 +105,7 @@ const mapSlice = createSlice({
       state.routePoints = route.points
     },
     clearRoute(state) {
+      state.isPlanningRoute = false
       state.routeAlternatives = null
       state.selectedRouteIndex = null
       state.routePoints = null
@@ -175,8 +176,9 @@ const mapSlice = createSlice({
         state.routePoints = action.payload
       })
       .addCase(planRoute.rejected, (state, _action) => {
-        state.isPlanningRoute = false
         const action = _action as SagaRejectedAction
+        if (action.error.name === 'AbortError' || action.error.message === 'Aborted') return
+        state.isPlanningRoute = false
         state.error = action.error.message || 'Route planning failed'
       })
 

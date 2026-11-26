@@ -88,13 +88,13 @@ class TestRealSchemaWiring:
         result = self.exec(schema, mutation, USER)
         assert "Admin privileges required" in result.errors[0].message
 
-    def test_process_route_requires_authentication(self, schema):
+    def test_process_route_requires_admin(self, schema):
         mutation = (
             'mutation { processRoute(input: {origin: "a", destination: "b"}) { id } }'
         )
         result = self.exec(schema, mutation, None)
         assert result.data is None
-        assert "Authentication required" in result.errors[0].message
+        assert "Admin privileges required" in result.errors[0].message
 
     def test_settings_query_is_admin_only(self, schema):
         result = self.exec(schema, "{ settings { key } }", USER)

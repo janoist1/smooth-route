@@ -129,6 +129,20 @@ def test_first_pass_stores_one_pending_point_per_50_m(monkeypatch, updates):
     assert session.commits >= 2 and session.closed
 
 
+def test_selected_alternative_is_sampled_without_directions(monkeypatch, updates):
+    selected = [at(0, 0), at(0, 500)]
+    maps = FakeMaps(AssertionError("selected route must not fetch Directions"))
+    session = FakeSession()
+    monkeypatch.setattr(rc, "google_maps_service", maps)
+    monkeypatch.setattr(rc, "SessionLocal", lambda: session)
+
+    rc.collect_points("A", "B", "job2", path=selected)
+
+    assert maps.sampled == rc.sample_route(selected, SAMPLING.base_spacing_m)
+    assert len(session.added) == 10
+    assert [(row.latitude, row.longitude) for row in session.added] == maps.sampled
+
+
 def test_points_with_a_stored_neighbour_are_not_stored_again(monkeypatch, updates):
     maps = FakeMaps(route_dicts(200))
     session = FakeSession(existing=[object(), None, object()])   # 1st and 3rd already known

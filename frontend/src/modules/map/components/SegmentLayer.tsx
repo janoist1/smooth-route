@@ -32,13 +32,16 @@ interface Entry {
 interface Look {
   zoom: number
   dimStale: boolean
+  selectedId?: string
 }
 
 const paint = (entry: Entry, look: Look, hovered = false) => {
+  const selected = entry.segment.id === look.selectedId
   const style = segmentStyle(entry.segment, look.zoom, {
-    hovered,
-    dimmed: look.dimStale && isStaleSegment(entry.segment),
+    hovered: hovered && !selected,
+    dimmed: !selected && look.dimStale && isStaleSegment(entry.segment),
   })
+  if (selected) style.opacity = 1
   // Leaflet keeps a previous dashArray unless it is explicitly cleared.
   entry.line.setStyle({ dashArray: undefined, ...style })
   entry.casing.setStyle({ dashArray: undefined, ...segmentCasingStyle(style) })
@@ -68,10 +71,11 @@ const SegmentLayer: React.FC<SegmentLayerProps> = ({
   const map = useMap()
   const entriesRef = useRef<Map<string, Entry>>(new Map())
   // Event handlers live as long as the lines; they read the current props here.
-  const liveRef = useRef({ zoom, dimStale, interactive, onSelect })
+  const selectedId = selected?.id
+  const liveRef = useRef({ zoom, dimStale, interactive, onSelect, selectedId })
   useEffect(() => {
-    liveRef.current = { zoom, dimStale, interactive, onSelect }
-  }, [zoom, dimStale, interactive, onSelect])
+    liveRef.current = { zoom, dimStale, interactive, onSelect, selectedId }
+  }, [zoom, dimStale, interactive, onSelect, selectedId])
 
   // (Re)build the lines when the segment list changes.
   useEffect(() => {
@@ -114,8 +118,8 @@ const SegmentLayer: React.FC<SegmentLayerProps> = ({
 
   // Restyle in place when the zoom or the stale filter changes.
   useEffect(() => {
-    entriesRef.current.forEach(entry => paint(entry, { zoom, dimStale }))
-  }, [zoom, dimStale, segments])
+    entriesRef.current.forEach(entry => paint(entry, { zoom, dimStale, selectedId }))
+  }, [zoom, dimStale, segments, selectedId])
 
   // Selection: white halo under the selected segment, drawn at full strength.
   // A segment picked from the route summary may not be in the viewport list —

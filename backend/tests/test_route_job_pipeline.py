@@ -17,8 +17,9 @@ class FakeRoadQuality:
         self.densify_error = densify_error
         self.budgets = []
 
-    def collect_points(self, origin, destination, job_id):
+    def collect_points(self, origin, destination, job_id, path=None):
         self.calls.append("collect")
+        self.path = path
 
     def download_images(self, job_id, budget=None):
         self.calls.append("download")
@@ -40,7 +41,7 @@ def job(monkeypatch):
     """Run run_route_processing with fakes; returns (service, job updates)."""
     updates = []
 
-    def run(service):
+    def run(service, path=None):
         fake_rq = types.ModuleType("app.services.road_quality")
         fake_rq.road_quality_service = service
         fake_gm = types.ModuleType("app.services.google_maps")
@@ -51,7 +52,9 @@ def job(monkeypatch):
         monkeypatch.setattr(tasks, "refresh_road_segments",
                             lambda job_id, since=None: service.calls.append("segments"))
         monkeypatch.setenv("GOOGLE_SV_JOB_CAP", "321")
-        tasks.run_route_processing("job-1", "47.5,19.05", "47.6,19.10")
+        # With geometry supplied even address endpoints must skip geocoding.
+        origin, destination = ("Budapest", "Budaörs") if path else ("47.5,19.05", "47.6,19.10")
+        tasks.run_route_processing("job-1", origin, destination, path=path)
         return service, updates
 
     return run
@@ -66,6 +69,13 @@ def test_single_pass_when_nothing_is_low_confidence(job):
     assert service.calls == [
         "collect", "download", "analyze:YOLO", "analyze:CLASSIFICATION", "segments", "densify",
     ]
+    assert statuses(updates)[-1] == "completed"
+
+
+def test_selected_alternative_reaches_collection_without_geocoding(job):
+    path = [(47.5, 19.05), (47.51, 19.07), (47.6, 19.10)]
+    service, updates = job(FakeRoadQuality(), path=path)
+    assert service.path == path
     assert statuses(updates)[-1] == "completed"
 
 

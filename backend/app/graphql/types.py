@@ -194,6 +194,7 @@ class RunAnalysisInput:
 class ProcessRouteInput:
     origin: str
     destination: str
+    path: Optional[List[List[float]]] = None
 
 @strawberry.input
 class TrainingDataInput:

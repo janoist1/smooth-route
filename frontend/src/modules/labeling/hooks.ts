@@ -34,7 +34,7 @@ const usePrefetch = (urls: string[]) => {
 export const useQuickLabel = () => {
   const dispatch = useDispatch()
   // Saga actions (thunk-shaped) are bound like in the settings module.
-  const async = useMemo(() => bindActionCreators({ fetchQueue: actions.fetchQueue }, dispatch), [dispatch])
+  const async = useMemo(() => bindActionCreators({ enter: actions.enter, fetchQueue: actions.fetchQueue }, dispatch), [dispatch])
   const state = useSelector(selectRoot)
   const current = state.queue[0] ?? null
 
@@ -92,6 +92,7 @@ export const useQuickLabel = () => {
   }, [dispatch])
 
   return {
+    enter: async.enter,
     current,
     queueLength: state.queue.length,
     strategy: state.strategy,

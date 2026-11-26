@@ -43,6 +43,17 @@ const pendingMeta = (requestId: string, arg: unknown) => ({
 describe('roads slice — viewport segments', () => {
   const query = { bbox: [19, 47, 19.1, 47.1], zoom: 14 }
 
+  it('refreshes the selected same-id segment from the new list and retains an offscreen selection', () => {
+    const fresh = { ...segment('s1'), confidence: 0.95, roadName: 'Friss utca' }
+    let state = reducer(initialState, actions.selectSegment(segment('s1')))
+    state = reducer(state, { type: actions.fetchSegments.pending.type, meta: pendingMeta('a', query) })
+    state = reducer(state, { type: actions.fetchSegments.fulfilled.type, payload: [fresh], meta: { requestId: 'a' } })
+    expect(state.selected).toBe(state.items[0])
+    expect(state.selected).toEqual(fresh)
+    state = reducer(state, { type: actions.fetchSegments.fulfilled.type, payload: [], meta: { requestId: 'a' } })
+    expect(state.selected).toEqual(fresh)
+  })
+
   it('stores the result of the latest request and remembers the query', () => {
     let state = reducer(initialState, { type: actions.fetchSegments.pending.type, meta: pendingMeta('a', query) })
     expect(state.loading).toBe(true)

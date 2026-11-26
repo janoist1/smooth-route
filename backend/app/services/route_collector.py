@@ -24,19 +24,24 @@ from app.services.job_service import JobStep, update_job
 from app.services.network_sampling import load_sampling, sample_route
 
 
-def collect_points(origin: str, destination: str, job_id: str):
+def collect_points(origin: str, destination: str, job_id: str,
+                   path: list[tuple[float, float]] | None = None):
     """Step 1: collect points along the route and store pending measurements."""
     update_job(job_id, current_step=JobStep.COLLECTING, progress=0, total=100,
                message="Útvonal lekérése...")
     print(f"DEBUG: Collecting points from {origin} to {destination}")
 
     try:
-        route_points_dicts = google_maps_service.get_route(origin, destination)
-        if not route_points_dicts:
+        # A planned alternative already has geometry: reuse it without Directions.
+        if path is None:
+            route_points_dicts = google_maps_service.get_route(origin, destination)
+            route_tuples = [(p['lat'], p['lng']) for p in route_points_dicts]
+        else:
+            route_tuples = path
+        if not route_tuples:
             print("No route found.")
             return
 
-        route_tuples = [(p['lat'], p['lng']) for p in route_points_dicts]
         update_job(job_id, progress=10,
                    message=f"Útvonalpontok feldolgozása ({len(route_tuples)})...")
 

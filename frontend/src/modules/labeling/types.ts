@@ -78,6 +78,7 @@ export type HistoryEntry =
       revealed: boolean
       /** A new label (false for a re-check, which only replaces one). */
       isNew: boolean
+      isSprint?: boolean
     }
   | { kind: 'skipped'; item: QueueItem }
 
@@ -132,6 +133,8 @@ export interface LabelingState {
   pairsLoading: boolean
   pairsExhausted: boolean
   pairsJudged: number
+  /** Write sequence at a safe pair-page request start; null while saves are pending. */
+  pairsFetchSeq: number | null
   /** Highest retrain milestone (every RETRAIN_EVERY sprint labels) already acknowledged. */
   retrainAck: number
 }

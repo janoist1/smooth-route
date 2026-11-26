@@ -371,6 +371,11 @@ const Rubric: React.FC<{ examples: LabelExample[]; onClose: () => void }> = ({
 
 export const QuickLabelView: React.FC<QuickLabelViewProps> = ({ onBack }) => {
   const q = useQuickLabel()
+  const { enter } = q
+  // Mounted only after RequireAdmin has resolved the viewer.
+  useEffect(() => {
+    enter()
+  }, [enter])
   const [zoomFor, setZoomFor] = useState<number | null>(null)
   const [rubricOpen, setRubricOpen] = useState(false)
   const current = q.current
@@ -412,12 +417,26 @@ export const QuickLabelView: React.FC<QuickLabelViewProps> = ({ onBack }) => {
         setZoomFor(prev => (current && prev !== current.id ? current.id : null))
     }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (mode === 'rate' && !rubricOpen && keyToAction(e.key, e)?.type === 'zoom') {
+        // Firefox activates a focused button on Space keyup too.
+        const el = e.target as HTMLElement | null
+        if (!el?.matches('input, select, textarea, [contenteditable="true"]')) e.preventDefault()
+      }
+    }
+    window.addEventListener('keyup', onKeyUp)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('keyup', onKeyUp)
+    }
   }, [rate, skip, undo, toggleReveal, canUndo, current, mode, judge, undoPair, rubricOpen])
 
   const stats = q.stats
   return (
-    <div className="ql-root">
+    <div className="ql-root" onClick={e => {
+      const button = (e.target as HTMLElement).closest('button')
+      button?.blur()
+    }}>
       <style>{css}</style>
 
       <header style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px 4px' }}>
