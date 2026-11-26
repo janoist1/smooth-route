@@ -71,11 +71,11 @@ def merge_ways(ways: Mapping[int, Way]) -> dict[int, Way]:
     Every input way ends up in exactly one chain.
     """
     links = _links(ways)
-    member_of: dict[int, list[tuple[int, bool]]] = {}   # way id → its chain (shared list)
-    chains: list[list[tuple[int, bool]]] = []
+    done: set[int] = set()                              # ways already in a chain
+    chains: list[list[tuple[int, bool]]] = []           # [(way id, reversed?), ...]
 
     for way_id in sorted(ways):
-        if way_id in member_of:
+        if way_id in done:
             continue
         # Walk "backwards" from this way's start to find where the chain
         # begins (or come full circle on a ring of ways).
@@ -97,11 +97,9 @@ def merge_ways(ways: Mapping[int, Way]) -> dict[int, Way]:
         # it is traversed against its drawing direction.
         chain: list[tuple[int, bool]] = []
         current, enter = first, entered_by
-        visited: set[int] = set()
-        while current not in visited:
-            visited.add(current)
+        while current not in done:
+            done.add(current)
             chain.append((current, enter == _END))
-            member_of[current] = chain
             leave = _END if enter == _START else _START
             nxt = links.get((current, leave))
             if nxt is None:
@@ -123,20 +121,3 @@ def merge_ways(ways: Mapping[int, Way]) -> dict[int, Way]:
         merged[anchor] = Way(id=anchor, coords=tuple(coords), name=base.name, highway=base.highway)
     return merged
 
-
-def chain_members(ways: Mapping[int, Way]) -> dict[int, int]:
-    """``{way id: chain id}`` for the same input (diagnostics / tests)."""
-    links = _links(ways)
-    parent = {way_id: way_id for way_id in ways}
-
-    def find(x: int) -> int:
-        while parent[x] != x:
-            parent[x] = parent[parent[x]]
-            x = parent[x]
-        return x
-
-    for (a, _), (b, _) in links.items():
-        ra, rb = find(a), find(b)
-        if ra != rb:
-            parent[max(ra, rb)] = min(ra, rb)
-    return {way_id: find(way_id) for way_id in ways}
