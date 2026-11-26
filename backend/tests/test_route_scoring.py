@@ -47,6 +47,15 @@ def test_the_same_defect_weighs_more_on_a_fast_road():
     assert _impact(best, 130) == pytest.approx(0.0)  # Kiváló costs nothing at any speed
 
 
+@pytest.mark.parametrize("scale", [SCALE, SCALE.mirrored()], ids=["canonical", "mirrored"])
+def test_badness_only_counts_shortfall_in_either_scale_direction(monkeypatch, scale):
+    monkeypatch.setattr(rs, "SCALE", scale)
+    best_severity = scale.to_severity(scale.best)
+    for shortfall in (-0.5, 0.0, 0.75):
+        score = scale.from_severity(best_severity + shortfall)
+        assert rs.badness(score, scale.best) == pytest.approx(max(0.0, shortfall))
+
+
 def test_smoothest_uses_the_impact_when_present():
     a = RouteCandidate(600, 5000, mean_score=3.0, covered_m=900, total_m=1000, impact_score=1.2)
     b = RouteCandidate(620, 5100, mean_score=2.0, covered_m=900, total_m=1000, impact_score=0.4)

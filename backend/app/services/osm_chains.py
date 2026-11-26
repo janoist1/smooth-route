@@ -15,6 +15,8 @@ continuation of each other:
 - both ways are unnamed, share the ``highway`` class, and nothing else ends
   at the node (a plain continuation, not a junction).
 
+Both cases also require a deflection below 60 degrees at the joint.
+
 Node identity is the vertex coordinate: Overpass returns the same node with
 bit-identical lat/lon in every way that uses it.
 
@@ -25,6 +27,7 @@ direction. Closed ways (roundabouts) are never joined.
 from __future__ import annotations
 
 from collections import defaultdict
+import math
 from typing import Mapping, Optional
 
 from app.services.osm_overpass import Way
@@ -35,6 +38,30 @@ End = tuple[int, int]  # (way id, _START | _END)
 
 def _end_coord(way: Way, which: int):
     return way.coords[0] if which == _START else way.coords[-1]
+
+
+def _outward_bearing(way: Way, which: int) -> Optional[float]:
+    """Bearing from the joint into the way, using its adjacent segment."""
+    joint = _end_coord(way, which)
+    adjacent = way.coords[1] if which == _START else way.coords[-2]
+    if joint == adjacent:
+        return None  # no direction can be established from a zero-length segment
+    lat1, lon1 = map(math.radians, joint)
+    lat2, lon2 = map(math.radians, adjacent)
+    delta_lon = lon2 - lon1
+    return math.degrees(math.atan2(
+        math.sin(delta_lon) * math.cos(lat2),
+        math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(delta_lon),
+    ))
+
+
+def _continues(a: Way, a_end: int, b: Way, b_end: int) -> bool:
+    bearing_a, bearing_b = _outward_bearing(a, a_end), _outward_bearing(b, b_end)
+    if bearing_a is None or bearing_b is None:
+        return False
+    # One outward bearing must be reversed to describe travel through the joint.
+    deflection = abs((bearing_b - bearing_a) % 360.0 - 180.0)
+    return deflection < 60.0
 
 
 def _links(ways: Mapping[int, Way]) -> dict[End, End]:
@@ -60,6 +87,8 @@ def _links(ways: Mapping[int, Way]) -> dict[End, End]:
             if name is None and len(ends) != 2:
                 continue  # unnamed roads only continue where nothing else ends
             a, b = group
+            if not _continues(ways[a[0]], a[1], ways[b[0]], b[1]):
+                continue
             links[a] = b
             links[b] = a
     return links
@@ -122,4 +151,3 @@ def merge_ways(ways: Mapping[int, Way]) -> dict[int, Way]:
         merged[anchor] = Way(id=anchor, coords=tuple(coords), name=base.name, highway=base.highway,
                              maxspeed=base.maxspeed)
     return merged
-

@@ -116,6 +116,31 @@ def test_broken_quota_file_blocks_instead_of_guessing(tmp_path):
         q.reserve()
 
 
+@pytest.mark.parametrize("payload", [
+    {}, [], None, 0, "usage", {"months": None}, {"months": []},
+    {"months": {"2026-11": None}}, {"months": {"2026-11": []}},
+    {"months": {"2026-11": {}}},
+    {"months": {"2026-11": {"metadata": 0}}},
+    *({"months": {"2026-10": {"static_images": value, "metadata": 0}}}
+      for value in (-1, 1.5, "2", True, None)),
+    {"months": {"2026-11": {"static_images": 1, "metadata": -1}}},
+])
+def test_invalid_quota_schema_blocks_collection_without_resetting_usage(tmp_path, payload):
+    http = FakeHttp(OK_IMAGE)
+    c, _t, _logs = client(tmp_path, http)
+    c.quota.path.parent.mkdir(parents=True)
+    original = json.dumps(payload)
+    c.quota.path.write_text(original)
+    job = JobBudget(cap=5)
+    with pytest.raises(QuotaExceeded, match="invalid usage data.*non-negative integer"):
+        c.image(pano_id="P", heading=0, job=job)
+    for read in (c.quota.used, c.quota.summary):
+        with pytest.raises(QuotaExceeded, match="invalid usage data"):
+            read()
+    assert http.calls == [] and job.used == 0
+    assert c.quota.path.read_text() == original
+
+
 def test_set_used_and_argument_checks(tmp_path):
     q = quota(tmp_path, cap=100)
     q.set_used(40)

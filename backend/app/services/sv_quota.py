@@ -117,8 +117,22 @@ class StreetViewQuota:
                             f"quota file {self.path} is unreadable ({exc}); "
                             "fix or remove it deliberately before fetching images"
                         ) from exc
-                    if isinstance(loaded, dict) and isinstance(loaded.get("months"), dict):
-                        data = loaded
+                    if not (
+                        isinstance(loaded, dict)
+                        and isinstance(loaded.get("months"), dict)
+                        and all(
+                            isinstance(counts, dict)
+                            and {KIND_IMAGE, KIND_METADATA} <= counts.keys()
+                            and all(type(count) is int and count >= 0 for count in counts.values())
+                            for counts in loaded["months"].values()
+                        )
+                    ):
+                        raise QuotaExceeded(
+                            f"quota file {self.path} has invalid usage data; expected "
+                            "months mapping to non-negative integer static_images and metadata counts; "
+                            "fix or remove it deliberately before fetching images"
+                        )
+                    data = loaded
                 if update is not None:
                     update(data)
                     tmp = self.path.with_suffix(f".tmp{os.getpid()}")
