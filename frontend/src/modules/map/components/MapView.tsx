@@ -1,8 +1,16 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { MapContainer, TileLayer, CircleMarker, Polyline, useMapEvents } from 'react-leaflet'
+import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useMap } from '../hooks'
+import { useRoadSegments } from '../segments/hooks'
+import { layersForZoom, segmentWeight } from '../segments/style'
+import { pathMidpoint } from '../segments/geometry'
+import type { Bounds, RoadSegment } from '../segments/types'
+import { isNarrowScreen } from '../screen'
 import PointDetailCard from './PointDetailCard'
+import SegmentDetailCard from './SegmentDetailCard'
+import SegmentLayer from './SegmentLayer'
 import MapStyleSwitcher from './MapStyleSwitcher'
 import RoutePlanner from './RoutePlanner'
 import type { MapStyle } from './MapStyleSwitcher'
@@ -13,22 +21,28 @@ import QualityGridLayer from './QualityGridLayer'
 import StaleImageToggle from './StaleImageToggle'
 import { isStaleCapture } from '../captureDate'
 
+// The road network (and the CARTO / OSM base maps) is OpenStreetMap data: the
+// attribution is required. It is repeated in the legend, because the map-style
+// switcher sits on top of Leaflet's own attribution corner.
+const OSM_ATTRIBUTION =
+  '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors'
+
 const TILE_LAYERS: Record<MapStyle, { url: string; attribution: string }> = {
   dark: {
     url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-    attribution: '&copy; CARTO',
+    attribution: `${OSM_ATTRIBUTION} &copy; CARTO`,
   },
   light: {
     url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-    attribution: '&copy; CARTO',
+    attribution: `${OSM_ATTRIBUTION} &copy; CARTO`,
   },
   satellite: {
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    attribution: '&copy; Esri',
+    attribution: `&copy; Esri | roads: ${OSM_ATTRIBUTION}`,
   },
   street: {
     url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    attribution: '&copy; OSM',
+    attribution: OSM_ATTRIBUTION,
   },
 }
 
@@ -96,6 +110,51 @@ const MapClickHandler = () => {
     return null
 }
 
+// Fits the map to a segment when the route summary asks for it (one-shot
+// request from the store; `seq` tells repeated requests apart).
+const SegmentFocusController = ({
+  focus,
+  selected,
+}: {
+  focus: { bounds: Bounds; seq: number } | null
+  selected: RoadSegment | null
+}) => {
+  const map = useMapEvents({})
+  // Start at the current seq: a request already handled before this mount
+  // (e.g. navigating away and back) must not move the map again.
+  const handledSeq = useRef(focus?.seq ?? 0)
+
+  // Phone: the segment card is a bottom sheet. A segment tapped in the lower
+  // part of the map would end up under it, so slide it into the free area.
+  useEffect(() => {
+    if (!selected || !isNarrowScreen()) return
+    if (focus && focus.seq !== handledSeq.current) return // a fit is about to run instead
+    const mid = pathMidpoint(selected.path)
+    if (!mid) return
+    const height = map.getSize().y
+    const y = map.latLngToContainerPoint([mid.lat, mid.lng]).y
+    if (y > height * 0.36) map.panBy([0, Math.round(y - height * 0.22)])
+  }, [selected, focus, map])
+
+  useEffect(() => {
+    if (!focus || focus.seq === handledSeq.current) return
+    handledSeq.current = focus.seq
+    const size = map.getSize()
+    const narrow = isNarrowScreen()
+    // Keep the segment clear of what covers the map: the bottom sheet on a
+    // phone; the route planner (left) and the segment card (right) on a
+    // screen wide enough to leave room between them.
+    const sidePanels = !narrow && size.x >= 1000
+    map.fitBounds(focus.bounds, {
+      paddingTopLeft: [sidePanels ? 400 : 40, 90],
+      paddingBottomRight: [sidePanels ? 360 : 40, narrow ? Math.round(size.y * 0.6) : 60],
+      maxZoom: 17,
+    })
+  }, [focus, map])
+
+  return null
+}
+
 interface MapViewProps {
   onTrain: (id: string | number) => void
   onMapMove: (bbox: number[], center: [number, number], zoom: number) => void
@@ -109,16 +168,43 @@ const MapView: React.FC<MapViewProps> = ({ onTrain, onMapMove }) => {
     selectPoint,
     selectedPointDetail,
     loadingDetail,
-    selectedPoint,
     viewport,
     routePoints,
     pickingLocationFor,
   } = useMap()
+  const {
+    segments,
+    segmentsLoading,
+    segmentsSupported,
+    selectedSegment,
+    segmentFrames,
+    segmentFocus,
+    selectSegment,
+  } = useRoadSegments()
   const [mapStyle, setMapStyle] = useState<MapStyle>('dark')
+  // One canvas for every vector layer (segments, dots, route). The tolerance
+  // widens the hit area so thin road lines can be tapped on a phone.
+  const [renderer] = useState(() => L.canvas({ padding: 0.5, tolerance: 6 }))
   // Optional: dim points whose Street View image is old (quality may be outdated).
   const [dimStale, setDimStale] = useState(false)
 
   const displaySource = useRqiDisplaySource()
+
+  // Which layers this zoom shows: grid (overview) -> road segments -> + frame dots.
+  const layers = layersForZoom(viewport.zoom, segmentsSupported)
+  // Below the dot zoom, frames only appear around the selected segment.
+  const dots = layers.frames ? points : layers.segments && selectedSegment ? segmentFrames : []
+  const pointCardOpen = Boolean(selectedPointDetail || loadingDetail)
+
+  // The route is drawn UNDER the segments. SegmentLayer re-sorts its lines in
+  // its own effects; this parent effect runs after them on every render and
+  // puts the route back at the very bottom of the shared canvas.
+  const routeCasingRef = useRef<L.Polyline | null>(null)
+  const routeCoreRef = useRef<L.Polyline | null>(null)
+  useEffect(() => {
+    routeCoreRef.current?.bringToBack()
+    routeCasingRef.current?.bringToBack()
+  })
 
   // Unified handler for map moves
   const handleMapMove = React.useCallback(
@@ -134,6 +220,7 @@ const MapView: React.FC<MapViewProps> = ({ onTrain, onMapMove }) => {
         center={viewport.center}
         zoom={viewport.zoom}
         preferCanvas={true}
+        renderer={renderer}
         style={{ height: '100%', width: '100%', background: '#111' }}>
         <TileLayer
           attribution={TILE_LAYERS[mapStyle].attribution}
@@ -143,10 +230,41 @@ const MapView: React.FC<MapViewProps> = ({ onTrain, onMapMove }) => {
         <MapController viewport={viewport} />
         <MapClickHandler />
 
-        {/* Route Visualization */}
-        {routePoints && (
+        <SegmentFocusController focus={segmentFocus} selected={selectedSegment} />
+
+        {/* Route. With road segments on screen it is a blue "tube" with a dark
+            core: the coloured segments sit in the core, and a stretch without
+            quality data stays visibly blue-and-dark. */}
+        {routePoints && layers.segments && (
+          <>
+            <Polyline
+              ref={routeCasingRef}
+              positions={routePoints}
+              interactive={false}
+              pathOptions={{
+                color: '#3b82f6', // blue-500
+                weight: segmentWeight(viewport.zoom) + 8,
+                opacity: 0.9,
+                lineCap: 'round',
+              }}
+            />
+            <Polyline
+              ref={routeCoreRef}
+              positions={routePoints}
+              interactive={false}
+              pathOptions={{
+                color: '#0b1220',
+                weight: segmentWeight(viewport.zoom) + 2,
+                opacity: 1,
+                lineCap: 'round',
+              }}
+            />
+          </>
+        )}
+        {routePoints && !layers.segments && (
           <Polyline
             positions={routePoints}
+            interactive={false}
             pathOptions={{
               color: '#3b82f6', // blue-500
               weight: 6,
@@ -157,10 +275,23 @@ const MapView: React.FC<MapViewProps> = ({ onTrain, onMapMove }) => {
         )}
 
         {/* Zoomed-out overview: road-quality grid (colour = average RQI). */}
-        {grid && grid.cells.length > 0 && <QualityGridLayer grid={grid} />}
+        {layers.grid && grid && grid.cells.length > 0 && <QualityGridLayer grid={grid} />}
 
-        {/* Data Points (Markers) */}
-        {points.map((point) => {
+        {/* Roads as coloured segments (colour = quality, strength = confidence). */}
+        {layers.segments && (
+          <SegmentLayer
+            segments={segments}
+            zoom={viewport.zoom}
+            selected={selectedSegment}
+            dimStale={dimStale}
+            interactive={!pickingLocationFor}
+            onSelect={selectSegment}
+          />
+        )}
+
+        {/* Frame dots: the whole viewport at street level, otherwise only the
+            frames of the selected segment. */}
+        {dots.map((point) => {
           const { score } = resolveRqi(point, displaySource)
           const faded = dimStale && isStaleCapture(point.capture_date)
 
@@ -168,13 +299,14 @@ const MapView: React.FC<MapViewProps> = ({ onTrain, onMapMove }) => {
           <CircleMarker
             key={point.id}
             center={[point.latitude, point.longitude]}
-            radius={6}
+            radius={layers.segments ? 5 : 6}
             pathOptions={{
-              color: getRQIColor(score),
+              // On top of a same-coloured road line a dot needs a dark rim.
+              color: layers.segments ? '#0b1220' : getRQIColor(score),
               fillColor: getRQIColor(score),
-              fillOpacity: faded ? 0.12 : 0.7,
+              fillOpacity: faded ? 0.12 : layers.segments ? 0.95 : 0.7,
               opacity: faded ? 0.25 : 1,
-              weight: 1
+              weight: layers.segments ? 1.5 : 1
             }}
             eventHandlers={{
               click: () => {
@@ -191,11 +323,24 @@ const MapView: React.FC<MapViewProps> = ({ onTrain, onMapMove }) => {
 
       <MapStyleSwitcher currentStyle={mapStyle} onChange={setMapStyle} />
 
-      {/* Only individual points carry a capture date (zoomed in). */}
-      {points.length > 0 && <StaleImageToggle enabled={dimStale} onChange={setDimStale} />}
+      {/* Capture dates exist for frame dots and road segments (not the grid). */}
+      {(dots.length > 0 || (layers.segments && segments.length > 0)) && (
+        <StaleImageToggle enabled={dimStale} onChange={setDimStale} />
+      )}
 
-      {/* Detail Overlay */}
-      {(selectedPoint || loadingDetail) && (
+      {/* Segment detail. A frame's own card (below) can open next to it; on a
+          phone the segment sheet steps aside until that card is closed. */}
+      {selectedSegment && (
+        <SegmentDetailCard
+          segment={selectedSegment}
+          onClose={() => selectSegment(null)}
+          behind={pointCardOpen}
+        />
+      )}
+
+      {/* Frame detail. Keyed on the loaded detail (not on the viewport list):
+          a frame of the selected segment is not part of that list. */}
+      {pointCardOpen && (
         <PointDetailCard
           detail={selectedPointDetail!}
           loading={loadingDetail}
@@ -205,7 +350,7 @@ const MapView: React.FC<MapViewProps> = ({ onTrain, onMapMove }) => {
       )}
 
       {/* Loading Overlay */}
-      {loading && (
+      {(loading || (layers.segments && segmentsLoading)) && (
         <div
           style={{
             position: 'absolute',
@@ -219,7 +364,7 @@ const MapView: React.FC<MapViewProps> = ({ onTrain, onMapMove }) => {
             zIndex: 9999,
             backdropFilter: 'blur(10px)',
           }}>
-          Loading Road Data...
+          Útadatok betöltése…
         </div>
       )}
     </div>
