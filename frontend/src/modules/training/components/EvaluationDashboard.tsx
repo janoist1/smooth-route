@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react'
 import { AlertTriangle, TrendingUp, Target, List, Image as ImageIcon } from 'lucide-react'
 import { RQI_LEVELS } from '../../ui'
+import { imageSrc } from '../../labeling/logic'
 
 // Axis ticks: every level value of the canonical scale, ascending.
 const RQI_TICKS = RQI_LEVELS.map(l => l.value).sort((a, b) => a - b)
@@ -96,7 +97,7 @@ const EvaluationDashboard: React.FC<EvaluationDashboardProps> = ({ points, onNav
   const getImageUrl = (url?: string) => {
     if (!url) return ''
     const filename = url.split('/').pop()
-    return `http://localhost:8000/api/v1/images/${filename}`
+    return imageSrc(`images/${filename}`)
   }
 
   if (!metrics) {

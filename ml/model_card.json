@@ -1,0 +1,32 @@
+{
+  "artifact_sha256_12": "a59cad4bde93",
+  "measured_on": "2026-11-26",
+  "protocol": "spatial CV: 1000 m grid cells, StratifiedGroupKFold 5, seed 42, nested cut-points",
+  "n_train": 1903,
+  "frame": {
+    "qwk": 0.774,
+    "mae": 0.405,
+    "exact": 0.61,
+    "off1": 0.985,
+    "bad_acc": 0.86,
+    "bad_auc": 0.934
+  },
+  "segment": {
+    "length_m": 200,
+    "aggregator": "median_score",
+    "qwk": 0.843,
+    "mae": 0.292,
+    "exact": 0.708,
+    "bad_auc": 0.968
+  },
+  "new_area": {
+    "protocol": "leave-one-area-out (4 areas), pooled",
+    "qwk": 0.663,
+    "mae": 0.491,
+    "exact": 0.523,
+    "off1": 0.985,
+    "bad_acc": 0.809,
+    "bad_auc": 0.872
+  },
+  "generated_by": "ml/build_model_card.py"
+}

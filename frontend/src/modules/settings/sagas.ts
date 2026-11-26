@@ -44,6 +44,12 @@ const GET_MODEL_INFO = gql(`
       badRoadAcc
       badRoadAuc
       scaleMeaning
+      metricsSource
+      metricsProtocol
+      metricsMeasuredOn
+      segmentQwk
+      segmentLengthM
+      newAreaQwk
     }
   }
 `)

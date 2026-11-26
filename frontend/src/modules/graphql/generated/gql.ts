@@ -33,7 +33,7 @@ type Documents = {
     "\n  query GetAvailableModels {\n    availableModels\n  }\n": typeof types.GetAvailableModelsDocument,
     "\n  query GetSettings {\n    settings {\n      key\n      value\n      description\n      example\n      category\n      explanation\n    }\n  }\n": typeof types.GetSettingsDocument,
     "\n  mutation UpdateSetting($input: UpdateSettingInput!) {\n    updateSetting(input: $input) {\n      key\n      value\n      description\n      example\n      category\n      explanation\n    }\n  }\n": typeof types.UpdateSettingDocument,
-    "\n  query GetRqiModelInfo {\n    rqiModelInfo {\n      available\n      version\n      backbone\n      recipe\n      head\n      nTrain\n      qwk\n      mae\n      exactAcc\n      badRoadAcc\n      badRoadAuc\n      scaleMeaning\n    }\n  }\n": typeof types.GetRqiModelInfoDocument,
+    "\n  query GetRqiModelInfo {\n    rqiModelInfo {\n      available\n      version\n      backbone\n      recipe\n      head\n      nTrain\n      qwk\n      mae\n      exactAcc\n      badRoadAcc\n      badRoadAuc\n      scaleMeaning\n      metricsSource\n      metricsProtocol\n      metricsMeasuredOn\n      segmentQwk\n      segmentLengthM\n      newAreaQwk\n    }\n  }\n": typeof types.GetRqiModelInfoDocument,
     "\n    query GetTrainingData($id: Int!) {\n        point(id: $id) {\n            imageUrl\n            manualRqi\n            manualTags\n            manualAnnotations\n            manualComment\n        }\n    }\n": typeof types.GetTrainingDataDocument,
     "\n    mutation SaveTrainingData($input: TrainingDataInput!) {\n        saveTrainingData(input: $input)\n    }\n": typeof types.SaveTrainingDataDocument,
     "\n    mutation DeleteTrainingData($imageFilename: String!) {\n        deleteTrainingData(imageFilename: $imageFilename)\n    }\n": typeof types.DeleteTrainingDataDocument,
@@ -64,7 +64,7 @@ const documents: Documents = {
     "\n  query GetAvailableModels {\n    availableModels\n  }\n": types.GetAvailableModelsDocument,
     "\n  query GetSettings {\n    settings {\n      key\n      value\n      description\n      example\n      category\n      explanation\n    }\n  }\n": types.GetSettingsDocument,
     "\n  mutation UpdateSetting($input: UpdateSettingInput!) {\n    updateSetting(input: $input) {\n      key\n      value\n      description\n      example\n      category\n      explanation\n    }\n  }\n": types.UpdateSettingDocument,
-    "\n  query GetRqiModelInfo {\n    rqiModelInfo {\n      available\n      version\n      backbone\n      recipe\n      head\n      nTrain\n      qwk\n      mae\n      exactAcc\n      badRoadAcc\n      badRoadAuc\n      scaleMeaning\n    }\n  }\n": types.GetRqiModelInfoDocument,
+    "\n  query GetRqiModelInfo {\n    rqiModelInfo {\n      available\n      version\n      backbone\n      recipe\n      head\n      nTrain\n      qwk\n      mae\n      exactAcc\n      badRoadAcc\n      badRoadAuc\n      scaleMeaning\n      metricsSource\n      metricsProtocol\n      metricsMeasuredOn\n      segmentQwk\n      segmentLengthM\n      newAreaQwk\n    }\n  }\n": types.GetRqiModelInfoDocument,
     "\n    query GetTrainingData($id: Int!) {\n        point(id: $id) {\n            imageUrl\n            manualRqi\n            manualTags\n            manualAnnotations\n            manualComment\n        }\n    }\n": types.GetTrainingDataDocument,
     "\n    mutation SaveTrainingData($input: TrainingDataInput!) {\n        saveTrainingData(input: $input)\n    }\n": types.SaveTrainingDataDocument,
     "\n    mutation DeleteTrainingData($imageFilename: String!) {\n        deleteTrainingData(imageFilename: $imageFilename)\n    }\n": types.DeleteTrainingDataDocument,
@@ -169,7 +169,7 @@ export function gql(source: "\n  mutation UpdateSetting($input: UpdateSettingInp
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
-export function gql(source: "\n  query GetRqiModelInfo {\n    rqiModelInfo {\n      available\n      version\n      backbone\n      recipe\n      head\n      nTrain\n      qwk\n      mae\n      exactAcc\n      badRoadAcc\n      badRoadAuc\n      scaleMeaning\n    }\n  }\n"): (typeof documents)["\n  query GetRqiModelInfo {\n    rqiModelInfo {\n      available\n      version\n      backbone\n      recipe\n      head\n      nTrain\n      qwk\n      mae\n      exactAcc\n      badRoadAcc\n      badRoadAuc\n      scaleMeaning\n    }\n  }\n"];
+export function gql(source: "\n  query GetRqiModelInfo {\n    rqiModelInfo {\n      available\n      version\n      backbone\n      recipe\n      head\n      nTrain\n      qwk\n      mae\n      exactAcc\n      badRoadAcc\n      badRoadAuc\n      scaleMeaning\n      metricsSource\n      metricsProtocol\n      metricsMeasuredOn\n      segmentQwk\n      segmentLengthM\n      newAreaQwk\n    }\n  }\n"): (typeof documents)["\n  query GetRqiModelInfo {\n    rqiModelInfo {\n      available\n      version\n      backbone\n      recipe\n      head\n      nTrain\n      qwk\n      mae\n      exactAcc\n      badRoadAcc\n      badRoadAuc\n      scaleMeaning\n      metricsSource\n      metricsProtocol\n      metricsMeasuredOn\n      segmentQwk\n      segmentLengthM\n      newAreaQwk\n    }\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
