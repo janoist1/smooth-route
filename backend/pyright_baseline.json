@@ -1,6 +1,6 @@
 {
  "pyright": "1.1.389",
- "total": 91,
+ "total": 88,
  "errors": {
   "app/cli.py::reportArgumentType": 1,
   "app/cli.py::reportGeneralTypeIssues": 1,
@@ -15,9 +15,6 @@
   "app/graphql/queries.py::reportGeneralTypeIssues": 3,
   "app/graphql/queries.py::reportReturnType": 2,
   "app/main.py::reportArgumentType": 1,
-  "app/services/google_maps.py::reportOptionalMemberAccess": 1,
-  "app/services/image_downloader.py::reportArgumentType": 1,
-  "app/services/image_downloader.py::reportAttributeAccessIssue": 1,
   "app/services/label_queue_store.py::reportArgumentType": 16,
   "app/services/label_queue_store.py::reportAttributeAccessIssue": 10,
   "app/services/label_queue_store.py::reportCallIssue": 4,

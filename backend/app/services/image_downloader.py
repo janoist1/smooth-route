@@ -75,6 +75,7 @@ def download_images(job_id: str, budget: Optional[JobBudget] = None):
             budget = JobBudget(cap_from_env("GOOGLE_SV_JOB_CAP", DEFAULT_JOB_CAP))
         stop_reason = None
 
+        img: Any  # ORM row: legacy Column models type as Column[...] (see DEVELOPMENT.md)
         for i, img in enumerate(pending_images):
             try:
                 body = client.image_from_url(img.image_url, job=budget)
