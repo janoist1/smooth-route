@@ -23,6 +23,11 @@ type Annotation {
   points: JSON!
 }
 
+type AreaCount {
+  area: String!
+  count: Int!
+}
+
 type DailyCount {
   day: String!
   count: Int!
@@ -85,6 +90,12 @@ type LabelExample {
   imageUrl: String!
 }
 
+type LabelPair {
+  a: LabelQueueItem!
+  b: LabelQueueItem!
+  scoreGap: Float!
+}
+
 type LabelQueueItem {
   id: Int!
   imageUrl: String!
@@ -117,6 +128,8 @@ type LabelQueueStats {
   rechecked: Int!
   recheckSame: Float
   recheckWithinOne: Float
+  sprintLabelled: Int!
+  sprintTarget: Int!
 }
 
 enum LabelQueueStrategy {
@@ -124,6 +137,28 @@ enum LabelQueueStrategy {
   DIVERSE
   MIXED
   RECHECK
+  SPRINT
+}
+
+type LevelCount {
+  level: Int!
+  count: Int!
+}
+
+type ModelAdmin {
+  trainedOn: Int!
+  newLabels: Int!
+  newByArea: [AreaCount!]!
+  newByLevel: [LevelCount!]!
+  sprintLabelled: Int!
+  sprintTarget: Int!
+  hint: String!
+  candidateAvailable: Boolean!
+  report: [String!]!
+  reportVerdict: Boolean
+  reportGatePass: Boolean
+  reportAt: String
+  confirmPhrase: String!
 }
 
 type Mutation {
@@ -139,7 +174,31 @@ type Mutation {
   performReviewAction(input: ReviewActionInput!): ReviewActionResult!
   predictDinoRqi(imageFilename: String!): Int
   quickLabel(input: QuickLabelInput!): QuickLabelResult!
+  submitPairJudgment(input: PairJudgmentInput!): Boolean!
+  undoPairJudgment(clientId: String!): Boolean!
   undoQuickLabel(pointId: Int!): Boolean!
+  startRetrain: String!
+  promoteCandidate(confirm: String!): String!
+  startRescoreAndRebuild: String!
+}
+
+input PairJudgmentInput {
+  clientId: String!
+  frameAId: Int!
+  frameBId: Int!
+  result: PairResult!
+  elapsedMs: Int = null
+}
+
+type PairQueueResult {
+  pairs: [LabelPair!]!
+  judged: Int!
+}
+
+enum PairResult {
+  A
+  B
+  EQUAL
 }
 
 type Point {
@@ -195,6 +254,9 @@ type Query {
   nextTrainingPoint(currentId: Int!, mode: FilterMode! = ALL, model: String! = "yolo"): Int
   labelQueue(strategy: LabelQueueStrategy! = MIXED, limit: Int! = 20, excludeIds: [Int!] = null): LabelQueueResult!
   labelExamples(perClass: Int! = 1): [LabelExample!]!
+  pairQueue(limit: Int! = 10, excludeIds: [Int!] = null): PairQueueResult!
+  routeAlternatives(origin: String!, destination: String!): RouteAlternatives!
+  modelAdmin: ModelAdmin!
 }
 
 input QuickLabelInput {
@@ -244,8 +306,28 @@ type RoadSegment {
   streetViewUrl: String
 }
 
+type RouteAlternatives {
+  routes: [RouteOption!]!
+  fastestIndex: Int
+  smoothestIndex: Int
+  maxExtraDuration: Float!
+  minCoverage: Float!
+}
+
 type RouteData {
   points: [RouteStep!]!
+}
+
+type RouteOption {
+  index: Int!
+  points: [RouteStep!]!
+  distanceM: Float!
+  durationS: Float!
+  summary: String!
+  quality: RouteQuality!
+  coverage: Float!
+  isFastest: Boolean!
+  isSmoothest: Boolean!
 }
 
 type RouteQuality {
@@ -253,6 +335,7 @@ type RouteQuality {
   coveredLengthM: Float!
   lengthByRqi: [Float!]!
   meanScore: Float
+  impactScore: Float
   worstSegments: [RoadSegment!]!
 }
 
@@ -274,6 +357,12 @@ type RqiModelInfo {
   badRoadAcc: Float
   badRoadAuc: Float
   scaleMeaning: String
+  metricsSource: String
+  metricsProtocol: String
+  metricsMeasuredOn: String
+  segmentQwk: Float
+  segmentLengthM: Float
+  newAreaQwk: Float
 }
 
 input RunAnalysisInput {
