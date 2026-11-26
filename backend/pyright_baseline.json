@@ -1,10 +1,9 @@
 {
  "pyright": "1.1.389",
- "total": 8,
+ "total": 4,
  "errors": {
   "app/cli.py::reportArgumentType": 1,
   "app/graphql/limits.py::reportAttributeAccessIssue": 1,
-  "app/graphql/queries.py::reportArgumentType": 4,
   "app/main.py::reportArgumentType": 1,
   "app/services/label_queue_store.py::reportArgumentType": 1
  }
