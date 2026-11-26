@@ -265,6 +265,15 @@ class RqiModelInfo:
     bad_road_acc: Optional[float] = None
     bad_road_auc: Optional[float] = None
     scale_meaning: Optional[str] = None
+    # Where qwk/mae/... come from: "spatial_cv" (ml/model_card.json, matched to
+    # the artifact hash: streets the model never saw) or "artifact" (the
+    # artifact's own cv_metrics, possibly an older protocol).
+    metrics_source: Optional[str] = None
+    metrics_protocol: Optional[str] = None
+    metrics_measured_on: Optional[str] = None
+    segment_qwk: Optional[float] = None      # ~200 m road segments (map unit)
+    segment_length_m: Optional[float] = None
+    new_area_qwk: Optional[float] = None     # leave-one-area-out (a new region)
 
 
 @strawberry.type

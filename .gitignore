@@ -51,3 +51,4 @@ ml/cache/rqi_model_vlm_candidate.joblib
 ml/cache/retrain/
 ml/cache/rqi_model_candidate.joblib
 ml/cache/novelty/
+ml/cache/geo_reliability_rows.csv

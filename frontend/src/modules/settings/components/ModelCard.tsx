@@ -3,6 +3,7 @@ import { Cpu } from 'lucide-react'
 import { RQI_AT_OR_WORSE_SIGN, RQI_BAD_FROM } from '../../ui'
 import { useSettings } from '../hooks'
 import { useRqiModelInfo } from '../hooks'
+import { metricsNote, modelCardStats } from '../modelCardText'
 
 /** Read-only card describing the live RQI (DINO) model — verzió, recept, CV-pontosság. */
 const ModelCard: React.FC = () => {
@@ -15,19 +16,7 @@ const ModelCard: React.FC = () => {
 
   if (!info) return null
 
-  const pct = (v?: number | null) => (v == null ? '–' : `${(v * 100).toFixed(1)}%`)
-  const num = (v?: number | null, d = 3) => (v == null ? '–' : v.toFixed(d))
-
-  const stats: Array<{ label: string; value: string; hint: string }> = info.available
-    ? [
-        { label: 'Pontos találat', value: pct(info.exactAcc), hint: 'ahányszor eltalálja az osztályzatot' },
-        { label: 'QWK', value: num(info.qwk), hint: 'sorrendi egyezés (1 = tökéletes)' },
-        { label: 'Átl. hiba (MAE)', value: num(info.mae), hint: 'átlagos eltérés osztályzatban' },
-        { label: 'Jó/rossz döntés', value: pct(info.badRoadAcc), hint: `rossz út (RQI${RQI_AT_OR_WORSE_SIGN}${RQI_BAD_FROM}) felismerése` },
-        { label: 'Rossz-út AUC', value: num(info.badRoadAuc), hint: 'megkülönböztető képesség' },
-        { label: 'Tanítókép', value: info.nTrain != null ? String(info.nTrain) : '–', hint: 'címkézett kép a modellben' },
-      ]
-    : []
+  const stats = modelCardStats(info, RQI_AT_OR_WORSE_SIGN, RQI_BAD_FROM)
 
   return (
     <section
@@ -120,8 +109,8 @@ const ModelCard: React.FC = () => {
           </div>
 
           <p style={{ color: '#6b7280', fontSize: '0.75rem', marginTop: '14px' }}>
-            A számok szivárgásmentes 5-fold keresztvalidációból származnak. Új modell csak
-            akkor élesíthető, ha az <code>ml/evaluate_artifact.py</code> kapun átmegy.
+            {metricsNote(info)} Új modell csak akkor élesíthető, ha az{' '}
+            <code>ml/evaluate_artifact.py</code> kapun átmegy.
           </p>
         </>
       )}

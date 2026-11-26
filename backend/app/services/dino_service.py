@@ -47,6 +47,8 @@ def _project_root() -> str:
 
 
 MODEL_PATH = os.path.join(_project_root(), "ml", "cache", "rqi_model.joblib")
+# Honest (spatial-CV) metrics for the model card, keyed by the artifact hash.
+MODEL_CARD_PATH = os.path.join(_project_root(), "ml", "model_card.json")
 
 # Artifact contract (see ml/README "Artifact szerződés"). REQUIRED keys make the
 # artifact structurally usable; EXPECTED keys carry the v2 metadata that the
@@ -284,7 +286,7 @@ class DinoInferenceService:
             art = joblib.load(MODEL_PATH)
             cv = art.get("cv_metrics", {}) or {}
             recipe = art.get("feature_recipe") or {}
-            return {
+            info = {
                 "version": art.get("version"),
                 "backbone": art.get("backbone"),
                 "recipe": recipe.get("name"),
@@ -297,6 +299,9 @@ class DinoInferenceService:
                 "bad_road_auc": cv.get("bad_road_auc"),
                 "scale_meaning": art.get("scale_meaning"),
             }
+            from app.services.model_card import apply_card, load_card
+
+            return apply_card(info, load_card(MODEL_CARD_PATH, MODEL_PATH))
         except Exception as e:  # pragma: no cover - defensive
             print(f"DinoInferenceService.model_info ERROR: {e}")
             return None

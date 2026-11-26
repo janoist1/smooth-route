@@ -20,4 +20,13 @@ export interface RqiModelInfo {
   badRoadAcc?: number | null
   badRoadAuc?: number | null
   scaleMeaning?: string | null
+  /** 'spatial_cv' (honest, ml/model_card.json) | 'artifact' (the file's own cv_metrics). */
+  metricsSource?: string | null
+  metricsProtocol?: string | null
+  metricsMeasuredOn?: string | null
+  /** QWK on ~200 m road segments (the map's unit). */
+  segmentQwk?: number | null
+  segmentLengthM?: number | null
+  /** QWK with a whole collection area left out of training (a new region). */
+  newAreaQwk?: number | null
 }
