@@ -1,8 +1,8 @@
 # Smooth Route (Kátyúőr) — Development Reference
 
-Developer reference for the current codebase (updated 2026-11). Start from
-[AGENTS.md](AGENTS.md) for how to run/test and the hard rules; this file is the
-longer background. Topic docs it links to are the source of truth for their area.
+Developer reference (updated 2026-11-26): architecture, config, dependencies, CLI,
+data layout. How to run/test and the hard rules: [AGENTS.md](AGENTS.md). Topic docs
+linked below are the source of truth for their area.
 
 ## Core ideas
 
@@ -25,7 +25,7 @@ longer background. Topic docs it links to are the source of truth for their area
 | Database | PostgreSQL 16 + PostGIS 3.4 (Docker, host port **5433**) | `docker-compose.yml` |
 | Auth | Clerk JWT (`AUTH_MODE=clerk`) or single-user local mode (`AUTH_MODE=disabled`) | `backend/app/core/auth.py`, `graphql/permissions.py` |
 | Frontend | React 19, Vite 8, Redux Toolkit + redux-saga (saga-toolkit), Apollo Client 4, react-leaflet, Clerk | `frontend/src/` |
-| ML | DINOv2 + SVR pipeline, 5-fold CV ship gate | `ml/` |
+| ML | DINOv2 + SVR pipeline, spatial-CV ship gate | `ml/` |
 | Public deploy (round 1) | Two Vercel projects (frontend + read-only API) + Neon Postgres | `backend/api/`, `backend/vercel.json`, `frontend/vercel.json` |
 
 - API inventory: [docs/API_SURFACE.md](docs/API_SURFACE.md) (GraphQL is the product API).
@@ -35,8 +35,8 @@ longer background. Topic docs it links to are the source of truth for their area
 ### Database tables (`backend/app/models/models.py`)
 
 - `street_view_images` — the road points: lat/lng/heading/pitch, PostGIS `location`,
-  `pano_id`, `image_url`, `rqi_score`, `dino_rqi_score`, damage counts/types,
-  `analysis_metadata`.
+  `pano_id`, `capture_date` (Street View capture month), `image_url`, `rqi_score`,
+  `dino_rqi_score`, damage counts/types, `analysis_metadata`.
 - `training_data` — manual labels (`manual_rqi`, annotations, tags) keyed by image file.
 - `jobs` — background job state (progress, message, result) shown live in the UI.
 - `users` — Clerk-linked users with a `user`/`admin` role.
@@ -65,31 +65,16 @@ the root `.env` — copy `.env.example`. The important ones:
 Runtime-tunable analysis settings live in `backend/config/analysis_settings.json`
 and are edited from the Settings page.
 
-## Local development
+## Local development, tests, CI
 
-```bash
-python3 -m venv .venv && .venv/bin/pip install -e backend/   # pulls torch via ultralytics
-(cd frontend && npm ci)
-docker compose up -d db
-make dev        # backend :8000 (uvicorn --reload) + frontend :5173 (Vite)
-```
-
+Setup commands: [README.md](README.md#quickstart); test gates: [AGENTS.md](AGENTS.md).
 Other `make` targets: `backend`, `frontend`, `lint`, `download-models`,
 `reimport-images`, `purge-data`, `clean-orphans`, `clear-jobs`, `list-jobs`, `clean`.
 
-In a git worktree there is no `.venv` of its own — use the main checkout's
-interpreter (`/path/to/smooth-route/.venv/bin/python`) instead of `../.venv/bin/python`.
-
-## Tests and CI
-
-```bash
-cd backend && ../.venv/bin/python -m pytest -q            # isolated: SQLite + no torch needed
-cd frontend && npm ci && npm run typecheck && npm run lint && npm test && npm run build
-```
-
 `.github/workflows/ci.yml` runs the backend tests on Python 3.12 with a minimal,
 **torch-free** dependency set (plus `ruff --select F821`), and the frontend
-typecheck/lint/test on Node 22. Torch-dependent tests skip themselves there.
+typecheck/lint/test on Node 22. Torch-dependent tests skip themselves there. The
+production build (`npm run build`) is not in CI — Vercel runs it on push.
 
 ## Dependencies — two backend sets
 
@@ -132,11 +117,21 @@ to Google Street View (`pano_id` or viewpoint).
 
 ## RQI model workflow
 
-Train and ship only through the `ml/` v2 pipeline ([ml/README.md](ml/README.md));
-a new `rqi_model.joblib` ships only if `ml/evaluate_artifact.py` prints **PASS**
-(QWK ≥ 0.889, MAE ≤ 0.195, bad-AUC ≥ 0.970 on the fixed 5-fold CV). The v1 scripts
-in `ml/legacy/` are reference only, and the web UI no longer trains the RQI model.
-Labelling happens on `/training/:id/review` ([docs/TrainingGuide.md](docs/TrainingGuide.md)).
+Train and ship only through the `ml/` pipeline; a new `ml/cache/rqi_model.joblib`
+ships only if `ml/evaluate_artifact.py` prints **PASS** (thresholds and protocol:
+[ml/README.md](ml/README.md)). `ml/legacy/` is reference only; the web UI does not
+train the RQI model. Labelling happens on `/training/:id/review`
+([docs/TrainingGuide.md](docs/TrainingGuide.md)).
+
+There is deliberately **no web model selector**: DINO (RQI, "how bad?") and YOLO
+(damage polygons, "what is wrong?") answer different questions. The
+`rqi_display_source` setting only picks which score the map shows.
+
+YOLO: one loader (`backend/app/services/yolo_loader.py`) serves both the review
+annotator (`inference.py`) and route analysis (`road_analyzer.py`). FastSAM
+(`preprocessing.py`) survives only as a quarantined review diagnostic
+(`performReviewAction("preview_preprocessing")`), never on the RQI path. **Open:**
+retrain YOLO on the new annotations, then decide whether FastSAM can go.
 
 ## Repository map
 
@@ -146,10 +141,10 @@ frontend/         React app (src/modules/* = feature modules with slice/sagas/ho
 ml/               RQI pipeline; ml/legacy/ = superseded v1 scripts
 scripts/          maintenance helpers used by the Makefile; scripts/legacy/ = old one-offs
 docs/             plans, API surface, glossary, experiments; docs/archive/ = superseded notes
-AGENTS.md         entrypoint / router for developers and AI agents
+AGENTS.md         router for developers and AI agents
 ```
 
 ## Git
 
-`master` is deployed: both Vercel projects auto-deploy on push. Work on a branch,
-keep CI green, and keep each logical step in its own commit.
+`master` is deployed: both Vercel projects auto-deploy on push. Branch/merge/push
+policy: [docs/TEAM.md](docs/TEAM.md).

@@ -1,264 +1,79 @@
-# Fogalomtár — mit jelentenek a szakszavak?
-
-*Közérthető magyarázatok ahhoz, amit a modellről és a mérésekről rendszeresen
-olvasol. Nem kell ML-esnek lenned hozzá. Minden fogalomnál ott a **„Nálunk"**
-sor a projekt konkrét példájával.*
-
-> **A legrövidebb összefoglaló:** egy kép alapján a gép ad egy 1–5 jegyet az út
-> minőségére. Hogy tudjuk, mennyire megbízható, elrejtünk előle képeket,
-> megkérdezzük, majd összevetjük az emberi jeggyel. A lenti számok (QWK, MAE,
-> AUC…) mind azt fejezik ki **más-más szemszögből, hogy mennyire talál a gép
-> jegye az emberével**.
-
----
-
-## 1. Az alapszókincs
-
-**RQI (Road Quality Index)** — a mi 1–5 útminőségi skálánk. **1 = kiváló** (új,
-sima aszfalt), 4 = rossz (kátyús, töredezett). Az 5-öst nem használjuk (túl kevés
-példa). *Fontos: nálunk a kisebb szám a jobb út.*
-
-**Címke / ground truth (magyarul: „helyes válasz")** — a kézzel adott jegy egy
-képre. Ez az „igazság", amihez a gépet hasonlítjuk. Ha a címke rossz, a gép is
-rosszat tanul — ezért fontos a következetes címkézés.
-*Nálunk: 1917 kézzel bepontozott kép a `training_data` táblában.*
-
-**Modell** — a betanított „gép", ami egy képhez jegyet ad. Nálunk a fájlja az
-`ml/cache/rqi_model.joblib`.
-
-**Jellemző / feature** — a képből kinyert számok, amikből a modell dolgozik. Egy
-kép a gépnek nem „kép", hanem több száz szám (pl. „mennyire textúrás a felület").
-*Nálunk: a DINOv2 nevű háló 768 számmá alakít minden képet.*
-
----
-
-## 2. A mérőszámok (mennyire jó a modell?)
-
-Mindegyik ugyanazt a kérdést feszegeti — *„mennyire talál a gép jegye az
-emberével?"* —, csak más nézőpontból. Ezért adunk meg többet: együtt festenek
-teljes képet.
-
-**Exact accuracy / pontos találat** — az esetek hány százalékában találja el
-*pontosan* ugyanazt a jegyet, amit az ember adott.
-*Nálunk: 81% — tízből nyolc képnél telibe talál.*
-
-**±1 accuracy (plusz-mínusz egy pontosság)** — hányszor téved *legfeljebb egyet*
-(pl. 3 helyett 2-t vagy 4-et mond). Egy ordinális skálán a szomszédos tévesztés
-enyhe hiba; ez a szám azt mutatja, mennyire „nincs nagy melléfogás".
-*Nálunk: 99.8% — nagy tévedés (pl. 1 helyett 4) gyakorlatilag sosincs.*
-
-**MAE (Mean Absolute Error, átlagos abszolút hiba)** — átlagosan hány jeggyel
-téved. Ha mindig telibe találna, 0 lenne; ha átlag fél jeggyel mellényúl, 0.5.
-*Nálunk: 0.19 — átlagosan ötödannyit téved, mint egy egész jegy.*
-
-**QWK (Quadratic Weighted Kappa, kvadratikusan súlyozott kappa)** — a
-„fő" pontszámunk. Azt méri, mennyire **egyezik a gép jegye az emberével egy
-sorrendi skálán**, és a nagy tévedést sokkal jobban bünteti, mint a kicsit (a
-„kvadratikus" = a hibát négyzetre emeli). Ráadásul kiszűri a szerencsét: azt
-nézi, mennyivel jobb a puszta találgatásnál. **0 = annyit ér, mint a találgatás,
-1 = tökéletes egyezés.** 0.8 fölött már erős.
-*Nálunk: 0.89 — közel az emberi címkéző önmagával való egyezéséhez (a
-gyakorlati plafonhoz).*
-
-**AUC (ROC AUC, a görbe alatti terület)** — egy *jó/rossz* (kétosztályos) döntés
-minőségét méri: nálunk „rossz-e az út (RQI ≥ 3)?". Azt fejezi ki, mennyire jól
-*rangsorol*: ha veszünk egy tényleg rossz és egy tényleg jó utat, milyen eséllyel
-adja a rosszra a magasabb kockázatot. **0.5 = érme-feldobás, 1.0 = tökéletes.**
-*Nálunk: 0.97 — kiváló jó/rossz szétválasztás.*
-
-**Bad-road accuracy / jó-rossz döntés pontossága** — ugyanez, de nyers
-százalékban: a jó/rossz besorolás hány százaléka helyes.
-*Nálunk: 92%.*
-
-**Confusion matrix / tévesztési mátrix** — táblázat, ami megmutatja, *mit mivel*
-kever a gép (pl. „a 3-asok közül hányat mondott 2-nek"). Az átló a találatok; a
-mellette lévő cellák a szomszédos tévesztések. Nálunk minden hiba az átló mellett
-van, nincs 1↔4 keveredés.
-
-**Baseline / naiv alapvonal** — a „buta" viszonyítási pont, amihez képest a modell
-jóságát nézzük (pl. „mindig a leggyakoribb jegyet tippeli"). Ha a modell nem veri
-meg a baseline-t, nem ér semmit.
-*Nálunk: a naiv MAE 0.76 volt, a modellünké 0.19.*
-
----
-
-## 3. Hogyan mérünk *becsületesen*? (a validáció)
-
-A legnagyobb csapda, hogy a gép „bemagolja" a tanulóképeket, és a vizsgán csak
-azokat ismeri fel. Ezért soha nem azon mérünk, amin tanítottunk.
-
-**Train/test split (tanító/teszt szétválasztás)** — a képek egy részén tanítunk,
-egy másik, *elrejtett* részén vizsgáztatunk. A vizsgapontszám a valódi.
-
-**Overfitting / túltanulás** — amikor a gép a tanulóképeket magolja be általános
-szabály helyett. Ilyenkor a tanuló-adaton szuper, új képen gyenge. Ez ellen véd
-a rejtett teszthalmaz.
-
-**Leakage / szivárgás** — amikor véletlenül „beszivárog" a válasz a tanulásba (pl.
-ugyanaz a kép a tanuló- és a tesztkészletben is). Ilyenkor a pontszám hamisan
-szép. Sokat teszünk azért, hogy ez ne történjen (ezért „szivárgásmentes").
-
-**Cross-validation (CV) / keresztvalidáció** — nem *egy* szétvágásra bízzuk
-magunkat (az lehet szerencse), hanem többre, és átlagolunk.
-
-**5-fold CV (5-szörös keresztvalidáció)** — a képeket **5 egyenlő kupacra** osztjuk.
-Ötször tanítunk: mindig 4 kupacon tanulunk, az 5.-en vizsgázunk — így *minden* kép
-pontosan egyszer volt vizsgakép, de sosem a saját tanulásán. Az 5 eredményt
-átlagoljuk. Ez sokkal megbízhatóbb, mint egyetlen szétvágás.
-*(A „fold" = kupac/hajtás.)*
-
-**Stratified / rétegzett** — a kupacok szétosztásánál ügyelünk, hogy mindegyikbe
-arányosan kerüljön minden jegyből (ne legyen egy kupac csupa jó út). Így a vizsga
-tisztességes.
-
-**Out-of-fold (OOF) predikció** — minden képre az a jóslat, amit akkor kapott,
-amikor éppen ő volt a *vizsgán* (nem a tanulásán). Ezekből számoljuk a becsületes
-pontszámokat, és ezeken hangoljuk a vágópontokat és a valószínűség-kalibrációt.
-
-**Nested / beágyazott CV** — CV a CV-ben. Ha nemcsak mérünk, hanem *hangolunk* is
-(pl. a vágópontokat), a hangolást is elrejtett adaton kell csinálni, különben az
-is szivárgás. A beágyazott CV pont ezt biztosítja — ezért „nested".
-
-**Térbeli szivárgás (spatial leakage)** — a szivárgás alattomos fajtája. A
-Street View képek ~10 m-enként követik egymást, így a szomszédos képek szinte
-ugyanazt az aszfaltot mutatják. Ha véletlenszerűen osztjuk kupacokba a képeket,
-a tesztkép „ikertestvére" a tanulóhalmazba kerül, és a modell lényegében
-emlékszik az utcára. Mérésünk szerint egy olyan „modell", amely **csak a GPS-
-koordinátát látja, képet nem**, véletlen CV-n QWK 0.88-at ér el, vagyis
-majdnem annyit, mint a valódi modell. Ez a szivárgás nagyságát mutatja.
-
-**Térbeli / csoportosított CV (StratifiedGroupKFold)** — a kupacokba nem
-egyes képeket, hanem **egész földrajzi csoportokat** osztunk (nálunk 1 km × 1
-km-es rácscellákat), így egy cella minden képe ugyanabba a kupacba kerül. A
-teszt így olyan utcákon mér, amelyeket a modell sosem látott. **2026-11-18 óta
-ez a hivatalos mérés** (`ml/spatial_cv.py`). A cellaméretet a variogram
-alapján választottuk.
-
-**Variogram** — megmutatja, hogyan nő két kép jegyeinek eltérése a köztük lévő
-távolsággal. Ahol a görbe kisimul, ott szűnik meg a „szomszéd hasonlít a
-szomszédra" hatás: nálunk ez **~1 km**-nél történik. Ennél nagyobb cellával már
-egész városrészeket tartanánk vissza, ami egy másik kérdést mér.
-
-**Leave-one-area-out (egy régió kihagyása)** — a legszigorúbb teszt: három
-gyűjtési területen (Budapest, Törökbálint, Székesfehérvár, Tapolca közül)
-tanítunk, a negyediken mérünk. Arra felel, hogy a modell **új városban** is
-működik-e.
-
-**Bootstrap / konfidencia-intervallum (CI)** — a mért szám bizonytalansága. A
-cellákat visszatevéssel újrahúzzuk, és ezerszer újraszámoljuk a metrikát; a
-95%-os CI az a sáv, amelybe a mérés „újrasorsolva" az esetek 95%-ában esne.
-**Páros bootstrap:** két modell *különbségét* mérjük ugyanazokon a képeken. Ha
-a különbség CI-je nem tartalmazza a 0-t, akkor a javulás „mérhető".
-
-**Seed (véletlenmag)** — a véletlen műveletek (pl. a kupacokba osztás) egy fix
-számból indulnak, hogy az eredmény **megismételhető** legyen. Nálunk `seed=42`.
-Ugyanaz a seed = ugyanaz a szétvágás = összehasonlítható számok.
-
-**Reprodukálhatóság** — hogy ugyanaz a kód ugyanazt az eredményt adja legközelebb
-is. A fix seed és a rögzített recept ezt szolgálja.
-
----
-
-## 4. A modell felépítése (miből áll a „gép"?)
-
-A receptünk: **egy nagy, kész „látás-agy" + egy rátett kis döntéshozó.**
-
-**Backbone (gerinc / „látás-agy")** — egy hatalmas, *előre* betanított háló, ami
-általánosan „ért a képekhez" (élek, textúrák, formák). Nem mi tanítottuk, kész van;
-mi csak *használjuk* jellemző-kinyerőként.
-*Nálunk: **DINOv2-small** (a Meta AI modellje).*
-
-**Frozen / fagyasztott** — a backbone-t *nem* tanítjuk tovább, „befagyasztjuk". Így
-kevés adatból is működik, és gyors. Csak a rátett kis fejet tanítjuk.
-
-**DINOv2 / CLIP** — konkrét előtanított hálók. A DINOv2 a jellemzőket adja; a CLIP-et
-egy külön ellenőrzésre használjuk („ez a kép egyáltalán út-e?").
-
-**CLS token / patch token** — a DINOv2 kétféle „kivonatot" ad a képről: a **CLS** az
-egész kép összefoglalója, a **patch** tokenek a kis képrészletek (jó a
-felület-textúrához, pl. repedések). Mi a kettő kombinációját használjuk.
-
-**Head / fej** — a backbone-ra rátett *kicsi* modell, ami a jellemzőkből kiszámolja
-a tényleges jegyet. Ezt tanítjuk a mi címkéinken.
-*Nálunk: SVR-RBF.*
-
-**Regresszió vs. osztályozás** — az *osztályozás* dobozokba sorol (1/2/3/4, ahol a
-dobozok között „nincs sorrend"); a *regresszió* egy folytonos számot becsül (pl.
-2.6), amit utána kerekítünk. Mi regressziót használunk, mert az RQI **sorrendi**:
-a 4 rosszabb, mint a 3, ami rosszabb, mint a 2 — ezt a regresszió tiszteli, az
-osztályozás eldobná.
-
-**Ordinal / sorrendi skála** — olyan skála, ahol a számok *sorrendje* számít, de a
-lépések nem feltétlenül egyenlők. Az RQI ilyen. Ezért használunk sorrend-tudatos
-mérést (QWK) és regressziót.
-
-**Ridge / SVR-RBF** — kétféle „fej" (döntéshozó). A **Ridge** egyszerű, egyenes
-összefüggést tanul; az **SVR-RBF** görbült, összetettebb összefüggést is meg tud
-fogni. Nálunk az SVR-RBF nyert (jobb QWK).
-
-**StandardScaler / normalizálás** — a jellemzőket közös léptékre hozza (hogy egyik
-szám se nyomja el a többit pusztán a nagysága miatt), mielőtt a fej megkapja őket.
-
-**Pipeline** — a lépések összefűzése egy egységgé (nálunk: normalizálás → fej), hogy
-mindig ugyanabban a sorrendben, ugyanúgy fussanak tanításnál és élesben is.
-
-**Threshold / cut-point / vágópont** — a folytonos becslést (pl. 2.6) jeggyé kell
-kerekíteni. Nem feltétlenül a felezőpontnál vágunk: **hangolt vágópontokkal** a
-határokat oda tesszük, ahol a legjobb az egyezés. Nálunk pl. a 3|4 határ 3.18-nál
-van (nem 3.5-nél), így jobban felismeri a rossz utakat.
-
-**Kalibráció / P(bad) / izotonikus kalibráció** — a nyers becslést megbízható
-**valószínűséggé** alakítja. A „P(bad)" = *„mekkora eséllyel rossz ez az út
-(RQI ≥ 3)?"*. A *kalibrált* azt jelenti: ha a modell 70%-ot mond, akkor tényleg
-kb. 10-ből 7 ilyen eset rossz út. Az „izotonikus" a matek módszer neve; a lényeg,
-hogy a százalék valóban annyit érjen, amennyit mutat.
-*Nálunk: ezt látod a pontkártyán „Rossz út valószínűsége" néven.*
-
-**Reliability / megbízhatósági tábla** — megmutatja, hogy amikor a modell X-et mond,
-a valóságban mi szokott lenni. Nálunk: ha 4-est mond, 80%-ban tényleg 4-es és
-<1%-ban jó út — vagyis a „rossz" ítéletében meg lehet bízni.
-
-**TTA (Test-Time Augmentation)** — trükk, amivel a képet többféleképp (pl.
-tükrözve) is megmutatjuk a modellnek, és átlagolunk. Kipróbáltuk — nálunk nem
-segített, ezért nincs bent. (Fontos elv: amit kipróbálunk és nem segít, azt is
-megmérjük és kihagyjuk.)
-
-**Class imbalance / osztály-egyensúlytalanság** — amikor egyes jegyekből sokkal
-több példa van, mint másokból (nálunk a jó utakból). Ez torzíthat; ezért
-szereztünk vissza 676 hiányzó (főleg jó-út) képet a kiegyensúlyozáshoz.
-
----
-
-## 5. Gyakorlati / infrastruktúra
-
-**Artifact** — a kész, elmentett modell egyetlen fájlban, mindennel, ami az
-élesítéshez kell (a betanított fej, a recept, a vágópontok, a kalibrátor).
-*Nálunk: `ml/cache/rqi_model.joblib`.*
-
-**joblib** — a Python könyvtár, amivel a modellt fájlba mentjük/visszatöltjük.
-
-**Promotion gate / élesítési kapu** — a szabály, hogy **új modell csak akkor mehet
-élesbe, ha a fenti, *térbeli* CV-mérésen eléri vagy veri a jelenlegit.** Nálunk
-ezt az `ml/evaluate_artifact.py` automatikusan ellenőrzi (PASS/FAIL). Így nem
-tudunk véletlenül rosszabb modellt kiadni. Jelölt artifact esetén a kapu a
-bajnokkal páros összevetést is futtat, ez mondja meg, hogy a jelölt *mérhetően*
-jobb-e.
-
-**Backbone letöltés / MPS / CPU / CUDA** — hol fut a számítás. **MPS** = az Apple
-gépek grafikus gyorsítása (nálunk a Mac ezt használja), **CUDA** = NVIDIA
-kártyáké, **CPU** = sima processzor (lassabb). A modell mindegyiken fut.
-
-**Epoch** — a *régi* (elvetett) tanításnál: egy teljes átfutás a tanulóadaton. A
-mostani recept nem így tanul (a fej egyben illeszkedik), úgyhogy nálunk ez már
-nem releváns — de régebbi doksikban/beállításokban még előbukkanhat.
-
-**Inference / következtetés** — amikor a kész modellt *használjuk* egy új képre
-(szemben a *tanítással*). A térképi pontozás inference.
-
----
-
-## Kapcsolódó
-
-- A modell történetét és a döntéseket közérthetően: [MODEL_EXPERIMENTS.md](MODEL_EXPERIMENTS.md)
-- A pontos számok és a pipeline: [../ml/README.md](../ml/README.md)
-- Ha valamit itt nem találsz és tőlem (az asszisztenstől) hallottad, szólj — bővítjük.
+# Glossary
+
+Plain-language definitions of the ML and project terms used across the docs. The
+"HU" column gives the Hungarian term used with the owner and in the UI. Numbers in
+"Here" are from the official spatial CV (2026-11-18); their source of truth is
+[ml/README.md](../ml/README.md).
+
+In one sentence: the model gives a road image a 1–4 grade; to know how far to
+trust it we hide images from it, ask it, and compare with the human grade — QWK,
+MAE, AUC etc. all measure that agreement from different angles.
+
+## 1. Basics
+
+| Term | HU | Meaning — *here* |
+|---|---|---|
+| RQI (Road Quality Index) | útminőség-index | Our 1–4 road-quality scale; **lower is better** (1 excellent, 4 poor; 5 unused). |
+| Label / ground truth | címke | The human grade for an image; the truth we compare against. *Here: 1903 usable labelled images (`training_data`).* |
+| Model / artifact | modell / artifact | The trained predictor saved as one file with everything needed to serve it (head, recipe, cut-points, calibrator). *Here: `ml/cache/rqi_model.joblib` (saved with joblib).* |
+| Feature | jellemző | Numbers extracted from an image that the model works on. *Here: DINOv2 turns each image into 768 numbers.* |
+| Inference | következtetés | Running the trained model on a new image (vs. training). Map scoring is inference. |
+
+## 2. Metrics
+
+| Term | HU | Meaning — *here* |
+|---|---|---|
+| Exact accuracy | pontos találat | Share of images where the predicted grade equals the human one. *Here: 61% on unseen streets.* |
+| ±1 accuracy | ±1 pontosság | Share off by at most one grade. *Here: 98.5%; no 1↔4 confusions.* |
+| MAE (mean absolute error) | átlagos abszolút hiba | Average distance from the human grade, in grades. *Here: 0.405.* |
+| QWK (quadratic weighted kappa) | kvadratikusan súlyozott kappa | **Main score.** Agreement on an ordinal scale, punishing big misses quadratically and correcting for chance: 0 = guessing, 1 = perfect, > 0.8 strong. *Here: 0.774 (the old random-fold 0.889 was inflated by spatial leakage).* |
+| AUC (ROC AUC) | görbe alatti terület | Quality of the good/bad decision ("is RQI ≥ 3?"): probability that a truly bad road gets a higher risk than a truly good one. 0.5 = coin flip, 1 = perfect. *Here: 0.934 (Budapest only 0.78).* |
+| Confusion matrix | tévesztési mátrix | Table of true vs. predicted grade. *Here: errors are almost all next to the diagonal; class 2 is the weakest (recall 0.43).* |
+| Baseline | naiv alapvonal | A dumb reference the model must beat. *Here: a GPS-only k-NN (no image) gets QWK 0.60 on spatial CV; the image model 0.77.* |
+| Reliability table | megbízhatósági tábla | "When the model says X, what is it really?" *Here: a predicted 4 is truly 4 in 63% of cases and almost never a good road.* |
+
+## 3. Honest evaluation
+
+| Term | HU | Meaning — *here* |
+|---|---|---|
+| Train/test split | tanító/teszt szétválasztás | Train on some images, grade on hidden ones; only the hidden score counts. |
+| Overfitting | túltanulás | Memorising the training images instead of learning a rule. |
+| Leakage | szivárgás | The answer sneaks into training (e.g. the same image on both sides) → the score looks too good. |
+| Cross-validation (CV), k-fold | keresztvalidáció | Split into k folds, train on k−1, test on the rest, rotate, average. *Here: 5 folds.* |
+| Stratified | rétegzett | Each fold gets every grade in proportion. |
+| Out-of-fold (OOF) prediction | OOF-predikció | Each image's prediction from the run where it was in the test fold; cut-points and calibration are tuned on these. |
+| Nested CV | beágyazott CV | CV inside CV, so that tuning (e.g. cut-points) also happens on hidden data. |
+| Spatial leakage | térbeli szivárgás | Street View frames are ~10 m apart, so a random split puts a test frame's near-twin into training. A GPS-only model scores QWK 0.88 on random CV — that is the size of the leak. |
+| Spatial / grouped CV (StratifiedGroupKFold) | térbeli CV | Whole 1 km × 1 km grid cells go to one fold, so tests run on streets never seen. **Official since 2026-11-18** (`ml/spatial_cv.py`). |
+| Variogram | variogram | How grade difference grows with distance; it flattens at ~1 km, hence the cell size. |
+| Leave-one-area-out | régió-kihagyás | Train on three collection areas, test on the fourth: "does it work in a new town?" *Here: QWK 0.66 / AUC 0.87.* |
+| Bootstrap CI / paired bootstrap | konfidencia-intervallum | Resample cells to get the metric's 95% band; paired = the band of the *difference* between two models. Excludes 0 → "measurably better". |
+| Seed | véletlenmag | Fixed random start for reproducible splits. *Here: `seed=42`.* |
+
+## 4. Model anatomy
+
+| Term | HU | Meaning — *here* |
+|---|---|---|
+| Backbone | gerinc, „látás-agy" | A large pre-trained vision network used as a feature extractor. *Here: DINOv2-small (Meta).* |
+| Frozen | fagyasztott | The backbone is not trained further; only the small head is. Works with little data. |
+| CLS / patch tokens | CLS / patch tokenek | DINOv2 outputs: CLS summarises the whole image, patch tokens describe small regions (surface texture). *Here: both, concatenated.* |
+| Head | fej | The small model on top of the features that outputs the grade. *Here: SVR-RBF.* |
+| Regression vs. classification | regresszió vs. osztályozás | Regression predicts a continuous value (e.g. 2.6) and respects order; classification treats grades as unordered boxes. *Here: regression.* |
+| Ordinal scale | sorrendi skála | Order matters, steps need not be equal. RQI is ordinal → QWK + regression. |
+| Ridge / SVR-RBF / ordinal logistic | – | Head types: linear, non-linear kernel regression, proportional-odds ordinal model. *Here: SVR-RBF ships; ordinal logistic is an equal fallback.* |
+| StandardScaler / pipeline | normalizálás / pipeline | Put features on a common scale; chain scaler → head so training and serving match. |
+| Cut-point / threshold | vágópont | Where the continuous score is cut into grades; tuned, not fixed at .5. |
+| Calibration, P(bad) | kalibráció, P(rossz) | Turns the score into a trustworthy probability that the road is bad (RQI ≥ 3); isotonic = the method. Shown on the point card as „Rossz út valószínűsége". |
+| TTA (test-time augmentation) | – | Averaging predictions over e.g. mirrored copies. Tried; did not help. |
+| Class imbalance | osztály-egyensúlytalanság | Some grades have far more examples than others. |
+| Epoch | epoch | One full pass over the training data. The shipped head is fit in one go; only the experimental fine-tune (`ml/finetune_lastblocks.py`) uses epochs. |
+
+## 5. Infrastructure
+
+| Term | HU | Meaning — *here* |
+|---|---|---|
+| Promotion gate | élesítési kapu | A new model ships only if `ml/evaluate_artifact.py` says PASS on spatial CV (and, to replace the champion, is measurably better in the paired comparison). |
+| MPS / CUDA / CPU | – | Where compute runs: Apple GPU / NVIDIA GPU / plain CPU. *Here: MPS on the Mac.* |
+
+Related: model history and decisions — [MODEL_EXPERIMENTS.md](MODEL_EXPERIMENTS.md);
+pipeline and exact numbers — [ml/README.md](../ml/README.md).
