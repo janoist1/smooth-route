@@ -671,6 +671,27 @@ roads, owner-Jó frames with sealed cracks and owner-Kiváló fresh surfaces. Th
 `ml/motorway_vlm.py eval` after ~100–200 such labels from other motorways, with LORO
 as the deciding check.
 
+## Era 18 — Are score outliers bad photos? Codex frame audit (T-101, 2026-11-26)
+
+**Question.** Within a 200 m segment, some frames score a whole level away from the
+segment median. Are those frames ones whose road surface cannot be judged (blocked view,
+glare, blur, not a street), so that filtering them would steady the map?
+
+**Setup.** 19,564 usable scored frames snapped to measured segments with ≥ 4 frames;
+3,627 (18.5 %) sit ≥ 1 level from their segment median. Blind sample: 120 such
+outliers + 80 controls (< 0.3 from the median), shuffled, 20 per `codex exec` call
+(gpt-6.1-sol, read-only, images attached; ~12 MB upload, ~270k tokens). Codex marks
+`usable_for_rqi` with a reason; it never sees scores or groups.
+
+**Result.** Codex rejects 6 of 120 outliers (5.0 %) and 2 of 80 controls (2.5 %):
+Fisher OR 2.05, p = 0.48. Reasons are plausible (motion blur, glare, camera on a
+sidewalk, side-facing farm access). The existing frame-quality flags already remove
+almost all unusable photos; within-segment outliers are real disagreement (patchy
+road or model noise), not bad frames.
+
+**Decision.** No extra Codex audit step. Segment stability comes from the median over
+several frames and from more labels, not from more photo filtering.
+
 ## Lessons
 
 1. **With little data the recipe matters, not model size** — the same backbone gave
