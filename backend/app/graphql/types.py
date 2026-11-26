@@ -220,3 +220,46 @@ class RqiModelInfo:
     bad_road_acc: Optional[float] = None
     bad_road_auc: Optional[float] = None
     scale_meaning: Optional[str] = None
+
+
+@strawberry.type
+class RoadSegment:
+    """A ~150 m piece of a real road (OSM geometry) with aggregated quality.
+
+    Geometry © OpenStreetMap contributors (ODbL) — show the attribution
+    wherever these paths are drawn.
+    """
+    id: strawberry.ID
+    # [[lat, lng], ...]
+    path: List[List[float]]
+    # Class 1-4 (1 = excellent, 4 = poor); null if the piece has no frames.
+    rqi: Optional[int]
+    # Aggregated continuous score on the same 1-4 scale.
+    score: Optional[float]
+    # Mean P(road is bad, RQI >= 3) of the frames, 0-1.
+    p_bad: Optional[float]
+    # 0-1, after the image-age factor.
+    confidence: float
+    # "high" | "medium" | "low"
+    confidence_level: str
+    n_images: int
+    length_m: float
+    road_name: Optional[str]
+    highway: Optional[str]
+    # Oldest / newest Street View capture month on the segment ("YYYY-MM").
+    capture_date_min: Optional[str]
+    capture_date_max: Optional[str]
+
+
+@strawberry.type
+class RouteQuality:
+    """Quality summary of a planned route, from the road segments along it."""
+    total_length_m: float
+    # Length of the path that runs along a segment with data.
+    covered_length_m: float
+    # 4 numbers: metres in class 1, 2, 3, 4.
+    length_by_rqi: List[float]
+    # Length-weighted mean segment score over the covered part; null if none.
+    mean_score: Optional[float]
+    # Up to 5, by score descending; segments with "low" confidence excluded.
+    worst_segments: List[RoadSegment]
