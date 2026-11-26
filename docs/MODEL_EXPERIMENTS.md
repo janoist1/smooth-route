@@ -471,6 +471,34 @@ validator, conf 0.001.
 5. Until then, show YOLO polygons only at conf ≥ 0.5 and label them on the card
    as indicative.
 
+## Era 15 — Codex (gpt-6.1-sol) as an image labeller (T-89, 2026-11-26)
+
+**Question.** Can Codex label frames well enough to fill the Budapest label gap
+(2 % of Budapest frames labelled)?
+
+**Setup.** The T-4 pilot exactly: 200 blind frames + 12 expert anchors, old 1–4
+severity scale, same rubric; frames attached to `codex exec` in batches of 20
+(read-only, empty workspace, no access to the key). Then 239 of the 332 other
+owner-labelled Budapest frames the same way (stopped early, result settled).
+Model = spatial-CV out-of-fold prediction (honest). Paired cell-free bootstrap.
+
+| Set | Codex QWK | Model QWK | ΔQWK (95 % CI) | Codex exact / bad-acc |
+|---|---|---|---|---|
+| Pilot, 200 frames, 4 areas | 0.749 | 0.835 | −0.086 [−0.160, −0.018] | 60.5 % / 80.0 % |
+| Budapest, 239 frames | 0.260 | 0.623 | −0.362 [−0.488, −0.234] | 53.1 % / 61.5 % |
+
+- Best AI labeller so far (Fable 0.631, Opus 0.715 on the same 200), but clearly
+  below the model. Codex + model averages are no better than the model (±0.00 at
+  1/3 weight; worse at 1/2, and sensitive to the rounding direction).
+- The early "Codex beats the model in Budapest" signal (22 frames: 0.58 vs 0.16)
+  was noise. On 239 Budapest frames Codex calls roads the owner rates Kiváló/Jó
+  "Közepes" (bias +0.23; 15 of 30 owner-Kiváló → Közepes): it reads urban wear,
+  patches and markings as damage, unlike the owner. High-confidence answers are
+  no better (QWK 0.23 on 135 frames).
+- **Decision:** no Codex labels for training or on the map. Codex stays on code
+  work (tickets, reviews). The lever is still the owner's labels in new areas.
+  Upload cost: ~35 MB of images.
+
 ## Lessons
 
 1. **With little data the recipe matters, not model size** — the same backbone gave
