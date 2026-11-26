@@ -28,13 +28,13 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Iterable, Optional, cast
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.paths import data_path
-from app.core.rqi_scale import SCALE
+from app.core.rqi_scale import SCALE, SEVERITY
 from app.core.timeutil import utcnow
 from app.services import label_queue as lq
 from app.services.segment_aggregation import frame_usable
@@ -395,6 +395,26 @@ class QuickLabelError(ValueError):
     pass
 
 
+def quick_label_previous_rqi(quick_label: dict,
+                            relabel_history: Iterable[dict] = ()) -> Optional[float]:
+    """Read an undo backup in the current direction, including legacy backups.
+
+    Unversioned backups used the original severity direction. Re-checks also
+    recorded their direction in history, including saves after migration 0006.
+    Match by timestamp so a later undo never borrows another save's direction.
+    """
+    previous = quick_label.get("previous_rqi")
+    if previous is None:
+        return None
+    direction = quick_label.get("previous_rqi_direction")
+    if direction is None:
+        stamp = quick_label.get("timestamp")
+        direction = next((entry["direction"] for entry in reversed(list(relabel_history))
+                          if stamp is not None and entry.get("timestamp") == stamp
+                          and entry.get("direction")), SEVERITY)
+    return float(SCALE.convert(previous, direction))
+
+
 def _point_filename(db: Session, point_id: int) -> str:
     from app.models.models import StreetViewImage
 
@@ -422,7 +442,8 @@ def save_quick_label(db: Session, point_id: int, rqi: int, *,
     now = utcnow()
     stamp = now.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
     ql = {"timestamp": stamp, "rqi": rqi, **({"labeller": labeller} if labeller else {}),
-          **(context or {})}
+          **(context or {}), "previous_rqi_direction": SCALE.direction,
+          "previous_rqi_scale_version": SCALE.version}
 
     row = db.query(TrainingData).filter(TrainingData.image_filename == name).first()
     if row is None:
@@ -434,8 +455,8 @@ def save_quick_label(db: Session, point_id: int, rqi: int, *,
                                        "previous_rqi": None}},
         ))
     else:
-        meta = dict(row.meta_data or {})
-        previous = meta.get("quick_label") or {}
+        meta = dict(cast(dict, row.meta_data) or {})
+        previous = meta.get("quick_label")
         added = row.manual_rqi is not None
         if added:
             # Overwriting a label (re-check): keep the old value. Values are
@@ -448,8 +469,9 @@ def save_quick_label(db: Session, point_id: int, rqi: int, *,
                 "direction": SCALE.direction,
             }]
         # One-step undo: back to the value this save replaced.
-        meta["quick_label"] = {**ql, "created_row": previous.get("created_row", False),
-                               "previous_rqi": row.manual_rqi, "history_added": added}
+        meta["quick_label"] = {**ql, "created_row": (previous or {}).get("created_row", False),
+                               "previous_rqi": row.manual_rqi, "history_added": added,
+                               "previous_quick_label": previous}
         row.manual_rqi = float(rqi)
         row.meta_data = meta  # new dict: JSON column change detection
         row.updated_at = now
@@ -467,7 +489,7 @@ def undo_quick_label(db: Session, point_id: int) -> bool:
     row = db.query(TrainingData).filter(TrainingData.image_filename == name).first()
     if row is None:
         return False
-    meta = dict(row.meta_data or {})
+    meta = dict(cast(dict, row.meta_data) or {})
     ql = meta.get("quick_label")
     if not ql:
         return False
@@ -475,14 +497,18 @@ def undo_quick_label(db: Session, point_id: int) -> bool:
             and not row.annotations and not row.tags and not row.comment):
         db.delete(row)
     else:
-        meta.pop("quick_label", None)
+        previous_ql = ql.get("previous_quick_label")
+        if previous_ql is not None:
+            meta["quick_label"] = previous_ql
+        else:
+            meta.pop("quick_label", None)
+        row.manual_rqi = quick_label_previous_rqi(ql, meta.get("relabel_history", []))
         if ql.get("history_added") and meta.get("relabel_history"):
             history = meta["relabel_history"][:-1]
             if history:
                 meta["relabel_history"] = history
             else:
                 meta.pop("relabel_history")
-        row.manual_rqi = ql.get("previous_rqi")
         row.meta_data = meta
         row.updated_at = utcnow()
     db.commit()

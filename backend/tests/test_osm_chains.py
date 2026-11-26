@@ -1,4 +1,6 @@
 """Stitching consecutive OSM ways of the same road into lines."""
+import math
+
 import pytest
 
 from app.services.osm_chains import merge_ways
@@ -91,6 +93,33 @@ def test_fork_of_the_same_road_is_not_joined():
     assert sorted(merge_ways(ways)) == [1, 2, 3]
 
 
+@pytest.mark.parametrize("reverse_first", [False, True])
+@pytest.mark.parametrize("reverse_second", [False, True])
+@pytest.mark.parametrize("deflection", [59.0, 61.0, 176.0])
+def test_dual_carriageway_join_requires_small_deflection(reverse_first, reverse_second, deflection):
+    # Two parallel carriageways meet at the same node. Name and class alone
+    # would stitch a U-turn, although each carriageway has a straight continuation.
+    joint = at(200, 0)
+    dx, dy = 100 * math.cos(math.radians(deflection)), 100 * math.sin(math.radians(deflection))
+    next_node, last_node = at(200 + dx, dy), at(200 + 2 * dx, 2 * dy)
+    first = [at(100, 0), joint]
+    second = [joint, next_node]
+    ways = as_dict(
+        way(1, [at(0, 0), at(100, 0)]),
+        way(2, first[::-1] if reverse_first else first),
+        way(3, second[::-1] if reverse_second else second),
+        way(4, [next_node, last_node]),
+    )
+    merged = merge_ways(ways)
+    if deflection < 60.0:
+        assert list(merged) == [1]
+        assert set(merged[1].coords) == {at(0, 0), at(100, 0), joint, next_node, last_node}
+    else:
+        assert sorted(merged) == [1, 3]
+        assert set(merged[1].coords) == {at(0, 0), at(100, 0), joint}
+        assert set(merged[3].coords) == {joint, next_node, last_node}
+
+
 def test_unnamed_ways_join_only_at_a_plain_continuation():
     plain = as_dict(
         way(1, [at(0, 0), at(50, 0)], name=None, highway="service"),
@@ -118,15 +147,14 @@ def test_roundabout_stays_on_its_own():
 
 
 def test_ring_made_of_several_ways_terminates():
-    ways = as_dict(
-        way(1, [at(0, 0), at(100, 0)]),
-        way(2, [at(100, 0), at(100, 100)]),
-        way(3, [at(100, 100), at(0, 100)]),
-        way(4, [at(0, 100), at(0, 0)]),
-    )
+    # Each joint turns 45 degrees, satisfying the continuation angle limit.
+    vertices = [at(0, 0), at(100, 0), at(150, 50), at(150, 150), at(100, 200),
+                at(0, 200), at(-50, 150), at(-50, 50), at(0, 0)]
+    ways = as_dict(*(way(i + 1, pair) for i, pair in enumerate(zip(vertices, vertices[1:]))))
     merged = merge_ways(ways)
     assert list(merged) == [1]
-    assert polyline_length_m(merged[1].coords) == pytest.approx(400, abs=0.5)
+    total = sum(polyline_length_m(w.coords) for w in ways.values())
+    assert polyline_length_m(merged[1].coords) == pytest.approx(total)
     assert merged[1].coords[0] == at(0, 0)             # starts with the anchor way
 
 

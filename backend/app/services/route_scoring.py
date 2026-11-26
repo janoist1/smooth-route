@@ -11,7 +11,7 @@ Impact score of a route (lower is better, 0 = every measured metre Kiváló):
 
     impact = Σ badness × speed_factor × metres  /  measured metres
     badness      = how many levels the segment's score is below the best level
-                   (|score − best|, so it works whichever way the scale runs)
+                   (only shortfall counts, whichever way the scale runs)
     speed_factor = segment speed / reference speed (50 km/h → 1.0)
 
 In plain words: the average number of levels below Kiváló per measured metre,
@@ -24,6 +24,8 @@ import os
 import re
 from functools import lru_cache
 from typing import Optional
+
+from app.core.rqi_scale import SCALE
 
 CONFIG_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
@@ -72,5 +74,6 @@ def speed_factor(speed: float, cfg: Optional[dict] = None) -> float:
 
 
 def badness(score: float, best_level: float) -> float:
-    """Levels below the best level (0 at Kiváló), direction-free."""
-    return abs(float(score) - float(best_level))
+    """Levels worse than the best level; better scores have zero badness."""
+    shortfall = SCALE.to_severity(float(score)) - SCALE.to_severity(float(best_level))
+    return max(0.0, shortfall)
