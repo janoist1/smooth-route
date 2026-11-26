@@ -71,7 +71,7 @@ const PointDetailCard: React.FC<PointDetailCardProps> = ({ detail, loading, onCl
         {imgUrl ? (
           <img
             src={imgUrl}
-            alt="Road Surface"
+            alt="Az útfelület Street View-képe"
             style={{ width: '100%', height: '100%', objectFit: 'cover' }}
             onError={e => {
               ;(e.target as HTMLImageElement).src =
@@ -94,6 +94,7 @@ const PointDetailCard: React.FC<PointDetailCardProps> = ({ detail, loading, onCl
 
         <button
           onClick={onClose}
+          aria-label="Bezárás"
           style={{
             position: 'absolute',
             top: 10,

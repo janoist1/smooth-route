@@ -71,3 +71,20 @@ button {
 .leaflet-layer.basemap-light {
   filter: grayscale(1) brightness(1.04) contrast(0.92);
 }
+
+/* Touch devices: Leaflet's 30 px zoom buttons are below the 44 px touch
+   target size; enlarge them (Leaflet adds .leaflet-touch on touch devices). */
+.leaflet-touch .leaflet-bar a {
+  width: 44px;
+  height: 44px;
+  line-height: 44px;
+  font-size: 22px;
+}
+
+/* Visible keyboard focus on map controls and cards. */
+.leaflet-bar a:focus-visible,
+.leaflet-container button:focus-visible,
+.leaflet-container ~ * button:focus-visible {
+  outline: 2px solid #93c5fd;
+  outline-offset: 2px;
+}

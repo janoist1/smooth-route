@@ -8,10 +8,10 @@ interface MapStyleSwitcherProps {
 }
 
 const styles: { id: MapStyle; label: string; preview: string }[] = [
-  { id: 'dark', label: 'Dark', preview: '#1a1a1a' },
-  { id: 'light', label: 'Light', preview: '#f0f0f0' },
-  { id: 'satellite', label: 'Satellite', preview: 'linear-gradient(135deg, #1b5e20, #4e342e)' },
-  { id: 'street', label: 'Street', preview: '#e0e0e0' },
+  { id: 'dark', label: 'Sötét térkép', preview: '#1a1a1a' },
+  { id: 'light', label: 'Világos térkép', preview: '#f0f0f0' },
+  { id: 'satellite', label: 'Műholdkép', preview: 'linear-gradient(135deg, #1b5e20, #4e342e)' },
+  { id: 'street', label: 'Utcatérkép (OSM)', preview: '#e0e0e0' },
 ]
 
 const MapStyleSwitcher: React.FC<MapStyleSwitcherProps> = ({ currentStyle, onChange }) => {
@@ -37,9 +37,12 @@ const MapStyleSwitcher: React.FC<MapStyleSwitcherProps> = ({ currentStyle, onCha
           key={style.id}
           onClick={() => onChange(style.id)}
           title={style.label}
+          aria-label={style.label}
+          aria-pressed={currentStyle === style.id}
           style={{
-            width: '40px',
-            height: '40px',
+            // 44 px: comfortable touch target on phones.
+            width: '44px',
+            height: '44px',
             borderRadius: '8px',
             border:
               currentStyle === style.id ? '2px solid var(--primary)' : '1px solid transparent',

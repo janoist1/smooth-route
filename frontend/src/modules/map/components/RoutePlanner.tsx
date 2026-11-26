@@ -220,7 +220,8 @@ const RoutePlanner = () => {
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '8px',
-                background: isPlanningRoute ? '#2563eb' : '#3b82f6', // blue-600 : blue-500
+                // blue-700 / blue-600: white text needs >= 4.5:1 (blue-500 is 3.7:1).
+                background: isPlanningRoute ? '#1d4ed8' : '#2563eb',
                 color: 'white',
                 padding: '10px',
                 borderRadius: '6px',
