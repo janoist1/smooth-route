@@ -13,6 +13,9 @@ type TokenGetter = () => Promise<string | null>
 type Listener = () => void
 
 const WAIT_MS = 10_000
+// A blocked/unreachable Clerk host can leave getToken() pending forever; cap
+// it so GraphQL requests go out anonymously instead of hanging.
+const TOKEN_TIMEOUT_MS = 3_000
 
 let currentGetter: TokenGetter | null = null
 let waitForGetter = false
@@ -52,10 +55,18 @@ const getterReady = (): Promise<void> =>
 export const getAuthToken = async (): Promise<string | null> => {
   if (!currentGetter && waitForGetter) await getterReady()
   if (!currentGetter) return null
+  let timer: ReturnType<typeof setTimeout> | undefined
   try {
-    return await currentGetter()
+    return await Promise.race([
+      currentGetter(),
+      new Promise<null>(resolve => {
+        timer = setTimeout(() => resolve(null), TOKEN_TIMEOUT_MS)
+      }),
+    ])
   } catch {
     return null
+  } finally {
+    clearTimeout(timer)
   }
 }
 

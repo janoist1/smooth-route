@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, afterEach, vi } from 'vitest'
 import {
   expectSession,
   getAuthToken,
@@ -32,6 +32,35 @@ describe('tokenBridge', () => {
       throw new Error('clerk not loaded')
     })
     expect(await getAuthToken()).toBeNull()
+  })
+
+  it('gives up on a hung getter after ~3 s and goes anonymous', async () => {
+    vi.useFakeTimers()
+    try {
+      // A blocked Clerk host: getToken() never settles.
+      setAuthTokenGetter(() => new Promise<string | null>(() => {}))
+      let result: string | null | undefined
+      void getAuthToken().then(token => {
+        result = token
+      })
+      await vi.advanceTimersByTimeAsync(2_900)
+      expect(result).toBeUndefined()
+      await vi.advanceTimersByTimeAsync(200)
+      expect(result).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not leave the timeout timer behind when the getter answers', async () => {
+    vi.useFakeTimers()
+    try {
+      setAuthTokenGetter(async () => 'jwt-fast')
+      expect(await getAuthToken()).toBe('jwt-fast')
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

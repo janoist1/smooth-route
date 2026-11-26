@@ -182,7 +182,11 @@ const MapView: React.FC<MapViewProps> = ({ onTrain, onMapMove }) => {
   // puts the route back at the very bottom of the shared canvas.
   const routeCasingRef = useRef<L.Polyline | null>(null)
   const routeCoreRef = useRef<L.Polyline | null>(null)
+  // The faint alternatives are clickable and mounted after the segments, so
+  // they are pushed down too (just above the route) and segment clicks win.
+  const altLinesRef = useRef(new Map<number, L.Polyline>())
   useEffect(() => {
+    altLinesRef.current.forEach(line => line.bringToBack())
     routeCoreRef.current?.bringToBack()
     routeCasingRef.current?.bringToBack()
   })
@@ -226,6 +230,10 @@ const MapView: React.FC<MapViewProps> = ({ onTrain, onMapMove }) => {
           .map(r => (
             <Polyline
               key={`alt-${r.index}`}
+              ref={line => {
+                if (line) altLinesRef.current.set(r.index, line)
+                else altLinesRef.current.delete(r.index)
+              }}
               positions={r.points}
               eventHandlers={{ click: () => selectRouteAlternative(r.index) }}
               pathOptions={{ color: '#94a3b8', weight: 6, opacity: 0.35, lineCap: 'round' }}
