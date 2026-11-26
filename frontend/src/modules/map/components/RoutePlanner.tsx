@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Navigation, Play, MapPin, X } from 'lucide-react'
 import { useMap } from '../hooks'
+import { useViewer } from '../../auth'
 
 const RoutePlanner = () => {
   const [isOpen, setIsOpen] = useState(true)
@@ -24,6 +25,10 @@ const RoutePlanner = () => {
     setRouteForm,
     startPickingLocation,
   } = useMap()
+  // processRoute needs a signed-in user (and does not exist on the public
+  // read-only API), so anonymous visitors only get the route preview.
+  const { viewer } = useViewer()
+  const canAnalyze = viewer !== null
   
   // Parse job status for UI (safely handle null job)
   const { progress: jobProgress, status: jobStatus, message: jobMessage } = job || { progress: 0, status: null, message: null }
@@ -214,7 +219,7 @@ const RoutePlanner = () => {
             )}
         </button>
         
-        {routePoints && (
+        {routePoints && canAnalyze && (
              <button 
                 onClick={handleAnalyze}
                 disabled={isAnalyzingRoute}
