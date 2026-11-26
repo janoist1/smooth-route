@@ -30,6 +30,16 @@ vi.mock('../hooks', () => ({
   }),
 }))
 
+// Route-quality summary state (its own card has separate tests).
+vi.mock('../segments/hooks', () => ({
+  useRoadSegments: () => ({
+    routeQuality: null,
+    routeQualityLoading: false,
+    routeQualityError: null,
+    focusSegment: vi.fn(),
+  }),
+}))
+
 describe('RoutePlanner analyze button', () => {
   afterEach(cleanup)
 

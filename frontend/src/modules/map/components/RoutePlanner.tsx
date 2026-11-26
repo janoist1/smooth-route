@@ -1,10 +1,16 @@
 import { useState } from 'react'
-import { Navigation, Play, MapPin, X } from 'lucide-react'
+import { Navigation, Play, MapPin, X, ChevronUp } from 'lucide-react'
 import { useMap } from '../hooks'
 import { useViewer } from '../../auth'
+import { useRoadSegments } from '../segments/hooks'
+import type { RoadSegment } from '../segments/types'
+import { isNarrowScreen } from '../screen'
+import RouteQualityCard from './RouteQualityCard'
+import './roadCards.css'
 
 const RoutePlanner = () => {
-  const [isOpen, setIsOpen] = useState(true)
+  // On a phone the panel would cover half the map: start as the round button.
+  const [isOpen, setIsOpen] = useState(() => !isNarrowScreen())
   
   const { 
     isPlanningRoute, 
@@ -30,6 +36,15 @@ const RoutePlanner = () => {
   const { viewer } = useViewer()
   const canAnalyze = viewer !== null
   
+  const { routeQuality, routeQualityLoading, routeQualityError, focusSegment } = useRoadSegments()
+
+  // "Worst segment" clicked: show it on the map. On a phone the panel folds
+  // away (the route and its summary are kept) so the segment is visible.
+  const handleSelectSegment = (segment: RoadSegment) => {
+    focusSegment(segment)
+    if (isNarrowScreen()) setIsOpen(false)
+  }
+
   // Parse job status for UI (safely handle null job)
   const { progress: jobProgress, status: jobStatus, message: jobMessage } = job || { progress: 0, status: null, message: null }
   
@@ -77,13 +92,11 @@ const RoutePlanner = () => {
 
   if (!isOpen) {
     return (
-      <button 
+      <button
+        className="route-planner-toggle"
         onClick={() => setIsOpen(true)}
         style={{
-            position: 'absolute',
-            top: '20px',
-            left: '60px', // Moved right to avoid potential overlap with leaflet controls
-            zIndex: 1000,
+            // position: see .route-planner-toggle in roadCards.css (differs on a phone)
             background: 'var(--bg-panel, #222)',
             border: 'var(--glass-border, 1px solid #444)',
             color: '#60a5fa', // blue-400
@@ -104,12 +117,8 @@ const RoutePlanner = () => {
   }
 
   return (
-    <div style={{
-        position: 'absolute',
-        top: '20px',
-        left: '60px',
-        zIndex: 1000,
-        width: '320px',
+    <div className="route-planner" style={{
+        // position / width: see .route-planner in roadCards.css (differs on a phone)
         backgroundColor: 'var(--bg-panel, rgba(24, 24, 27, 0.95))',
         backdropFilter: 'blur(12px)',
         border: 'var(--glass-border, 1px solid rgba(255,255,255,0.1))',
@@ -126,9 +135,15 @@ const RoutePlanner = () => {
             <Navigation size={20} color="#3b82f6" />
             Útvonaltervező
         </h3>
-        <button onClick={handleClose} style={{ background: 'transparent', border: 'none', color: '#9ca3af', cursor: 'pointer', padding: '4px' }}>
-            <X size={20} />
-        </button>
+        <div style={{ display: 'flex', gap: '4px' }}>
+            {/* Fold away without dropping the route (the X clears it). */}
+            <button onClick={() => setIsOpen(false)} title="Panel összecsukása (az útvonal megmarad)" aria-label="Panel összecsukása" style={{ background: 'transparent', border: 'none', color: '#9ca3af', cursor: 'pointer', padding: '4px' }}>
+                <ChevronUp size={20} />
+            </button>
+            <button onClick={handleClose} title="Bezárás és útvonal törlése" aria-label="Bezárás és útvonal törlése" style={{ background: 'transparent', border: 'none', color: '#9ca3af', cursor: 'pointer', padding: '4px' }}>
+                <X size={20} />
+            </button>
+        </div>
       </div>
       
       {/* Inputs */}
@@ -249,6 +264,16 @@ const RoutePlanner = () => {
             </button>
         )}
       </div>
+
+      {/* Quality summary of the planned route (anonymous users see it too). */}
+      {routePoints && (
+        <RouteQualityCard
+          quality={routeQuality}
+          loading={routeQualityLoading}
+          error={routeQualityError}
+          onSelectSegment={handleSelectSegment}
+        />
+      )}
 
       {routeAnalysisJobId && (
           <div style={{
