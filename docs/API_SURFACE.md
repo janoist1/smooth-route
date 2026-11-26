@@ -87,7 +87,14 @@ Violations are `BAD_USER_INPUT` errors raised before any resolver runs.
 
 ## `Point`
 
-`rqiScore` is the product RQI and `rqiSource` says where it came from;
+`rqiScore` is the DINO RQI class (`dinoRqiScore`), or `null` when it is
+missing or the frame is marked unusable; `rqiSource` is `"dino"` or
+`"unknown"` respectively. YOLO supplies damage information only; the legacy
+`rqi_display_source` setting cannot select it as product RQI. This rule also
+applies to single-frame and review responses. The overview `roadQualityGrid`
+averages only DINO classes from frames not marked unusable, omitting cells
+without any such measurements.
+
 `dinoScore` / `dinoPBad` are the raw model estimate and the calibrated
 bad-road probability (from `analysisMetadata`). The labeller fields
 (`manualRqi`, `manualTags`, `manualAnnotations`, `manualComment`) are
