@@ -1,7 +1,7 @@
 // The page renders one big button per level of the shared RQI scale (name
 // first) and a tap stores that level's value.
 import { describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { Provider } from 'react-redux'
 import { combineReducers, configureStore } from '@reduxjs/toolkit'
 import createSagaMiddleware from 'redux-saga'
@@ -78,6 +78,14 @@ describe('QuickLabelView', () => {
     }
     // The mocked backend sends no examples: every level says so instead of a picture.
     expect(screen.getAllByText('még nincs példa')).toHaveLength(RQI_LEVELS.length)
+    fireEvent.click(screen.getByRole('button', { name: 'Skála és példák' }))
+    const rubric = within(screen.getByRole('dialog', { name: 'Értékelési skála' }))
+    expect(rubric.queryAllByRole('img')).toHaveLength(0)
+    expect(rubric.getAllByText('még nincs példa')).toHaveLength(RQI_LEVELS.length)
+    for (const level of RQI_LEVELS) {
+      expect(rubric.getByText(level.rubric_hu)).toBeInTheDocument()
+    }
+    fireEvent.click(rubric.getByRole('button', { name: 'Bezárás' }))
     const worst = RQI_LEVELS[RQI_LEVELS.length - 1]
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: worst.label_hu }))

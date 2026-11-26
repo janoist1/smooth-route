@@ -93,7 +93,8 @@ export type OutboxWrite =
       strategy: LabelStrategy
       elapsedMs?: number
     }
-  | { seq: number; kind: 'undo'; id: number }
+  /** Client-only link: a failed save must drop only its own queued undo. */
+  | { seq: number; kind: 'undo'; id: number; saveSeq: number }
   | { seq: number; kind: 'pair'; clientId: string; aId: number; bId: number; result: PairResult; elapsedMs?: number }
   | { seq: number; kind: 'pairUndo'; clientId: string }
 
