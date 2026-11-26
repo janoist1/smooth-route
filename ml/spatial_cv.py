@@ -33,7 +33,8 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-COORDS = os.path.join(ROOT, "ml", "image_coords.csv")
+# RQI_ML_COORDS: alternative coordinate file (used by ml/retrain.py runs).
+COORDS = os.environ.get("RQI_ML_COORDS") or os.path.join(ROOT, "ml", "image_coords.csv")
 
 CELL_M = 1000
 N_SPLITS = 5

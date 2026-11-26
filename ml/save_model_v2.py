@@ -42,7 +42,9 @@ import spatial_cv as S  # noqa: E402
 from spatial_cv import tune_thresholds  # noqa: E402,F401  (re-exported)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CACHE = os.path.join(ROOT, "ml", "cache")
+# RQI_ML_CACHE: an alternative feature-cache dir (ml/retrain.py runs in its
+# own ml/cache/retrain/<run>/ so the shared caches are never touched).
+CACHE = os.environ.get("RQI_ML_CACHE") or os.path.join(ROOT, "ml", "cache")
 
 DROP_RQI5 = True
 ROAD_PROB_MIN = 0.55
