@@ -14,7 +14,7 @@
 # mac-push needs "mac" (or no marker); ws-push needs "ws". FORCE=1 overrides.
 # Run the Mac side overnight:  caffeinate -i env APPLY=1 scripts/cloud/sync.sh mac-push
 . "$(dirname "$0")/lib.sh"
-cd "$HERE/../.."     # repo root
+cd "$HERE/../.." || exit 1   # repo root
 
 cmd=${1:-}
 case "$cmd" in ws-*) AWS_PROFILE_NAME="" ;; esac   # the instance uses its IAM role

@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Helpers for scripts/cloud/*. Default is a PLAN: AWS commands are printed, not
 # run. Set APPLY=1 to execute them. Nothing calls AWS unless APPLY=1.
 set -euo pipefail

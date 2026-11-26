@@ -1,3 +1,4 @@
+# shellcheck shell=bash disable=SC2034  # sourced by lib.sh; variables are used by the scripts
 # Shared settings for scripts/cloud/*. Override any of them in the environment.
 # Nothing here is secret: secrets live in SSM Parameter Store (put-secrets.sh).
 AWS_PROFILE_NAME=${AWS_PROFILE_NAME:-i}
