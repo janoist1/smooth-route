@@ -149,14 +149,31 @@ def masked_nested_cv(X, y, yc, groups, make_model, train_mask):
     return {"oof": oof, "pred": pred, "fold": fold}
 
 
-def verdict(gate_pass, delta):
-    """Recommend promotion? Gate PASS and the new labels must not make the
-    paired spatial CV worse (ΔQWK >= 0 and its 95% CI above -0.02).
-    delta: {"qwk": (d, lo, hi), ...} or None when there are no new labels."""
+def orientation_check(old, new, min_overlap=30, min_rho=0.5):
+    """Do the exported labels run in the same direction as the cached ones?
+
+    A canonical-scale flip (shared/rqi_scale.json) that the export does not
+    convert back would silently invert every label. On frames present in both
+    sets the labels must correlate strongly and positively.
+    Returns (ok, spearman rho or None, overlap n)."""
+    m = old[["image_filename", "manual_rqi"]].merge(
+        new[["image_filename", "manual_rqi"]], on="image_filename")
+    if len(m) < min_overlap:
+        return True, None, len(m)
+    rho = float(m["manual_rqi_x"].corr(m["manual_rqi_y"], method="spearman"))
+    return rho >= min_rho, rho, len(m)
+
+
+def verdict(gate_pass, delta, n_new=None, min_new=0):
+    """Recommend promotion? Gate PASS, at least min_new new labels, and the new
+    labels must not make the paired spatial CV worse (ΔQWK >= 0 and its 95% CI
+    above -0.02). delta: {"qwk": (d, lo, hi), ...} or None (no new labels)."""
     if not gate_pass:
         return False, "spatial gate FAIL"
     if delta is None:
         return False, "no new labels: the candidate equals the champion's training set"
+    if n_new is not None and n_new < min_new:
+        return False, f"only {n_new} new labels (< {min_new}): too few to be worth a model swap"
     d, lo, _ = delta["qwk"]
     if d < 0 or lo <= -0.02:
         return False, f"new labels do not help on the paired test (ΔQWK {d:+.3f}, CI low {lo:+.3f})"
@@ -284,6 +301,12 @@ def main(argv=None):
     import extract_features_v2 as E
     man = build_manifest(labels, lambda f: E.find_image(f) is not None)
     old, old_df = load_old_cache()
+    if old_df is not None:
+        ok, rho, n_ov = orientation_check(old_df, man)
+        if not ok:
+            sys.exit(f"[retrain] exported labels disagree with the cache on {n_ov} shared frames "
+                     f"(Spearman {rho:+.2f}). Scale orientation mismatch? Check that "
+                     "shared/rqi_scale.json matches the DB (ml/rqi_scale.py --sql) before retraining.")
     diff = diff_labels(old_df if old_df is not None else man.iloc[:0], man)
     log(f"labels: {len(labels)} rows, {len(man)} with an image; new {len(diff['new'])}, "
         f"changed {len(diff['changed'])}, removed {len(diff['removed'])}")
@@ -373,7 +396,7 @@ def main(argv=None):
             o = S._fit_predict(make, X[tr], y[tr], X[bp])
             rep["leave_budapest_out"] = S.ordinal_metrics(yc[bp], np.digitize(o, th) + 1, o)
 
-    ok, why = verdict(gate_pass, delta)
+    ok, why = verdict(gate_pass, delta, len(diff["new"]), args.min_new)
     shutil.copyfile(cand, CANDIDATE)
     write_summary(rd, stamp, diff, counts, gate_out, gate_pass, rep, ok, why, len(labels))
     return 0
@@ -388,7 +411,8 @@ def _fmt(m):
 
 def write_summary(rd, stamp, diff, counts, gate_out, gate_pass, rep, ok, why, n_labels):
     gate_lines = [ln for ln in gate_out.splitlines() if any(
-        t in ln for t in ("QWK", "MAE  ", "bad AUC", "[PASS]", "[FAIL]", "PASS —", "FAIL —", "n="))]
+        t in ln for t in ("QWK", "MAE  ", "bad AUC", "[PASS]", "[FAIL]", "PASS —", "FAIL —", "n="))
+        and "measurably better" not in ln]  # that line compares recipes; same recipe -> always NO
     lines = [f"# Retrain {stamp}", "",
              f"- labels exported: {n_labels}; new {len(diff['new'])}, changed {len(diff['changed'])}, "
              f"removed {len(diff['removed'])}",

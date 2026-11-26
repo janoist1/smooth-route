@@ -178,6 +178,44 @@ bash ml/export_labels.sh                       # -> ml/labels.csv (Docker kell)
 Régi (v1) szkriptek: `ml/legacy/` (`extract_features.py`, `train.py`, `save_model.py`) —
 referenciának maradnak, az éles artifact a v2 receptből jön.
 
+## One-command retrain
+
+Run `make retrain` (or `.venv/bin/python ml/retrain.py`) once enough new owner
+labels exist. It produces a gated candidate and never touches the live model.
+
+1. Exports the labels (`ml/export_labels.sh`, in ML severity orientation).
+   It aborts if they correlate negatively with the cached labels, which
+   means the scale orientation does not match.
+2. Reuses features in this order: the existing cache by filename, then
+   `ml/cache/frame_feats_v2.npz` (cls+patch from the backend re-score) with
+   the `frame_quality` road probability. DINOv2 + CLIP runs only for the
+   rest.
+3. Rebuilds coordinates, then fits the champion recipe as
+   `ml/cache/rqi_model_candidate.joblib`.
+4. Runs the spatial gate (`evaluate_artifact.py`) and three reports:
+   - **Paired test:** the same spatial folds, trained on old labels only vs
+     on all labels. This replaces `compare_candidates.py`, which compares
+     recipes rather than data.
+   - **Champion vs candidate on the new labels only.** The champion never
+     saw them, so this is a true holdout.
+   - **Budapest:** Budapest-only and leave-Budapest-out numbers.
+
+Everything is written to `ml/cache/retrain/<run>/`, including `summary.md`.
+The shared caches and `ml/cache/rqi_model.joblib` are never written.
+
+The summary ends with a verdict. **PROMOTABLE** requires three things:
+- a gate PASS;
+- at least `--min-new` (50) new labels;
+- paired ΔQWK ≥ 0, with its 95% CI above −0.02.
+
+Promotion stays a human step: the summary prints the `cp` commands. After
+promoting, refresh the shared caches and update `GATE`.
+
+Flags: `--force` (run with fewer new labels), `--no-extract` (fail rather
+than use the GPU), `--labels CSV` (skip the DB export). The gate scripts
+honour `RQI_ML_CACHE` and `RQI_ML_COORDS`, so a run can be re-gated by hand:
+`RQI_ML_CACHE=ml/cache/retrain/<run> RQI_ML_COORDS=ml/cache/retrain/<run>/image_coords.csv .venv/bin/python ml/evaluate_artifact.py ml/cache/retrain/<run>/rqi_model_candidate.joblib`.
+
 ## Frame quality flags
 
 `ml/frame_quality.py` marks every frame that should **not** count toward road
