@@ -3,8 +3,12 @@ import react from '@vitejs/plugin-react'
 import checker from 'vite-plugin-checker'
 import path from 'path'
 
+// Dev-server proxy target. Default: the local backend from `make dev`.
+// Override to run a second stack side by side (e.g. a git worktree):
+//   BACKEND_URL=http://localhost:8003 npm run dev -- --port 5176
+const BACKEND_URL = process.env.BACKEND_URL ?? 'http://localhost:8000'
+
 // https://vitejs.dev/config/
-// Trigger reload
 export default defineConfig({
   plugins: [
     react(),
@@ -19,19 +23,19 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: BACKEND_URL,
         changeOrigin: true,
       },
       '/graphql': {
-        target: 'http://localhost:8000',
+        target: BACKEND_URL,
         changeOrigin: true,
       },
       '/images': {
-        target: 'http://localhost:8000',
+        target: BACKEND_URL,
         changeOrigin: true,
       },
       '/previews': {
-        target: 'http://localhost:8000',
+        target: BACKEND_URL,
         changeOrigin: true,
       },
     },
