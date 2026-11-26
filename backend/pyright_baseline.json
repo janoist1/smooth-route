@@ -1,23 +1,11 @@
 {
  "pyright": "1.1.389",
- "total": 88,
+ "total": 8,
  "errors": {
   "app/cli.py::reportArgumentType": 1,
-  "app/cli.py::reportGeneralTypeIssues": 1,
-  "app/core/auth.py::reportArgumentType": 3,
-  "app/core/config.py::reportCallIssue": 1,
-  "app/graphql/label_queue.py::reportArgumentType": 1,
-  "app/graphql/label_queue.py::reportCallIssue": 1,
   "app/graphql/limits.py::reportAttributeAccessIssue": 1,
-  "app/graphql/mutations.py::reportAttributeAccessIssue": 8,
-  "app/graphql/queries.py::reportArgumentType": 31,
-  "app/graphql/queries.py::reportCallIssue": 1,
-  "app/graphql/queries.py::reportGeneralTypeIssues": 3,
-  "app/graphql/queries.py::reportReturnType": 2,
+  "app/graphql/queries.py::reportArgumentType": 4,
   "app/main.py::reportArgumentType": 1,
-  "app/services/label_queue_store.py::reportArgumentType": 16,
-  "app/services/label_queue_store.py::reportAttributeAccessIssue": 10,
-  "app/services/label_queue_store.py::reportCallIssue": 4,
-  "app/services/label_queue_store.py::reportGeneralTypeIssues": 3
+  "app/services/label_queue_store.py::reportArgumentType": 1
  }
 }
