@@ -4,6 +4,7 @@ import datetime
 from strawberry.scalars import JSON
 from enum import Enum
 
+from app.graphql.permissions import admin_only_field
 from app.services.capture_date import format_capture_date
 
 def street_view_link(
@@ -55,11 +56,11 @@ class Point:
     # the "YYYY-MM" captureDate field below — month is the API's precision.
     capture_date_value: strawberry.Private[Optional[datetime.date]] = None
 
-    # Manual Data (Joined)
-    manual_rqi: Optional[float] = None
-    manual_tags: Optional[List[str]] = None
-    manual_annotations: Optional[JSON] = None
-    manual_comment: Optional[str] = None
+    # Manual Data (Joined) — the owner's labels: admin-only, null for others.
+    manual_rqi: Optional[float] = admin_only_field()
+    manual_tags: Optional[List[str]] = admin_only_field()
+    manual_annotations: Optional[JSON] = admin_only_field()
+    manual_comment: Optional[str] = admin_only_field()
 
     @strawberry.field
     def street_view_url(self) -> str:

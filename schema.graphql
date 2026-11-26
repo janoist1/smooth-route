@@ -1,3 +1,5 @@
+directive @isAdmin on FIELD_DEFINITION
+
 type AdminStats {
   totalImages: Int!
   imagesThisMonth: Int!
@@ -216,10 +218,10 @@ type Point {
   createdAt: DateTime!
   rqiSource: String!
   panoId: String
-  manualRqi: Float
-  manualTags: [String!]
-  manualAnnotations: JSON
-  manualComment: String
+  manualRqi: Float @isAdmin
+  manualTags: [String!] @isAdmin
+  manualAnnotations: JSON @isAdmin
+  manualComment: String @isAdmin
   streetViewUrl: String!
   segmentId: ID
   captureDate: String

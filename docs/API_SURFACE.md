@@ -86,8 +86,9 @@ Violations are `BAD_USER_INPUT` errors raised before any resolver runs.
 `rqiScore` is the product RQI and `rqiSource` says where it came from;
 `dinoScore` / `dinoPBad` are the raw model estimate and the calibrated
 bad-road probability (from `analysisMetadata`). The labeller fields
-(`manualRqi`, `manualTags`, `manualAnnotations`, `manualComment`) are plain
-fields, readable wherever `point` / `points` are.
+(`manualRqi`, `manualTags`, `manualAnnotations`, `manualComment`) are
+**admin-only** (`admin_only_field()`): anonymous and non-admin callers get
+`null` for them, without the query failing.
 
 `captureDate` (`"YYYY-MM"`, `null` = unknown) is the Street View panorama's
 **capture month** — the RQI describes the road as of that month, not as of
