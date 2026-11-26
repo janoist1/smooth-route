@@ -19,32 +19,8 @@ import { getRQIColor, resolveRqi } from '../../ui'
 import { useRqiDisplaySource } from '../../settings'
 import QualityGridLayer from './QualityGridLayer'
 import StaleImageToggle from './StaleImageToggle'
+import { BASE_MAPS } from '../baseMaps'
 import { isStaleCapture } from '../captureDate'
-
-// The road network (and the CARTO / OSM base maps) is OpenStreetMap data: the
-// attribution is required. It is repeated in the legend, because the map-style
-// switcher sits on top of Leaflet's own attribution corner.
-const OSM_ATTRIBUTION =
-  '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors'
-
-const TILE_LAYERS: Record<MapStyle, { url: string; attribution: string }> = {
-  dark: {
-    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-    attribution: `${OSM_ATTRIBUTION} &copy; CARTO`,
-  },
-  light: {
-    url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-    attribution: `${OSM_ATTRIBUTION} &copy; CARTO`,
-  },
-  satellite: {
-    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    attribution: `&copy; Esri | roads: ${OSM_ATTRIBUTION}`,
-  },
-  street: {
-    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    attribution: OSM_ATTRIBUTION,
-  },
-}
 
 // Helper to handle map events
 // Helper to handle map events
@@ -224,9 +200,13 @@ const MapView: React.FC<MapViewProps> = ({ onTrain, onMapMove }) => {
         preferCanvas={true}
         renderer={renderer}
         style={{ height: '100%', width: '100%', background: '#111' }}>
+        {/* Keyed by style: the recolouring className is fixed when a layer is created. */}
         <TileLayer
-          attribution={TILE_LAYERS[mapStyle].attribution}
-          url={TILE_LAYERS[mapStyle].url}
+          key={mapStyle}
+          attribution={BASE_MAPS[mapStyle].attribution}
+          url={BASE_MAPS[mapStyle].url}
+          maxZoom={BASE_MAPS[mapStyle].maxZoom}
+          className={BASE_MAPS[mapStyle].className}
         />
         <MapEvents onMove={handleMapMove} />
         <MapController viewport={viewport} />

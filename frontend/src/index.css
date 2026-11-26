@@ -61,3 +61,13 @@ button {
 ::-webkit-scrollbar-thumb:hover {
   background: #555;
 }
+
+/* Keyless base maps (modules/map/baseMaps.ts): OSM standard tiles recoloured
+   for the dark and light styles. Only the tile layer is filtered, not the
+   quality overlays drawn above it. */
+.leaflet-layer.basemap-dark {
+  filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.9) saturate(0.35);
+}
+.leaflet-layer.basemap-light {
+  filter: grayscale(1) brightness(1.04) contrast(0.92);
+}
