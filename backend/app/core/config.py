@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Optional
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -48,6 +49,12 @@ class Settings(BaseSettings):
 
     # Quota limits
     DAILY_IMAGE_QUOTA: int = 1000  # Conservative default
+    # Combined Directions + Geocoding requests per Pacific calendar day.
+    # Zero disables billable route calls; negative values are invalid.
+    GOOGLE_DIRECTIONS_DAILY_CAP: int = Field(default=300, ge=0)
+    # Optional counter file override. Public default is ephemeral /tmp;
+    # local default is DATA_DIR/quota/google_directions.json.
+    GOOGLE_DIRECTIONS_QUOTA_PATH: Optional[str] = None
 
     # Deduplication settings
     DEDUPLICATION_RADIUS_METERS: float = 10.0

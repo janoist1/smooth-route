@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import math
 import re
+import unicodedata
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Optional
 
@@ -99,8 +100,8 @@ MAX_ROOT_FIELD_COUNT = {
 }
 
 # Paid Google fields: one per request IN TOTAL, not one of each (getRoute and
-# routeAlternatives each cost a Directions call, + 2 Geocoding + 1 Directions
-# on a miss).
+# routeAlternatives each cost one Directions call in public mode; local
+# address-only requests may also use 2 Geocoding calls + 1 Directions retry).
 PAID_ROOT_FIELDS = ("getRoute", "routeAlternatives")
 MAX_PAID_ROOT_FIELDS = 1
 
@@ -118,7 +119,14 @@ PER_ITEM_FIELD_ROOTS = {
 # the public deploy whichever branch merges first.
 PUBLIC_DENIED_ROOT_FIELDS = frozenset({"config"})
 
-_COORD_RE = re.compile(r"^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$")
+_COORD_RE = re.compile(r"\s*(-?[0-9]+(?:\.[0-9]+)?)\s*,\s*(-?[0-9]+(?:\.[0-9]+)?)\s*")
+# These words can decorate coordinates, so they must never turn numeric input
+# into an address. Other words (street/city names) retain the address path.
+_COORD_WORDS = frozenset({
+    "n", "s", "e", "w", "north", "south", "east", "west",
+    "lat", "lng", "lon", "latitude", "longitude", "geo", "gps", "and", "x", "by",
+    "nan", "inf", "infinity",
+})
 _CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
 
 
@@ -235,9 +243,37 @@ def _in_service_area(lat: float, lng: float) -> bool:
 
 
 def parse_lat_lng(text: str) -> Optional[tuple[float, float]]:
-    """"lat,lng" -> (lat, lng); None when the text is not a coordinate pair."""
-    match = _COORD_RE.match(text)
+    """Parse decimal ``lat,lng`` (optional whitespace around the comma).
+
+    Non-canonical numeric inputs are rejected, including space/semicolon
+    separators, explicit plus signs, Unicode signs and compass prefixes.
+    Only real address text returns None; malformed coordinates cannot skip
+    the service-area check by falling through to Google's address parser.
+    """
+    match = _COORD_RE.fullmatch(text)
     if not match:
+        # Normalize only for detection, never to silently accept another format.
+        candidate = unicodedata.normalize("NFKC", text).casefold()
+        words = re.findall(r"[^\W\d_]+", candidate)
+        numbers = list(re.finditer(r"\d+(?:\.\d+)?", candidate))
+        numeric = numbers or {"nan", "inf", "infinity"}.intersection(words)
+        # An arbitrary separator/trailing place label must not disguise a
+        # leading decimal pair. Postal codes and ordinary street numbers keep
+        # the address path, e.g. "1051 Budapest, Nádor utca 5".
+        decimal_pair = (
+            len(numbers) >= 2
+            and "." in numbers[0].group()
+            and all(
+                word in _COORD_WORDS
+                for word in re.findall(r"[^\W\d_]+", candidate[:numbers[0].start()])
+            )
+        )
+        if (
+            (numeric and all(word in _COORD_WORDS for word in words))
+            or decimal_pair
+            or _COORD_RE.match(candidate)
+        ):
+            raise InputLimitError("coordinates must use decimal lat,lng format")
         return None
     return float(match.group(1)), float(match.group(2))
 
