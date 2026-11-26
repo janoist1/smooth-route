@@ -54,11 +54,14 @@ explain the task, open nothing else.
 
 ```bash
 cd backend && uvx ruff check . && ../.venv/bin/python -m pytest -q   # isolated, no DB/torch
+cd backend && ../.venv/bin/python scripts/check_types.py           # pyright basic: no NEW type errors
 cd frontend && npm ci && npm run typecheck && npm run lint && npm test && npm run build
 ```
 
 CI (`.github/workflows/ci.yml`) runs backend `ruff check` (F + E9, config in
-`backend/pyproject.toml`) + pytest with coverage, and frontend typecheck/lint/test/build.
+`backend/pyproject.toml`) + pyright (fails on new type errors; baseline in
+`backend/pyright_baseline.json`, see [DEVELOPMENT.md](DEVELOPMENT.md#static-type-checking-backend))
++ pytest with coverage, and frontend typecheck/lint/test/build.
 **Not green = not done.**
 
 ## Critical rules

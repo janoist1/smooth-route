@@ -158,7 +158,7 @@ class Job:
     details: Optional[JSON] = None
     result: Optional[JSON] = None
     error: Optional[str] = None
-    created_at: datetime.datetime = datetime.datetime.now
+    created_at: datetime.datetime = strawberry.field(default_factory=datetime.datetime.now)
     completed_at: Optional[datetime.datetime] = None
 
 @strawberry.type

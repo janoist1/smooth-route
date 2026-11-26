@@ -50,8 +50,11 @@ jobs:
           pip install pytest pytest-cov ruff pydantic pydantic-settings httpx
           fastapi "sqlalchemy<2.1" geoalchemy2 psycopg2-binary
           strawberry-graphql sse-starlette alembic "PyJWT[crypto]"
-          requests googlemaps numpy pillow
+          requests googlemaps numpy pillow pyright==1.1.389
       # Rules live in backend/pyproject.toml ([tool.ruff.lint]: F + E9).
       - run: ruff check .
+      # Static types (pyright basic) on app/: fails on NEW errors only; the
+      # existing ones are counted in pyright_baseline.json (DEVELOPMENT.md).
+      - run: python scripts/check_types.py
       # Floor a few points under today's 64% (T-18): catches a big untested drop.
       - run: pytest --cov=app --cov-report=term-missing:skip-covered --cov-fail-under=60

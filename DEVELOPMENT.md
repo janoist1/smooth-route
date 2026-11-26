@@ -208,6 +208,21 @@ use Playwright's Chromium). The route test mocks `GetRoute`, so it makes no
 Google Directions call and needs no sign-in. The same `API_PROXY_TARGET` also
 points `npm run dev` at another backend.
 
+## Static type checking (backend)
+
+`backend/scripts/check_types.py` runs **pyright 1.1.389 in basic mode** on
+`backend/app` (`backend/pyrightconfig.json`; tests, scripts and Alembic excluded for
+now) and compares the errors per (file, rule) with `backend/pyright_baseline.json`.
+CI fails when any bucket grows — **new code must type-check**; never raise the
+baseline to make CI pass. After fixing old errors run `check_types.py --update` to
+lower it. Heavy packages (torch, numpy, PIL, cv2, …) are stubbed as `Any` in
+`backend/typings/`, so the result is identical with or without torch. Locally the
+script uses `pyright` from PATH or `npx pyright@1.1.389`.
+
+**TODO — 177 known errors (2026-11-26):** `graphql/queries.py` 53, `services/label_queue_store.py` 33, `services/dino_service.py` 12, `services/training_service.py` 11, `services/road_quality.py` 10, `graphql/mutations.py` 8, `services/image_downloader.py` 8, `services/road_segments.py` 5, others 37. Mostly
+SQLAlchemy `Column[...]` values passed where plain types are expected (legacy 1.x
+style models) and `Optional` members used after a lazy load.
+
 ## Dependencies — two backend sets
 
 - `backend/pyproject.toml` — full local/dev install (ultralytics → torch, OpenCV, …).

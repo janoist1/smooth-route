@@ -1,0 +1,8 @@
+{
+  "include": ["app"],
+  "exclude": ["**/__pycache__", "tests", "scripts", "alembic"],
+  "typeCheckingMode": "basic",
+  "pythonVersion": "3.12",
+  "reportMissingImports": "warning",
+  "reportMissingModuleSource": "none"
+}
