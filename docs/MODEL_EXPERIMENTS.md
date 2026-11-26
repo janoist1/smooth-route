@@ -1376,3 +1376,47 @@ Reproduce:
 .venv/bin/python ml/save_model_v2.py --recipe cls+patch+vlm --head stack-vlm --out rqi_model_vlm_candidate.joblib
 .venv/bin/python ml/evaluate_artifact.py ml/cache/rqi_model_vlm_candidate.joblib
 ```
+
+---
+
+## Geographic reliability check (T-41, 2026-11-26)
+
+**Question.** Feature-space novelty did not predict error (T-33, AUC
+0.56–0.60). Does *geography* predict it instead? We measured the distance
+from a segment to the nearest labelled frame, the label density, and the
+label-class coverage nearby. If it did, the segment engine would lower
+confidence in unfamiliar areas.
+
+**Method** (`ml/geo_reliability.py`, ~12 s). Champion OOF on the official
+spatial protocol, Era 7 segments (200 m, median score, 3 cut phases, nested
+cut-points): 143 segments, 429 rows. Every feature is computed from the
+TRAINING folds only: distance from the segment centroid to the nearest
+training frame, training frames within 1 / 3 km, distinct classes within
+3 km, and in-fold error of the model within 3 km.
+
+**Result: not predictive. No config factor, no `unfamiliar_area` reason.**
+
+| feature (length-weighted AUC) | wrong class | wrong good/bad |
+|---|---|---|
+| distance to nearest training frame | 0.571 | 0.541 |
+| training frames within 1 km | 0.535 | 0.481 |
+| training frames within 3 km | 0.541 | 0.677 |
+| classes covered within 3 km | 0.543 | 0.514 |
+| local in-fold error within 3 km | 0.371 | 0.457 |
+| *existing segment confidence (reference)* | *0.656* | *0.774* |
+
+- Error is flat up to 1 km: 25% wrong class at 0–0.25 km, 29% at
+  0.25–1 km. The 1–2 km bin (68%) holds only 7 segments.
+- Adding distance and density to the existing confidence makes the
+  held-out AUC *worse*: 0.634 → 0.575 for wrong class, 0.725 → 0.656 for
+  wrong good/bad (cross-fold logistic regression). Within areas the sign
+  even flips (Budapest AUC 0.36).
+- **Limit:** the spatial CV only probes 0.1–1.25 km (median 0.41 km). The
+  only evidence beyond that is region-level: leaving a region out gives
+  QWK 0.66 (Budapest 0.23, era 6). That is four data points, not a distance
+  curve, so a graded distance factor cannot be fitted or validated.
+- The likely cause of "almost never Kiváló" on new Budapest frames is
+  class-level. The Budapest labels contain no Kiváló, and the model is biased
+  towards "worse" there (+0.13, era 6). Geographic distance does not capture
+  this; more Budapest labels, including excellent roads, do. Measure that on
+  the fixed holdout region once it is labelled.
