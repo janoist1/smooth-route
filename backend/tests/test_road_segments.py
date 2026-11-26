@@ -13,7 +13,9 @@ from app.services.road_segments import (
     bounds_of,
     build_fingerprint,
     build_rows,
+    frame_is_usable,
     linestring_wkt,
+    load_frames,
     segment_id,
 )
 from app.services.segment_aggregation import DEFAULT_CONFIG, with_overrides
@@ -200,6 +202,54 @@ def test_fingerprint_changes_with_every_input_of_the_stored_rows():
     assert base != build_fingerprint(tiles, with_overrides(DEFAULT_CONFIG, segment_length_m=100), True)
     assert base != build_fingerprint(tiles, with_overrides(DEFAULT_CONFIG, aggregator="mean_score"), True)
     assert base != build_fingerprint(tiles, with_overrides(DEFAULT_CONFIG, thresholds=(1.5, 2.5, 3.2)), True)
+
+
+# ---- frame_quality filter (ml/frame_quality.py) ------------------------------
+
+def test_frame_is_usable_only_drops_an_explicit_false():
+    assert frame_is_usable("true") and frame_is_usable(True)
+    assert frame_is_usable(None)          # no frame_quality key yet -> keep (fail-open)
+    assert not frame_is_usable("false") and not frame_is_usable(False)
+    assert not frame_is_usable(" False ")
+
+
+class _RowsDb:
+    """A Session stand-in for load_frames: records the SQL, returns fixed rows."""
+
+    def __init__(self, rows):
+        self.rows, self.sql = rows, None
+
+    def execute(self, stmt, params=None):
+        self.sql = str(stmt)
+        return SimpleNamespace(fetchall=lambda: self.rows)
+
+
+def _db_row(id, usable, rqi=2.0, dino_score="1.7"):
+    return SimpleNamespace(
+        id=id, latitude=47.5, longitude=19.05, heading=90.0, dino_rqi_score=rqi,
+        capture_date=None, dino_score=dino_score, dino_p_bad="0.1", fq_usable=usable,
+    )
+
+
+def test_load_frames_skips_frames_flagged_unusable():
+    db = _RowsDb([
+        _db_row(1, "true"),
+        _db_row(2, "false"),                       # e.g. duplicate / not_road -> skipped
+        _db_row(3, None),                          # not flagged yet -> kept
+        _db_row(4, "false", rqi=None, dino_score=None),  # unusable wins over unscored
+        _db_row(5, None, rqi=None, dino_score=None),     # unscored
+    ])
+    frames, unscored, unusable = load_frames(db)
+    assert [f.id for f in frames] == [1, 3]
+    assert (unscored, unusable) == (1, 2)
+    assert "analysis_metadata->'frame_quality'->>'usable'" in db.sql
+
+
+def test_stats_report_counts_unusable_frames():
+    from app.services.road_segments import BuildStats
+
+    text = "\n".join(BuildStats(frames_total=10, frames_unscored=1, frames_unusable=3).report())
+    assert "1 unscored, 3 unusable by frame_quality" in text
 
 
 # ---- job hooks: must never break the job ------------------------------------

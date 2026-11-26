@@ -6,8 +6,10 @@ Pipeline (write side; the GraphQL read side is ``segment_read.py``):
    disk-cached — a rebuild normally needs no network),
 2. stitch consecutive ways of the same road into longer lines
    (``osm_chains``) — OSM ways are often only tens of metres long,
-3. snap every scored Street View frame to the nearest bearing-compatible
-   line (``map_matching``),
+3. snap every scored, usable Street View frame to the nearest
+   bearing-compatible line (``map_matching``). Frames that
+   ``ml/frame_quality.py`` marked ``analysis_metadata.frame_quality.usable =
+   false`` (not a road, placeholder, duplicate pano, …) are skipped,
 4. cut each line that received frames into equal pieces of about
    ``segment_length_m`` and assign its frames by linear referencing,
 5. aggregate per piece (``segment_aggregation``) and replace the stored rows.
@@ -39,7 +41,7 @@ import re
 import time
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from typing import Callable, Iterable, Mapping, Optional, Sequence
+from typing import Any, Callable, Iterable, Mapping, Optional, Sequence
 
 from sqlalchemy import text
 
@@ -85,7 +87,8 @@ REBUILD_LOCK_KEY = 7245002
 # Bump when the matching / stitching / cutting logic changes in a way that
 # alters the rows: stored rows built by an older engine then force a full
 # rebuild instead of being mixed with new ones by a bbox rebuild.
-ENGINE_VERSION = 2
+# 3: frames flagged frame_quality.usable = false are skipped.
+ENGINE_VERSION = 3
 
 Bounds = tuple[float, float, float, float]  # (south, west, north, east)
 
@@ -114,6 +117,7 @@ class BuildStats:
     segments: int = 0           # pieces with data = stored rows
     frames_total: int = 0
     frames_unscored: int = 0
+    frames_unusable: int = 0    # analysis_metadata.frame_quality.usable = false
     frames_matched: int = 0
     frames_unmatched: int = 0
     class_counts: dict[int, int] = field(default_factory=dict)
@@ -138,7 +142,8 @@ class BuildStats:
             f"median {self.median_length_m:.0f} m, {self.median_images:.0f} frames) — "
             f"{self.pieces - self.segments} frame-less pieces not stored",
             f"frames:              {self.frames_total} total, "
-            f"{self.frames_unscored} unscored (skipped)",
+            f"{self.frames_unscored} unscored, "
+            f"{self.frames_unusable} unusable by frame_quality (both skipped)",
             f"  matched:           {self.frames_matched} ({pct:.1f} % of scored)",
             f"  unmatched:         {self.frames_unmatched}",
             "class distribution:",
@@ -325,10 +330,22 @@ def occupied_tiles(db, tile_deg: float) -> set[Tile]:
     return tiles_for_points(((r[0], r[1]) for r in rows), tile_deg)
 
 
-def load_frames(db, bounds: Optional[Bounds] = None) -> tuple[list[Frame], int]:
-    """Scored frames (optionally inside ``bounds``) and the count of unscored
-    ones that were skipped. Only the two metadata keys we need are pulled out
-    of the (large) analysis_metadata JSON, server-side.
+def frame_is_usable(flag: Any) -> bool:
+    """``analysis_metadata.frame_quality.usable`` (as text, from ``->>``) →
+    keep the frame? Only an explicit ``false`` drops it: frames without the
+    key (added since ``ml/frame_quality.py`` last ran) count as usable, so the
+    layer never goes empty because the flag script was not rerun.
+    """
+    if isinstance(flag, bool):
+        return flag
+    return str(flag).strip().lower() != "false" if flag is not None else True
+
+
+def load_frames(db, bounds: Optional[Bounds] = None) -> tuple[list[Frame], int, int]:
+    """Scored, usable frames (optionally inside ``bounds``) plus the counts of
+    skipped unscored and unusable (``frame_quality.usable = false``) frames.
+    Only the metadata keys we need are pulled out of the (large)
+    analysis_metadata JSON, server-side.
     """
     where = ["latitude IS NOT NULL", "longitude IS NOT NULL"]
     params: dict = {}
@@ -341,7 +358,8 @@ def load_frames(db, bounds: Optional[Bounds] = None) -> tuple[list[Frame], int]:
             f"""
             SELECT id, latitude, longitude, heading, dino_rqi_score, capture_date,
                    analysis_metadata->>'dino_score' AS dino_score,
-                   analysis_metadata->>'dino_p_bad' AS dino_p_bad
+                   analysis_metadata->>'dino_p_bad' AS dino_p_bad,
+                   analysis_metadata->'frame_quality'->>'usable' AS fq_usable
             FROM street_view_images
             WHERE {" AND ".join(where)}
             ORDER BY id
@@ -351,8 +369,11 @@ def load_frames(db, bounds: Optional[Bounds] = None) -> tuple[list[Frame], int]:
     ).fetchall()
 
     frames: list[Frame] = []
-    unscored = 0
+    unscored = unusable = 0
     for r in rows:
+        if not frame_is_usable(r.fq_usable):
+            unusable += 1
+            continue
         meta = {"dino_score": r.dino_score, "dino_p_bad": r.dino_p_bad}
         score = frame_score(r.dino_rqi_score, meta)
         if score is None:
@@ -363,7 +384,7 @@ def load_frames(db, bounds: Optional[Bounds] = None) -> tuple[list[Frame], int]:
             score=score, p_bad=frame_p_bad(r.dino_rqi_score, meta),
             capture_date=r.capture_date,
         ))
-    return frames, unscored
+    return frames, unscored, unusable
 
 
 _FINGERPRINT_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -478,7 +499,7 @@ def rebuild_segments(
         bbox = None
 
     if bbox is None:
-        frames, unscored = load_frames(db)
+        frames, unscored, unusable = load_frames(db)
     else:
         area = pad_bounds(bbox, PAD_M)
         only_ids = {
@@ -489,16 +510,18 @@ def rebuild_segments(
         # frame around the target lines. (Matching runs against ALL lines.)
         extent = bounds_of(p for line_id in only_ids for p in lines[line_id].coords)
         if extent is None:
-            frames, unscored = [], 0
+            frames, unscored, unusable = [], 0, 0
         else:
-            frames, unscored = load_frames(db, pad_bounds(extent, 2 * DEFAULT_MAX_DISTANCE_M))
+            frames, unscored, unusable = load_frames(
+                db, pad_bounds(extent, 2 * DEFAULT_MAX_DISTANCE_M))
 
     rows, stats = build_rows(lines, frames, cfg, today, only_ids=only_ids)
     stats.mode = "full" if bbox is None else f"bbox {bbox} ({len(only_ids or ())} lines)"
     stats.tiles = len(tiles)
     stats.ways_loaded = len(ways)
     stats.frames_unscored = unscored
-    stats.frames_total = len(frames) + unscored
+    stats.frames_unusable = unusable
+    stats.frames_total = len(frames) + unscored + unusable
 
     if not dry_run:
         write_rows(db, rows, only_ids, fingerprint)
