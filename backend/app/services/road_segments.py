@@ -30,7 +30,6 @@ path of the read-only deploy.
 """
 from __future__ import annotations
 
-import dataclasses
 import datetime as dt
 import hashlib
 import json
@@ -65,8 +64,10 @@ from app.services.segment_aggregation import (
     SegmentConfig,
     aggregate_frames,
     confidence_level,
+    config_to_dict,
     frame_p_bad,
     frame_score,
+    frame_usable,
     load_config,
 )
 from app.services.segment_geometry import (
@@ -117,8 +118,10 @@ class BuildStats:
     segments: int = 0           # pieces with data = stored rows
     frames_total: int = 0
     frames_unscored: int = 0
+    frames_unusable: int = 0    # frame_quality.usable == false
     frames_matched: int = 0
     frames_unmatched: int = 0
+    classes: tuple[int, ...] = ()      # class labels of the configured scale
     class_counts: dict[int, int] = field(default_factory=dict)
     class_km: dict[int, float] = field(default_factory=dict)
     level_counts: dict[str, int] = field(default_factory=dict)
@@ -143,12 +146,12 @@ class BuildStats:
             f"median {self.median_length_m:.0f} m, {self.median_images:.0f} frames) — "
             f"{self.pieces - self.segments} frame-less pieces not stored",
             f"frames:              {self.frames_total} total, "
-            f"{self.frames_unscored} unscored (skipped)",
+            f"{self.frames_unscored} unscored + {self.frames_unusable} unusable (skipped)",
             f"  matched:           {self.frames_matched} ({pct:.1f} % of scored)",
             f"  unmatched:         {self.frames_unmatched}",
             "class distribution:",
         ]
-        for rqi in (1, 2, 3, 4):
+        for rqi in self.classes:
             n = self.class_counts.get(rqi, 0)
             share = 100.0 * n / self.segments if self.segments else 0.0
             out.append(
@@ -270,6 +273,7 @@ def build_rows(
             level_km[level] += piece_len / 1000.0
 
     stats.segments = len(rows)
+    stats.classes = cfg.scale.ascending
     stats.km = sum(r["length_m"] for r in rows) / 1000.0
     stats.median_length_m = _median([r["length_m"] for r in rows])
     stats.median_images = _median([r["n_images"] for r in rows])
@@ -309,7 +313,7 @@ def build_fingerprint(
     payload = {
         "engine": ENGINE_VERSION,
         "merge": bool(merge),
-        "config": dataclasses.asdict(cfg),
+        "config": config_to_dict(cfg),
         "tiles": sorted([t[0], t[1], size] for t, size in tiles.items()),
     }
     return hashlib.sha1(json.dumps(payload, sort_keys=True).encode()).hexdigest()
@@ -330,10 +334,17 @@ def occupied_tiles(db, tile_deg: float) -> set[Tile]:
     return tiles_for_points(((r[0], r[1]) for r in rows), tile_deg)
 
 
-def load_frames(db, bounds: Optional[Bounds] = None) -> tuple[list[Frame], int]:
-    """Scored frames (optionally inside ``bounds``) and the count of unscored
-    ones that were skipped. Only the two metadata keys we need are pulled out
-    of the (large) analysis_metadata JSON, server-side.
+@dataclass
+class FrameLoad:
+    frames: list[Frame]
+    unscored: int = 0      # no RQI yet
+    unusable: int = 0      # frame_quality.usable == false
+
+
+def load_frames(db, cfg: SegmentConfig, bounds: Optional[Bounds] = None) -> FrameLoad:
+    """The frames the builder may use (optionally inside ``bounds``), plus how
+    many were skipped as unscored / marked unusable. Only the metadata keys we
+    need are pulled out of the (large) analysis_metadata JSON, server-side.
     """
     where = ["latitude IS NOT NULL", "longitude IS NOT NULL"]
     params: dict = {}
@@ -346,7 +357,8 @@ def load_frames(db, bounds: Optional[Bounds] = None) -> tuple[list[Frame], int]:
             f"""
             SELECT id, latitude, longitude, heading, dino_rqi_score, capture_date,
                    analysis_metadata->>'dino_score' AS dino_score,
-                   analysis_metadata->>'dino_p_bad' AS dino_p_bad
+                   analysis_metadata->>'dino_p_bad' AS dino_p_bad,
+                   analysis_metadata->'frame_quality'->>'usable' AS usable
             FROM street_view_images
             WHERE {" AND ".join(where)}
             ORDER BY id
@@ -355,20 +367,32 @@ def load_frames(db, bounds: Optional[Bounds] = None) -> tuple[list[Frame], int]:
         params,
     ).fetchall()
 
-    frames: list[Frame] = []
-    unscored = 0
+    return frames_from_rows(rows, cfg)
+
+
+def frames_from_rows(rows: Iterable, cfg: SegmentConfig) -> FrameLoad:
+    """Rows (id, latitude, longitude, heading, dino_rqi_score, capture_date,
+    dino_score, dino_p_bad, usable) → usable, scored frames. Pure."""
+    load = FrameLoad(frames=[])
     for r in rows:
-        meta = {"dino_score": r.dino_score, "dino_p_bad": r.dino_p_bad}
+        meta = {
+            "dino_score": r.dino_score,
+            "dino_p_bad": r.dino_p_bad,
+            "frame_quality": {"usable": r.usable},
+        }
+        if not frame_usable(meta):
+            load.unusable += 1
+            continue
         score = frame_score(r.dino_rqi_score, meta)
         if score is None:
-            unscored += 1
+            load.unscored += 1
             continue
-        frames.append(Frame(
+        load.frames.append(Frame(
             id=r.id, lat=r.latitude, lon=r.longitude, heading=r.heading,
-            score=score, p_bad=frame_p_bad(r.dino_rqi_score, meta),
+            score=score, p_bad=frame_p_bad(r.dino_rqi_score, meta, cfg.scale),
             capture_date=r.capture_date,
         ))
-    return frames, unscored
+    return load
 
 
 _FINGERPRINT_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -493,7 +517,7 @@ def rebuild_segments(
         bbox = None
 
     if bbox is None:
-        frames, unscored = load_frames(db)
+        load = load_frames(db, cfg)
     else:
         area = pad_bounds(bbox, PAD_M)
         only_ids = {
@@ -504,9 +528,10 @@ def rebuild_segments(
         # frame around the target lines. (Matching runs against ALL lines.)
         extent = bounds_of(p for line_id in only_ids for p in lines[line_id].coords)
         if extent is None:
-            frames, unscored = [], 0
+            load = FrameLoad(frames=[])
         else:
-            frames, unscored = load_frames(db, pad_bounds(extent, 2 * DEFAULT_MAX_DISTANCE_M))
+            load = load_frames(db, cfg, pad_bounds(extent, 2 * DEFAULT_MAX_DISTANCE_M))
+    frames = load.frames
 
     no_osm = 0
     if missing:
@@ -520,8 +545,9 @@ def rebuild_segments(
     stats.tiles_missing = len(missing)
     stats.frames_no_osm = no_osm
     stats.ways_loaded = len(ways)
-    stats.frames_unscored = unscored
-    stats.frames_total = len(frames) + unscored + no_osm
+    stats.frames_unscored = load.unscored
+    stats.frames_unusable = load.unusable
+    stats.frames_total = len(frames) + load.unscored + load.unusable + no_osm
 
     if not dry_run:
         write_rows(db, rows, only_ids, fingerprint)

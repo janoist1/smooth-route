@@ -72,14 +72,17 @@ def main() -> None:
                     help="override aggregator")
     args = ap.parse_args()
 
-    cfg = load_config(args.config)
-    overrides = {}
-    if args.segment_length is not None:
-        overrides["segment_length_m"] = args.segment_length
-    if args.aggregator is not None:
-        overrides["aggregator"] = args.aggregator
-    if overrides:
-        cfg = with_overrides(cfg, **overrides)
+    try:
+        cfg = load_config(args.config)
+        overrides = {}
+        if args.segment_length is not None:
+            overrides["segment_length_m"] = args.segment_length
+        if args.aggregator is not None:
+            overrides["aggregator"] = args.aggregator
+        if overrides:
+            cfg = with_overrides(cfg, **overrides)
+    except ValueError as exc:
+        sys.exit(f"Bad aggregation config: {exc}")
 
     from sqlalchemy import inspect
 
@@ -92,7 +95,9 @@ def main() -> None:
                  "(alembic upgrade head, or start the backend once).")
 
     print(f"config: segment_length_m={cfg.segment_length_m:g} aggregator={cfg.aggregator} "
-          f"thresholds={list(cfg.thresholds)} min_images={cfg.min_images}")
+          f"thresholds={list(cfg.thresholds)} classes={list(cfg.scale.classes)} "
+          f"({'higher' if cfg.scale.higher_is_worse else 'lower'} = worse) "
+          f"min_images={cfg.min_images}")
     db = SessionLocal()
     try:
         stats = rebuild_segments(

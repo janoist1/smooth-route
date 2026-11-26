@@ -13,14 +13,16 @@ from app.services.road_segments import (
     bounds_of,
     build_fingerprint,
     build_rows,
+    frames_from_rows,
     linestring_wkt,
     segment_id,
 )
-from app.services.segment_aggregation import DEFAULT_CONFIG, with_overrides
+from app.services.segment_aggregation import config_from_dict, with_overrides
 from app.services.segment_geometry import polyline_length_m
-from geo_helpers import at
+from geo_helpers import FLIPPED_CONFIG, at, make_config
 
 TODAY = dt.date(2026, 11, 26)
+DEFAULT_CONFIG = make_config()          # pinned test config (150 m pieces, 4 classes)
 
 # A 300 m east-west street (→ two 150 m pieces) and a 90 m side street.
 MAIN = Way(id=100, coords=(at(0, 0), at(300, 0)), name="Main", highway="secondary")
@@ -172,6 +174,58 @@ def test_stats_report_is_printable():
     assert "matched:" in text and "RQI 4:" in text and "confidence:" in text
 
 
+def test_stats_list_the_classes_of_the_configured_scale():
+    _, stats = build_rows(WAYS, main_frames(), DEFAULT_CONFIG, TODAY)
+    assert stats.classes == (1, 2, 3, 4)
+    flipped = config_from_dict(FLIPPED_CONFIG)
+    mirrored = [Frame(f.id, f.lat, f.lon, f.heading, 6 - f.score) for f in main_frames()]
+    rows, stats = build_rows(WAYS, mirrored, flipped, TODAY)
+    assert stats.classes == (2, 3, 4, 5)
+    assert {r["id"]: r["rqi"] for r in rows} == {"100:0": 4, "100:1": 2}     # 6 − (2, 4)
+    assert "RQI 5:" in "\n".join(stats.report())
+
+
+# ---- which frames the builder may use --------------------------------------
+
+def _row(id, rqi=2.0, dino_score=None, dino_p_bad=None, usable=None, capture=None):
+    return SimpleNamespace(
+        id=id, latitude=47.5, longitude=19.05, heading=90.0, dino_rqi_score=rqi,
+        capture_date=capture, dino_score=dino_score, dino_p_bad=dino_p_bad, usable=usable,
+    )
+
+
+def test_frames_marked_unusable_are_skipped():
+    rows = [
+        _row(1),                              # no frame_quality key → used
+        _row(2, usable="true"),
+        _row(3, usable="false"),              # marked unusable → skipped
+        _row(4, rqi=None),                    # not analysed yet → skipped
+        _row(5, rqi=None, usable="false"),
+    ]
+    load = frames_from_rows(rows, DEFAULT_CONFIG)
+    assert [f.id for f in load.frames] == [1, 2]
+    assert (load.unusable, load.unscored) == (2, 1)
+
+
+def test_frame_filter_is_a_no_op_without_the_quality_key():
+    rows = [_row(i) for i in range(1, 6)]
+    load = frames_from_rows(rows, DEFAULT_CONFIG)
+    assert len(load.frames) == 5 and load.unusable == 0
+
+
+def test_frames_carry_continuous_score_and_scale_aware_p_bad():
+    rows = [
+        _row(1, rqi=3.0, dino_score="2.71", dino_p_bad="0.64", capture=dt.date(2024, 3, 1)),
+        _row(2, rqi=3.0),                     # ordinal fallback: class 3 is bad
+        _row(3, rqi=2.0),
+    ]
+    load = frames_from_rows(rows, DEFAULT_CONFIG)
+    assert [(f.score, f.p_bad) for f in load.frames] == [(2.71, 0.64), (3.0, 1.0), (2.0, 0.0)]
+    assert load.frames[0].capture_date == dt.date(2024, 3, 1)
+    flipped = frames_from_rows(rows[1:], config_from_dict(FLIPPED_CONFIG))
+    assert [f.p_bad for f in flipped.frames] == [1.0, 1.0]     # on "5 = excellent", 3 and 2 are bad
+
+
 def test_helpers():
     assert segment_id(123456789012, 3) == "123456789012:3"
     assert linestring_wkt([(47.5, 19.05), (47.6, 19.15)]) == (
@@ -200,6 +254,7 @@ def test_fingerprint_changes_with_every_input_of_the_stored_rows():
     assert base != build_fingerprint(tiles, with_overrides(DEFAULT_CONFIG, segment_length_m=100), True)
     assert base != build_fingerprint(tiles, with_overrides(DEFAULT_CONFIG, aggregator="mean_score"), True)
     assert base != build_fingerprint(tiles, with_overrides(DEFAULT_CONFIG, thresholds=(1.5, 2.5, 3.2)), True)
+    assert base != build_fingerprint(tiles, config_from_dict(FLIPPED_CONFIG), True)     # scale flipped
 
 
 # ---- job hooks: must never break the job ------------------------------------
