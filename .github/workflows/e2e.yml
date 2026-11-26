@@ -1,0 +1,93 @@
+name: E2E smoke
+
+# Playwright smoke suite (frontend/e2e) against a real backend and a tiny
+# seeded PostGIS fixture (backend/scripts/seed_e2e_fixture.py). Chromium only,
+# desktop + phone viewport; traces/screenshots uploaded on failure.
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    name: Playwright smoke (PostGIS fixture)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/e2e
+      DATA_DIR: /tmp/e2e-data
+      # Local single-user mode: every caller is admin, so the quick-rate smoke
+      # runs too; the route test mocks the viewer as anonymous itself.
+      AUTH_MODE: disabled
+      RUN_MIGRATIONS_ON_STARTUP: 'false'
+      GOOGLE_MAPS_API_KEY: ''
+      API_PROXY_TARGET: http://localhost:8000
+      E2E_CHANNEL: bundled
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      # Torch-free backend deps (same set as the CI backend tests + uvicorn).
+      - name: Backend dependencies
+        run: >
+          pip install "uvicorn[standard]" fastapi "sqlalchemy<2.1" geoalchemy2
+          psycopg2-binary strawberry-graphql sse-starlette alembic "PyJWT[crypto]"
+          requests googlemaps numpy pillow pydantic pydantic-settings
+
+      - name: Seed the fixture database
+        working-directory: backend
+        run: python scripts/seed_e2e_fixture.py
+
+      - name: Start the backend
+        working-directory: backend
+        run: |
+          nohup python -m uvicorn app.main:app --port 8000 > /tmp/backend.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://localhost:8000/health && break; sleep 1; done
+          curl -sf http://localhost:8000/health
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Run the E2E smoke suite
+        working-directory: frontend
+        run: npm run test:e2e
+
+      - name: Upload traces and screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-artifacts
+          path: |
+            frontend/test-results
+            frontend/playwright-report
+            /tmp/backend.log
+          retention-days: 7

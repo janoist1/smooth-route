@@ -193,7 +193,7 @@ Torch-dependent tests skip themselves there. When a test needs a new package,
 add it to the `pip install` line in `ci.yml` too (simulate the CI env locally:
 `uv run --no-project --python 3.12 --with pytest --with <each package in ci.yml> python -m pytest`).
 
-**E2E smoke (local only, not in CI yet):** `cd frontend && npm run test:e2e`
+**E2E smoke** (`.github/workflows/e2e.yml` runs it on every PR against a PostGIS service seeded by `backend/scripts/seed_e2e_fixture.py`, backend with `AUTH_MODE=disabled`, Chromium only; traces on failure): `cd frontend && npm run test:e2e`
 (Playwright, `frontend/e2e/`). It checks that the map loads, the grid → road segments
 → frame dots switch on zoom, the segment and point cards, and the route planner
 (form, alternatives with Legsimább/Leggyorsabb, route line, route-quality

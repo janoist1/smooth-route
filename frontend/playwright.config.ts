@@ -1,7 +1,8 @@
 import { defineConfig, devices } from '@playwright/test'
 
 /**
- * Local E2E smoke suite (`npm run test:e2e`) — not part of CI yet.
+ * E2E smoke suite (`npm run test:e2e`); CI runs it in .github/workflows/e2e.yml
+ * against a seeded PostGIS fixture (backend/scripts/seed_e2e_fixture.py).
  *
  * Needs a running backend with map data (the dev Postgres): `make backend`
  * (or `make dev`) on :8000, or point API_PROXY_TARGET at another one. The
@@ -26,7 +27,8 @@ export default defineConfig({
   // for a cold Vite (on-demand compile) and a busy machine.
   workers: Number(process.env.E2E_WORKERS ?? 2),
   forbidOnly: !!process.env.CI,
-  retries: 0,
+  // One retry in CI (shared runners); a retried pass still keeps its trace.
+  retries: process.env.CI ? 1 : 0,
   timeout: 60_000,
   expect: { timeout: 20_000 },
   reporter: [['list'], ['html', { open: 'never' }]],
