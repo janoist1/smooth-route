@@ -27,6 +27,9 @@ export interface RqiScaleDefinition {
   direction: RqiDirection
   bad_from: number
   model_levels: number[]
+  /** Labelling rule shown with the rubric (surface only, not speed limit / road class). */
+  rubric_note_hu: string
+  rubric_note_en: string
   levels: RqiLevel[]
   unknown: { label_hu: string; label_en: string; color: string }
 }
@@ -66,6 +69,7 @@ export const RQI_MODEL_LEVELS: readonly number[] = RQI_LEVELS.map(l => l.value).
 )
 export const RQI_BAD_FROM = RQI_SCALE.bad_from
 export const RQI_UNKNOWN = RQI_SCALE.unknown
+export const RQI_RUBRIC_NOTE_HU = RQI_SCALE.rubric_note_hu
 
 /** Numeric value of a level key, e.g. rqiValue('fair'). */
 export const rqiValue = (key: RqiLevelKey): number => {

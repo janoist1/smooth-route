@@ -13,20 +13,24 @@ rules: [shared/README.md](../shared/README.md)). **Higher = better** (like a
 school grade, since 2026-11-26); the review screen's buttons and the keys `1`–`5`
 set the value.
 
-| RQI | UI label | rubric |
-|---|---|---|
-| 5 | **Kiváló** | New or freshly resurfaced, no visible defects. |
-| 4 | **Jó** | Light wear, small cracks, good patches; does not affect driving. |
-| 3 | **Közepes** | Visible crack networks, heavy patching, small potholes. |
-| 2 | **Rossz** | Deep potholes, broken-up or very rough surface. |
-| 1 | **Nagyon rossz** | Barely drivable: continuous potholes, disintegrated surface. |
+**Rate only the surface visible in the frame** — not the speed limit, not the
+road class. The same image must always get the same label (speed limits belong
+in route scoring, not in the label). Each level has a driver's test:
+
+| RQI | UI label | rubric | driver's test |
+|---|---|---|---|
+| 5 | **Kiváló** | New or recently resurfaced, uniform, no visible defects. | – |
+| 4 | **Jó** | Minor wear, a few small cracks or good patches. | the ride is unaffected |
+| 3 | **Közepes** | Clearly worn: crack networks, many patches, ravelling, small potholes. | noticeable, but you drive normally |
+| 2 | **Rossz** | Significant damage: frequent potholes, crumbling or broken surface, rough patchwork. | you slow down or steer around defects |
+| 1 | **Nagyon rossz** | Damage dominates the surface, or it isn't properly paved: deep potholes you can't avoid, large areas of missing asphalt, gravel/dirt road. | walking pace, or risk to the car |
 
 - **Bad road** = Közepes or worse (≤ 3); the map's "Rossz út valószínűsége" is
   the model's probability of that.
-- **1 (Nagyon rossz) is on the scale but not trained:** it has only 14 labels,
-  mostly junk, and training drops every Nagyon rossz. Until the owner decides
-  otherwise, label even the worst real road **2 (Rossz)**. Never use 1 for
-  non-road or broken frames: skip those (see below).
+- **Use 1 (Nagyon rossz) whenever the rubric fits** — including unpaved
+  (dirt, gravel) roads. The model does not predict it yet (only 14 old labels,
+  mostly junk, are dropped from training); new labels are what can change that.
+  Never use 1 for non-road or broken frames: skip those (see below).
 - Half steps (2.5, 3.5, 4.5) are accepted but discouraged; pick the nearer level.
 
 ## What to label (this matters most)

@@ -25,6 +25,7 @@ import {
   RATING_LEVELS,
   STRATEGIES,
 } from '../logic'
+import { RQI_RUBRIC_NOTE_HU } from 'modules/ui'
 import type { RqiLevel } from 'modules/ui'
 import type { LabelExample, QueueItem } from '../types'
 
@@ -263,7 +264,7 @@ const Rubric: React.FC<{ examples: LabelExample[]; onClose: () => void }> = ({ e
         )
       })}
       <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 8 }}>
-        A kép alsó részét (az útfelületet) értékeld. Nem út, takarja egy autó, vagy nem eldönthető? → Kihagyás.
+        {RQI_RUBRIC_NOTE_HU} A kép alsó részét nézd. Nem út, takarja egy autó, vagy nem eldönthető? → Kihagyás.
         Billentyűk: a gomb sarkában lévő szám ({RATING_KEY_RANGE}) értékel, → kihagy, ← visszavon, M modell, szóköz nagyít.
       </div>
     </div>

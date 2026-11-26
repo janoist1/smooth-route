@@ -12,6 +12,8 @@
     4,
     5
   ],
+  "rubric_note_hu": "Csak a képen látható útfelületet értékeld, ne a sebességkorlátot vagy az út kategóriáját: ugyanaz a kép mindig ugyanazt a jegyet kapja.",
+  "rubric_note_en": "Rate only the road surface visible in the frame, not the speed limit or the road class: the same image always gets the same label.",
   "levels": [
     {
       "value": 5,
@@ -19,8 +21,8 @@
       "label_hu": "Kiváló",
       "label_en": "Excellent",
       "color": "#1f5fa8",
-      "rubric_hu": "Új vagy frissen felújított burkolat, látható hiba nélkül.",
-      "rubric_en": "New or freshly resurfaced, no visible defects."
+      "rubric_hu": "Új vagy frissen felújított, egyenletes burkolat, látható hiba nélkül.",
+      "rubric_en": "New or recently resurfaced, uniform surface, no visible defects."
     },
     {
       "value": 4,
@@ -28,8 +30,8 @@
       "label_hu": "Jó",
       "label_en": "Good",
       "color": "#3d9ad6",
-      "rubric_hu": "Enyhe kopás, apró repedések, jó foltozások; a vezetést nem zavarja.",
-      "rubric_en": "Light wear, small cracks, good patches; does not affect driving."
+      "rubric_hu": "Enyhe kopás, néhány apró repedés vagy jó foltozás; a haladást nem zavarja.",
+      "rubric_en": "Minor wear, a few small cracks or good patches; the ride is unaffected."
     },
     {
       "value": 3,
@@ -37,8 +39,8 @@
       "label_hu": "Közepes",
       "label_en": "Fair",
       "color": "#e0a400",
-      "rubric_hu": "Látható repedéshálók, sok foltozás, kisebb kátyúk.",
-      "rubric_en": "Visible crack networks, heavy patching, small potholes."
+      "rubric_hu": "Láthatóan kopott: repedéshálók, sok foltozás, kipergés, kisebb kátyúk; érezhető, de normálisan lehet haladni.",
+      "rubric_en": "Clearly worn: crack networks, many patches, ravelling, small potholes; noticeable, but you drive normally."
     },
     {
       "value": 2,
@@ -46,8 +48,8 @@
       "label_hu": "Rossz",
       "label_en": "Poor",
       "color": "#e8632b",
-      "rubric_hu": "Mély kátyúk, töredezett vagy nagyon egyenetlen felület.",
-      "rubric_en": "Deep potholes, broken-up or very rough surface."
+      "rubric_hu": "Jelentős károk: gyakori kátyúk, morzsolódó vagy töredezett burkolat, durva foltozás; lassítani vagy kerülgetni kell.",
+      "rubric_en": "Significant damage: frequent potholes, crumbling or broken surface, rough patchwork; you slow down or steer around defects."
     },
     {
       "value": 1,
@@ -55,8 +57,8 @@
       "label_hu": "Nagyon rossz",
       "label_en": "Very poor",
       "color": "#b3172c",
-      "rubric_hu": "Alig járható: összefüggő kátyúmező, szétesett burkolat. A modell nem adja (kevés példa).",
-      "rubric_en": "Barely drivable: continuous potholes, disintegrated surface. The model never predicts it (too few examples)."
+      "rubric_hu": "A hibák uralják az utat vagy nincs rendes burkolat (földút, murva): ki nem kerülhető mély kátyúk, nagy felületen hiányzó aszfalt; lépésben vagy autókárosodás veszélyével.",
+      "rubric_en": "Damage dominates the surface or it isn't properly paved (dirt, gravel): deep potholes you can't avoid, large areas of missing asphalt; walking pace or risk to the car."
     }
   ],
   "unknown": {

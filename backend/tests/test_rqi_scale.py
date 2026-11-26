@@ -56,6 +56,15 @@ def test_five_levels_with_hungarian_labels_best_first():
         assert lv.rubric_hu and lv.rubric_en and lv.color.startswith("#")
 
 
+def test_labelling_rule_is_part_of_the_definition():
+    # Owner decision 2026-11-26: the label rates the visible surface only;
+    # speed limit / road class are deliberately NOT part of it.
+    assert "sebességkorlát" in SCALE.data["rubric_note_hu"]
+    assert "speed limit" in SCALE.data["rubric_note_en"]
+    very_poor = SCALE.level(SCALE.value_of("very_poor"))
+    assert "földút" in very_poor.rubric_hu and "gravel" in very_poor.rubric_en
+
+
 def test_model_contract():
     # 5 / Nagyon rossz has 14 (mostly junk) labels: never trained, never predicted.
     assert SCALE.severity_values(SCALE.model_levels) == [1, 2, 3, 4]

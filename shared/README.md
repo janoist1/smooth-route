@@ -7,13 +7,18 @@ docs and the labelling UI all read it.
 
 **Higher is better** (owner's decision, 2026-11-26: "5 kiváló mehet").
 
-| Value | Key | UI label | EN | Colour | Rubric (labelling) |
-|---|---|---|---|---|---|
-| 5 | `excellent` | **Kiváló** | Excellent | `#1f5fa8` dark blue | New or freshly resurfaced, no visible defects. |
-| 4 | `good` | **Jó** | Good | `#3d9ad6` light blue | Light wear, small cracks, good patches; does not affect driving. |
-| 3 | `fair` | **Közepes** | Fair | `#e0a400` amber | Visible crack networks, heavy patching, small potholes. |
-| 2 | `poor` | **Rossz** | Poor | `#e8632b` orange | Deep potholes, broken-up or very rough surface. |
-| 1 | `very_poor` | **Nagyon rossz** | Very poor | `#b3172c` dark red | Barely drivable. The model never predicts it (14 labels, mostly junk). |
+| Value | Key | UI label | EN | Colour |
+|---|---|---|---|---|
+| 5 | `excellent` | **Kiváló** | Excellent | `#1f5fa8` dark blue |
+| 4 | `good` | **Jó** | Good | `#3d9ad6` light blue |
+| 3 | `fair` | **Közepes** | Fair | `#e0a400` amber |
+| 2 | `poor` | **Rossz** | Poor | `#e8632b` orange |
+| 1 | `very_poor` | **Nagyon rossz** | Very poor | `#b3172c` dark red |
+
+The labelling rubric (one line per level, HU + EN, plus `rubric_note_*`: rate the
+visible surface only, never the speed limit or road class) lives in the JSON and is
+shown on the quick-rate screen and the review panel; the human-readable version with
+the driver's test is [docs/TrainingGuide.md](../docs/TrainingGuide.md).
 
 - `direction: higher_is_better`. Until 2026-11-26 the numbering was the
   mirror image (1 = Kiváló); stored data is converted by the migration
