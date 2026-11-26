@@ -381,6 +381,8 @@ export const QuickLabelView: React.FC<QuickLabelViewProps> = ({ onBack }) => {
   const { rate, skip, undo, toggleReveal, canUndo, mode, judge, undoPair } = q
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // A held key must not rate a run of frames, and nothing is rated behind the rubric.
+      if (e.repeat || rubricOpen) return
       const el = e.target as HTMLElement | null
       if (
         el &&
@@ -411,7 +413,7 @@ export const QuickLabelView: React.FC<QuickLabelViewProps> = ({ onBack }) => {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [rate, skip, undo, toggleReveal, canUndo, current, mode, judge, undoPair])
+  }, [rate, skip, undo, toggleReveal, canUndo, current, mode, judge, undoPair, rubricOpen])
 
   const stats = q.stats
   return (
