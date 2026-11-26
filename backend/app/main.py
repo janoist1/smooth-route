@@ -76,7 +76,9 @@ graphql_app = (
 )
 app.add_route("/graphql", graphql_app)
 if not settings.PUBLIC_READ_ONLY:
-    app.add_websocket_route("/graphql", graphql_app)
+    # Starlette 1.x dropped add_websocket_route; a WebSocketRoute works on both.
+    from starlette.routing import WebSocketRoute
+    app.router.routes.append(WebSocketRoute("/graphql", graphql_app))
 
 # Serve generated previews from the canonical data directory. Skipped on the
 # public read-only deploy: Vercel's serverless filesystem is read-only outside
