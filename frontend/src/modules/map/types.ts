@@ -1,3 +1,4 @@
+import type { RouteAlternative } from './alternatives'
 export interface RoadPoint {
   id: number
   latitude: number
@@ -41,6 +42,9 @@ export interface MapState {
   }
   // Route Planner
   routePoints: [number, number][] | null
+  /** Google's alternatives for the planned route (null = none planned). */
+  routeAlternatives: RouteAlternative[] | null
+  selectedRouteIndex: number | null
   isPlanningRoute: boolean
   isAnalyzingRoute: boolean
   routeAnalysisJobId: string | null

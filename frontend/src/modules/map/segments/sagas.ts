@@ -105,6 +105,12 @@ export function* onRoutePlanned(
   if (action.payload?.length > 1) yield put(actions.fetchRouteQuality(action.payload))
 }
 
+// Picking another alternative: its full quality summary (incl. worst segments).
+export function* onRouteAlternativeSelected(): SagaIterator {
+  const route: LatLng[] | null = yield select(mapSelectors.selectRoutePoints)
+  if (route && route.length > 1) yield put(actions.fetchRouteQuality(route))
+}
+
 // Selecting a segment closes an open point card and loads the segment's frames.
 export function* onSegmentSelected(
   action: ReturnType<typeof actions.selectSegment | typeof actions.focusSegment>,
@@ -133,6 +139,7 @@ export default [
   takeLatestAsync(fetchSegmentFrames, fetchSegmentFramesWorker),
   takeLatestAsync(fetchRouteQuality, fetchRouteQualityWorker),
   takeLatest(mapActions.planRoute.fulfilled.type, onRoutePlanned),
+  takeLatest(mapActions.selectRouteAlternative.type, onRouteAlternativeSelected),
   takeLatest([actions.selectSegment.type, actions.focusSegment.type], onSegmentSelected),
   takeLatest(mapActions.finishAnalysis.type, onAnalysisFinished),
 ]

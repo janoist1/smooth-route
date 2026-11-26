@@ -146,6 +146,9 @@ const MapView: React.FC<MapViewProps> = ({ onTrain, onMapMove }) => {
     loadingDetail,
     viewport,
     routePoints,
+    routeAlternatives,
+    selectedRouteIndex,
+    selectRouteAlternative,
     pickingLocationFor,
   } = useMap()
   const {
@@ -217,6 +220,18 @@ const MapView: React.FC<MapViewProps> = ({ onTrain, onMapMove }) => {
         {/* Route. With road segments on screen it is a blue "tube" with a dark
             core: the coloured segments sit in the core, and a stretch without
             quality data stays visibly blue-and-dark. */}
+        {/* Other alternatives: faint, tap one to select it. */}
+        {routeAlternatives
+          ?.filter(r => r.index !== selectedRouteIndex)
+          .map(r => (
+            <Polyline
+              key={`alt-${r.index}`}
+              positions={r.points}
+              eventHandlers={{ click: () => selectRouteAlternative(r.index) }}
+              pathOptions={{ color: '#94a3b8', weight: 6, opacity: 0.35, lineCap: 'round' }}
+            />
+          ))}
+
         {routePoints && layers.segments && (
           <>
             <Polyline

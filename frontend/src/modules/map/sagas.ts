@@ -1,4 +1,5 @@
 import { put, takeLatest, select, takeEvery } from 'redux-saga/effects'
+import { defaultRouteIndex, type RouteAlternative } from './alternatives'
 import type { SagaIterator } from 'redux-saga'
 import { takeLatestAsync } from 'saga-toolkit'
 import type { SagaActionFromCreator } from 'saga-toolkit'
@@ -63,12 +64,31 @@ const GET_POINT_DETAIL = gql(`
   }
 `)
 
-const GET_ROUTE = gql(`
-  query GetRoute($origin: String!, $destination: String!) {
-    getRoute(origin: $origin, destination: $destination) {
-      points {
-        lat
-        lng
+// One Google Directions call per plan (alternatives=true); every route comes
+// with its road quality from the stored segments.
+const ROUTE_ALTERNATIVES = gql(`
+  query RouteAlternatives($origin: String!, $destination: String!) {
+    routeAlternatives(origin: $origin, destination: $destination) {
+      fastestIndex
+      smoothestIndex
+      routes {
+        index
+        distanceM
+        durationS
+        summary
+        coverage
+        isFastest
+        isSmoothest
+        points {
+          lat
+          lng
+        }
+        quality {
+          totalLengthM
+          coveredLengthM
+          lengthByRqi
+          meanScore
+        }
       }
     }
   }
@@ -175,18 +195,31 @@ function* planRouteWorker(action: SagaActionFromCreator<typeof actions.planRoute
   const { origin, destination } = action.meta.arg
   
   const result = yield* gqlQueryResult({
-    query: GET_ROUTE,
+    query: ROUTE_ALTERNATIVES,
     variables: { origin, destination },
   })
-  
+
   if (!result.data) {
     throw new Error('Hiba a szerver kommunikációban (No Data)')
   }
 
-  const routeData = result.data.getRoute
-  if (!routeData) throw new Error('Route not found')
-    
-  return routeData.points.map(p => [p.lat, p.lng] as [number, number])
+  const res = result.data.routeAlternatives
+  const routes: RouteAlternative[] = res.routes.map(r => ({
+    index: r.index,
+    points: r.points.map(p => [p.lat, p.lng] as [number, number]),
+    distanceM: r.distanceM,
+    durationS: r.durationS,
+    summary: r.summary,
+    quality: { ...r.quality, worstSegments: [] },
+    coverage: r.coverage,
+    isFastest: r.isFastest,
+    isSmoothest: r.isSmoothest,
+  }))
+  const selected = defaultRouteIndex({ routes, fastestIndex: res.fastestIndex ?? null, smoothestIndex: res.smoothestIndex ?? null })
+  const chosen = routes.find(r => r.index === selected)
+  if (!chosen) throw new Error('Route not found')
+  yield put(actions.setRouteAlternatives({ routes, selected }))
+  return chosen.points
 }
 
 function* analyzeRouteWorker(action: SagaActionFromCreator<typeof actions.analyzeRoute>) {

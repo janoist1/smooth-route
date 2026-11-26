@@ -258,3 +258,16 @@ is no separate REST annotation endpoint.
 admin-only: both handed the server-side Google Maps key to anonymous callers
 (also on the public read-only deploy), and their only consumer, the static
 `map.html`, no longer exists.
+
+## Route alternatives (`routeAlternatives`, 2026-11-26)
+
+`routeAlternatives(origin, destination)`: up to 3 driving routes from ONE
+Google Directions request (`alternatives=true`, billed like `getRoute`), each
+with `distanceM`, `durationS`, `summary`, `points`, its `quality`
+(RouteQuality from the stored segments, no extra Google call) and `coverage`.
+`fastestIndex`; `smoothestIndex` = best length-weighted quality among routes at
+most `ROUTE_SMOOTH_MAX_EXTRA_DURATION` (0.2 = +20 %) slower than the fastest
+AND with at least `ROUTE_SMOOTH_MIN_COVERAGE` (0.5) measured; null when none
+qualifies. Quality is compared through `app.core.rqi_scale` (direction-free).
+Same permission as `getRoute`; on the public schema at most 1 per request.
+The planner uses it instead of `getRoute` (which stays for API consumers).

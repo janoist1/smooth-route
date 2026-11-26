@@ -27,6 +27,8 @@ export const selectLoadingDetail = createSelector(selectMapState, map => map.loa
 export const selectViewport = createSelector(selectMapState, map => map.viewport)
 
 export const selectRoutePoints = createSelector(selectMapState, map => map.routePoints)
+export const selectRouteAlternatives = createSelector(selectMapState, map => map.routeAlternatives)
+export const selectSelectedRouteIndex = createSelector(selectMapState, map => map.selectedRouteIndex)
 
 export const selectIsPlanningRoute = createSelector(selectMapState, map => map.isPlanningRoute)
 export const selectIsAnalyzingRoute = createSelector(selectMapState, map => map.isAnalyzingRoute)

@@ -67,6 +67,41 @@ class GoogleMapsService:
              print(f"DEBUG: Error parsing route result: {e}")
              return []
 
+    def get_routes(self, origin: str, destination: str, max_routes: int = 3) -> List[Dict]:
+        """Up to ``max_routes`` driving routes from ONE Directions request
+        (``alternatives=true``; Google bills it as one request). Each:
+        ``{"points": [{"lat", "lng"}, ...], "distance_m", "duration_s", "summary"}``,
+        in Google's order (its recommended route first). Same geocode retry as
+        get_route when the raw inputs give no route."""
+        if not self.client:
+            raise ValueError("Google Maps API Key not configured")
+        result = self._directions(origin, destination, alternatives=True)
+        if not result:
+            geo_origin, geo_dest = self.geocode(origin), self.geocode(destination)
+            if geo_origin and geo_dest:
+                result = self._directions(geo_origin, geo_dest, alternatives=True)
+        routes = []
+        for route in (result or [])[:max_routes]:
+            try:
+                legs = route.get("legs") or []
+                routes.append({
+                    "points": googlemaps.convert.decode_polyline(route["overview_polyline"]["points"]),
+                    "distance_m": float(sum(leg["distance"]["value"] for leg in legs)),
+                    "duration_s": float(sum(leg["duration"]["value"] for leg in legs)),
+                    "summary": route.get("summary") or "",
+                })
+            except (KeyError, TypeError) as exc:
+                print(f"DEBUG: skipping unparsable route: {exc}")
+        return routes
+
+    def _directions(self, origin, destination, alternatives: bool):
+        try:
+            return self.client.directions(origin, destination, mode="driving",
+                                          alternatives=alternatives)
+        except Exception as exc:
+            print(f"DEBUG: Error in directions call: {exc}")
+            return None
+
     def decode_polyline(self, polyline_str: str) -> List[Tuple[float, float]]:
         """
         Decodes a polyline string into a list of (lat, lng) tuples.

@@ -6,6 +6,7 @@ import { useRoadSegments } from '../segments/hooks'
 import type { RoadSegment } from '../segments/types'
 import { isNarrowScreen } from '../screen'
 import RouteQualityCard from './RouteQualityCard'
+import RouteAlternatives from './RouteAlternatives'
 import './roadCards.css'
 
 const RoutePlanner = () => {
@@ -18,6 +19,9 @@ const RoutePlanner = () => {
     routeAnalysisJobId, 
     error, 
     routePoints,
+    routeAlternatives,
+    selectedRouteIndex,
+    selectRouteAlternative,
     origin, 
     destination, 
     pickingLocationFor,
@@ -264,6 +268,14 @@ const RoutePlanner = () => {
             </button>
         )}
       </div>
+
+      {routeAlternatives && (
+        <RouteAlternatives
+          routes={routeAlternatives}
+          selectedIndex={selectedRouteIndex}
+          onSelect={selectRouteAlternative}
+        />
+      )}
 
       {/* Quality summary of the planned route (anonymous users see it too). */}
       {routePoints && (
