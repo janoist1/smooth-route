@@ -101,10 +101,22 @@ def pad_bounds(bounds: tuple[float, float, float, float], pad_m: float = PAD_M
     return (south - dlat, west - dlon, north + dlat, east + dlon)
 
 
-def build_query(bounds: tuple[float, float, float, float], timeout_s: int = 120) -> str:
-    """Overpass QL for the drivable ways in (south, west, north, east)."""
+# Main roads worth collecting on their own (no motorways: almost always fine).
+MAIN_ROAD_CLASSES = (
+    "trunk", "primary", "secondary",
+    "trunk_link", "primary_link", "secondary_link",
+)
+
+
+def build_query(
+    bounds: tuple[float, float, float, float],
+    timeout_s: int = 120,
+    highway_classes: tuple[str, ...] = HIGHWAY_CLASSES,
+) -> str:
+    """Overpass QL for the ways of the given highway classes (default: all
+    drivable ones) in (south, west, north, east)."""
     south, west, north, east = bounds
-    classes = "|".join(HIGHWAY_CLASSES)
+    classes = "|".join(highway_classes)
     return (
         f"[out:json][timeout:{timeout_s}];"
         f'way["highway"~"^({classes})$"]'
@@ -123,11 +135,11 @@ def cache_path(cache_dir: Path | str, tile: Tile, size: float = TILE_DEG) -> Pat
 # Response parsing (pure)
 # --------------------------------------------------------------------------
 
-def parse_ways(payload: dict) -> list[Way]:
+def parse_ways(payload: dict, highway_classes: tuple[str, ...] = HIGHWAY_CLASSES) -> list[Way]:
     """Turn a raw Overpass JSON response into ``Way`` objects.
 
     Skips non-ways, area polygons (``area=yes`` — plazas, not carriageways),
-    classes outside ``HIGHWAY_CLASSES`` and anything without a usable line.
+    classes outside ``highway_classes`` and anything without a usable line.
     Consecutive duplicate vertices are dropped (they would make zero-length
     edges with an undefined bearing).
     """
@@ -137,7 +149,7 @@ def parse_ways(payload: dict) -> list[Way]:
             continue
         tags = el.get("tags") or {}
         highway = tags.get("highway")
-        if highway not in HIGHWAY_CLASSES or tags.get("area") == "yes":
+        if highway not in highway_classes or tags.get("area") == "yes":
             continue
         coords: list[tuple[float, float]] = []
         for pt in el.get("geometry") or []:
@@ -313,3 +325,63 @@ class OverpassClient:
                     f"({len(parsed)} ways, {time.monotonic() - started:.0f}s)"
                 )
         return ways
+
+
+def network_cache_path(
+    cache_dir: Path | str, bounds: tuple[float, float, float, float],
+    highway_classes: tuple[str, ...],
+) -> Path:
+    """Cache file of one whole-area network query (bounds + classes hashed)."""
+    import hashlib
+
+    tag = hashlib.sha1(
+        json.dumps([[round(b, 5) for b in bounds], sorted(highway_classes)]).encode()
+    ).hexdigest()[:10]
+    return Path(cache_dir) / f"network_{tag}.json"
+
+
+def fetch_network(
+    cache_dir: Path | str,
+    bounds: tuple[float, float, float, float],
+    highway_classes: tuple[str, ...] = MAIN_ROAD_CLASSES,
+    *,
+    allow_fetch: bool = True,
+    url: Optional[str] = None,
+    timeout_s: float = 240.0,
+    http_post: Optional[HttpPost] = None,
+    log: Callable[[str], None] = print,
+) -> dict[int, Way]:
+    """The ways of ``highway_classes`` in (south, west, north, east) from ONE
+    Overpass request, cached raw on disk like the tiles — asked for once,
+    never refetched. ``allow_fetch=False`` uses the cache only.
+    """
+    path = network_cache_path(cache_dir, bounds, highway_classes)
+    if path.is_file():
+        try:
+            return {w.id: w for w in parse_ways(
+                _check_payload(json.loads(path.read_text(encoding="utf-8"))), highway_classes)}
+        except (ValueError, OverpassError):
+            pass  # corrupt cache file → fetch again
+    if not allow_fetch:
+        raise OverpassError(f"network {path.name} is not cached and fetching is disabled")
+
+    query = build_query(bounds, timeout_s=max(25, int(timeout_s) - 30),
+                        highway_classes=highway_classes)
+    post = http_post or _httpx_post
+    endpoint = url or os.environ.get("OVERPASS_URL") or OVERPASS_URL
+    started = time.monotonic()
+    status, body, _retry_after = post(endpoint, query, timeout_s)
+    if status != 200:
+        raise OverpassError(f"network query: HTTP {status}")
+    try:
+        payload = _check_payload(json.loads(body))
+    except ValueError as exc:
+        raise OverpassError(f"network query: invalid JSON: {exc}") from exc
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(f".tmp{os.getpid()}")
+    tmp.write_text(body, encoding="utf-8")
+    os.replace(tmp, path)
+    ways = {w.id: w for w in parse_ways(payload, highway_classes)}
+    log(f"  overpass: network fetched ({len(ways)} ways, {len(body) / 1e6:.1f} MB, "
+        f"{time.monotonic() - started:.0f}s) → {path.name}")
+    return ways

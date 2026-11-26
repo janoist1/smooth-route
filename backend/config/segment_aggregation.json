@@ -21,5 +21,10 @@
   "age": {
     "grace_years": 3,
     "half_life_years": 5
+  },
+  "sampling": {
+    "base_spacing_m": 50,
+    "dense_spacing_m": 30,
+    "densify_if": ["low_confidence"]
   }
 }
