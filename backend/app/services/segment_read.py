@@ -6,11 +6,9 @@ pre-built ``road_segments`` table. Request-time rules: no Overpass, no torch,
 no numpy — just PostGIS + the pure helpers — so it runs unchanged on the
 read-only deploy.
 
-Frame ↔ segment links are not stored. They are re-derived with the builder's
-own rule (nearest segment within 20 m whose direction fits the frame heading)
-against the stored segments around the frame. Every piece that received a
-frame is stored, so this reproduces the builder's assignment — a frame on a
-parallel road goes to that road's segment, not to this one.
+Frame ↔ segment links are re-derived against all stored geometry, including
+unmeasured roads. At a shared piece boundary, the builder's linear-reference
+rule assigns the frame to the following piece, regardless of travel direction.
 
 The zoom / envelope maths is pure and unit-tested; the ``fetch_*`` functions
 are thin SQL.
@@ -20,7 +18,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Optional, Sequence, cast
 
 from sqlalchemy import text
@@ -29,6 +27,7 @@ from app.services.map_matching import (
     DEFAULT_MAX_BEARING_DIFF_DEG,
     DEFAULT_MAX_DISTANCE_M,
     LineIndex,
+    Match,
 )
 from app.services.route_scoring import speed_kmh
 from app.services.route_quality import (
@@ -103,6 +102,7 @@ class RouteQualityResult:
     mean_score: Optional[float]
     worst_segments: list[SegmentRecord]
     impact_score: Optional[float] = None  # speed-weighted badness (route_scoring)
+    mean_rqi: Optional[int] = None  # mean_score through the segment cut-points
 
 
 # --------------------------------------------------------------------------
@@ -244,6 +244,38 @@ def _record(row, cfg: SegmentConfig) -> SegmentRecord:
     )
 
 
+def _is_measured(segment: SegmentRecord) -> bool:
+    return segment.n_images > 0 and segment.score is not None and segment.rqi is not None
+
+
+class _FrameSegmentIndex:
+    """Snap to stored pieces, with the builder's half-open boundary rule."""
+
+    def __init__(self, segments: Sequence[SegmentRecord]):
+        self.by_id = {s.id: s for s in segments}
+        self.index = LineIndex([SegmentRef(s.id, s.path, s.rqi, s.score) for s in segments])
+
+    def snap(self, point: LatLon, heading: Optional[float]) -> Optional[Match]:
+        match = self.index.snap(
+            point, heading, max_distance_m=DEFAULT_MAX_DISTANCE_M,
+            max_bearing_diff_deg=DEFAULT_MAX_BEARING_DIFF_DEG,
+        )
+        if match is None:
+            return None
+        segment = self.by_id[cast(str, match.line_id)]
+        # Pieces retain their chain orientation. Only the chain's final end
+        # is closed; every interior endpoint belongs to the following piece.
+        # Do not use the heading to choose between two pieces of one road:
+        # the builder matches the whole line before assigning its offset.
+        if abs(match.offset_m - polyline_length_m(segment.path)) <= 1e-7:
+            anchor, sep, piece = segment.id.rpartition(":")
+            if sep and piece.isdigit():
+                following = self.by_id.get(f"{anchor}:{int(piece) + 1}")
+                if following is not None and segment.path[-1] == following.path[0]:
+                    return replace(match, line_id=following.id, offset_m=0.0)
+        return match
+
+
 def match_frames_to_segment(
     segment_id: str, segments: Sequence[SegmentRecord], frames: Sequence
 ) -> list[int]:
@@ -251,13 +283,14 @@ def match_frames_to_segment(
     snap to ``segment_id`` rather than to any other of ``segments``, ordered
     along the segment. Pure — the same rule the builder applies.
     """
-    index = LineIndex([SegmentRef(s.id, s.path, s.rqi, s.score) for s in segments])
+    target = next((s for s in segments if s.id == segment_id), None)
+    if target is None or not _is_measured(target):
+        return []
+    index = _FrameSegmentIndex(segments)
     hits: list[tuple[float, int]] = []
     for frame in frames:
         match = index.snap(
             (frame.lat, frame.lon), frame.heading,
-            max_distance_m=DEFAULT_MAX_DISTANCE_M,
-            max_bearing_diff_deg=DEFAULT_MAX_BEARING_DIFF_DEG,
         )
         if match is not None and match.line_id == segment_id:
             hits.append((match.offset_m, frame.id))
@@ -303,6 +336,7 @@ def fetch_segments_in_bbox(
             SELECT {_COLUMNS}, ST_AsGeoJSON({geom}, 6) AS geojson
             FROM road_segments s
             WHERE s.n_images > 0
+              AND s.score IS NOT NULL AND s.rqi IS NOT NULL
               AND s.geom && ST_MakeEnvelope(:min_lng, :min_lat, :max_lng, :max_lat, 4326)
             ORDER BY s.n_images DESC, s.id
             LIMIT :limit
@@ -313,28 +347,28 @@ def fetch_segments_in_bbox(
             "tol": tolerance, "limit": MAX_SEGMENTS_PER_REQUEST,
         },
     ).fetchall()
-    return [_record(r, cfg) for r in rows]
+    records = [_record(r, cfg) for r in rows]
+    return [r for r in records if _is_measured(r)]
 
 
 def fetch_segments_in_boxes(
     db, boxes: Sequence[tuple[float, float, float, float]], cfg: Optional[SegmentConfig] = None
 ) -> list[SegmentRecord]:
-    """Segments WITH data whose bbox touches any ``(west, south, east, north)``
-    box, full geometry. A superset for exact matching in Python."""
+    """All segments whose bbox touches a box, including unmeasured roads.
+    Full precision geometry preserves linear-reference piece boundaries."""
     if not boxes:
         return []
     cfg = cfg or load_config()
     rows = db.execute(
         text(
             f"""
-            SELECT DISTINCT ON (s.id) {_COLUMNS}, ST_AsGeoJSON(s.geom, 7) AS geojson
+            SELECT DISTINCT ON (s.id) {_COLUMNS}, ST_AsGeoJSON(s.geom, 15) AS geojson
             FROM road_segments s
             JOIN unnest(
                    CAST(:west AS float8[]), CAST(:south AS float8[]),
                    CAST(:east AS float8[]), CAST(:north AS float8[])
                  ) AS b(west, south, east, north)
               ON s.geom && ST_MakeEnvelope(b.west, b.south, b.east, b.north, 4326)
-            WHERE s.n_images > 0
             ORDER BY s.id
             LIMIT :cap
             """
@@ -387,6 +421,7 @@ def summarize_route(
         covered_length_m=stats.covered_length_m,
         length_by_rqi=stats.length_by_rqi,
         mean_score=stats.mean_score,
+        mean_rqi=None if stats.mean_score is None else cfg.classify(stats.mean_score),
         impact_score=stats.impact_score,
         worst_segments=[by_id[cast(str, i)] for i in worst_segment_ids(stats, refs, cfg.scale, eligible)],
     )
@@ -415,13 +450,11 @@ def segment_id_for_point(db, lat: float, lng: float, heading: Optional[float]) -
     segments = fetch_segments_in_boxes(db, [_box_around([(lat, lng)])])
     if not segments:
         return None
-    index = LineIndex([SegmentRef(s.id, s.path, s.rqi, s.score) for s in segments])
-    match = index.snap(
-        (lat, lng), heading,
-        max_distance_m=DEFAULT_MAX_DISTANCE_M,
-        max_bearing_diff_deg=DEFAULT_MAX_BEARING_DIFF_DEG,
-    )
-    return None if match is None else cast(str, match.line_id)  # segment ids are str
+    match = _FrameSegmentIndex(segments).snap((lat, lng), heading)
+    if match is None:
+        return None
+    matched = next(s for s in segments if s.id == match.line_id)
+    return matched.id if _is_measured(matched) else None
 
 
 def frame_ids_on_segment(db, segment_id: str) -> list[int]:
@@ -436,6 +469,7 @@ def frame_ids_on_segment(db, segment_id: str) -> list[int]:
             SELECT ST_XMin(geom) AS west, ST_YMin(geom) AS south,
                    ST_XMax(geom) AS east, ST_YMax(geom) AS north
             FROM road_segments WHERE id = :id
+              AND n_images > 0 AND score IS NOT NULL AND rqi IS NOT NULL
             """
         ),
         {"id": segment_id},

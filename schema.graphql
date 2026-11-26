@@ -340,6 +340,7 @@ type RouteQuality {
   meanScore: Float
   impactScore: Float
   worstSegments: [RoadSegment!]!
+  meanRqi: Int
 }
 
 type RouteStep {

@@ -91,6 +91,7 @@ def route_quality_type(result) -> RouteQuality:
         total_length_m=max(round(result.total_length_m, 1), covered),
         covered_length_m=covered,
         length_by_rqi=length_by_rqi,
+        mean_rqi=getattr(result, "mean_rqi", None) if covered > 0 else None,
         mean_score=(
             None if result.mean_score is None or covered <= 0
             else round(result.mean_score, 3)

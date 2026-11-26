@@ -175,3 +175,24 @@ def test_no_way_is_lost_and_total_length_is_preserved():
 
 def test_empty_input():
     assert merge_ways({}) == {}
+
+
+@pytest.mark.parametrize("limits", [(30, 90), (None, 90), (30, None)])
+def test_speed_boundaries_stop_stitching(limits):
+    from dataclasses import replace
+
+    first = replace(way(1, [at(0, 0), at(150, 0)]), maxspeed=limits[0])
+    second = replace(way(2, [at(150, 0), at(300, 0)]), maxspeed=limits[1])
+    merged = merge_ways(as_dict(first, second))
+    assert merged == as_dict(first, second)
+
+
+def test_equal_speed_limits_still_stitch():
+    from dataclasses import replace
+
+    first = replace(way(1, [at(0, 0), at(150, 0)]), maxspeed=90)
+    second = replace(way(2, [at(150, 0), at(300, 0)]), maxspeed=90)
+    merged = merge_ways(as_dict(first, second))
+    assert list(merged) == [1]
+    assert merged[1].maxspeed == 90
+    assert merged[1].coords == first.coords + second.coords[1:]

@@ -8,19 +8,20 @@ Pipeline (write side; the GraphQL read side is ``segment_read.py``):
    (``osm_chains``) — OSM ways are often only tens of metres long,
 3. snap every scored Street View frame to the nearest bearing-compatible
    line (``map_matching``),
-4. cut each line that received frames into equal pieces of about
+4. cut every line into equal pieces of about
    ``segment_length_m`` and assign its frames by linear referencing,
 5. aggregate per piece (``segment_aggregation``) and replace the stored rows.
 
-Only pieces with at least one frame are stored: roads (and stretches) we
-never photographed are simply absent. A stored row's ``osm_way_id`` is the
-line's anchor — the smallest OSM way id of the stitched road — and
+Only unmeasured pieces within ``unmeasured_neighbourhood_m`` of a measured
+piece are stored, with null scores, for route and frame disambiguation. A row's
+``osm_way_id`` is the line's anchor — the smallest OSM way id of the stitched road — and
 ``piece_index`` counts the pieces along it.
 
 Full vs. bbox rebuild: the road network and the cut are ALWAYS computed from
 all tiles, so a bbox rebuild produces exactly the rows a full rebuild would —
-it just re-reads frames and rewrites rows only for the lines touching the
-bbox. That shortcut is valid only while the inputs of the stored rows (tile
+it rewrites rows for the lines touching the bbox and their potential unmeasured
+neighbours, while reading all frames for consistent neighbourhood membership.
+That shortcut is valid only while the inputs of the stored rows (tile
 set, aggregation config, engine version) are unchanged; they are fingerprinted
 on the table, and on a mismatch a bbox rebuild silently becomes a full one.
 
@@ -77,7 +78,9 @@ from app.services.segment_geometry import (
     cumulative_lengths,
     line_substring,
     piece_index_for_offset,
+    project_on_edge,
     split_count,
+    to_local_xy,
 )
 
 logger = logging.getLogger(__name__)
@@ -89,7 +92,7 @@ REBUILD_LOCK_KEY = 7245002
 # Bump when the matching / stitching / cutting logic changes in a way that
 # alters the rows: stored rows built by an older engine then force a full
 # rebuild instead of being mixed with new ones by a bbox rebuild.
-ENGINE_VERSION = 3  # 3: unlabelled_area cap + column
+ENGINE_VERSION = 5  # 5: bound unmeasured geometry to measured-piece neighbourhoods
 
 Bounds = tuple[float, float, float, float]  # (south, west, north, east)
 
@@ -116,8 +119,9 @@ class BuildStats:
     ways_loaded: int = 0
     lines: int = 0              # after stitching ways into roads
     lines_with_frames: int = 0
-    pieces: int = 0             # all pieces of the lines with frames
-    segments: int = 0           # pieces with data = stored rows
+    pieces: int = 0             # all stored pieces, including unmeasured roads
+    unmeasured_omitted: int = 0  # outside the measured-piece neighbourhood
+    segments: int = 0           # pieces with data
     frames_total: int = 0
     frames_unscored: int = 0
     frames_unusable: int = 0    # frame_quality.usable == false
@@ -149,7 +153,10 @@ class BuildStats:
             f"lines with frames:   {self.lines_with_frames}",
             f"segments with data:  {self.segments} ({self.km:.1f} km; "
             f"median {self.median_length_m:.0f} m, {self.median_images:.0f} frames) — "
-            f"{self.pieces - self.segments} frame-less pieces not stored",
+            f"{self.pieces - self.segments} unmeasured pieces stored for matching",
+            f"stored rows:         {self.pieces} "
+            f"({self.pieces / self.segments if self.segments else 0.0:.2f}x measured; "
+            f"{self.unmeasured_omitted} distant unmeasured pieces omitted)",
             f"frames:              {self.frames_total} total, "
             f"{self.frames_unscored} unscored + {self.frames_unusable} unusable (skipped)",
             f"  matched:           {self.frames_matched} ({pct:.1f} % of scored)",
@@ -225,6 +232,54 @@ def _median(values: Sequence[float]) -> float:
     return ordered[mid] if len(ordered) % 2 else (ordered[mid - 1] + ordered[mid]) / 2.0
 
 
+class _MeasuredNeighbourhood:
+    """Grid of measured edges; exact local edge distances after a bbox lookup.
+
+    Checking edges, rather than vertices or midpoints, also retains long
+    crossing pieces whose endpoints both lie outside the neighbourhood.
+    """
+
+    _CELL_DEG = 0.0005
+
+    def __init__(self, pieces: Iterable[Sequence[LatLon]], radius_m: float):
+        self.radius_m = radius_m
+        self.edges: list[tuple[LatLon, LatLon]] = []
+        self.grid: dict[tuple[int, int], list[int]] = defaultdict(list)
+        for coords in pieces:
+            for a, b in zip(coords, coords[1:]):
+                edge_id = len(self.edges)
+                self.edges.append((a, b))
+                for cell in self._cells(a, b):
+                    self.grid[cell].append(edge_id)
+
+    def _cells(self, a: LatLon, b: LatLon, pad_m: float = 0.0):
+        bounds = (min(a[0], b[0]), min(a[1], b[1]), max(a[0], b[0]), max(a[1], b[1]))
+        south, west, north, east = pad_bounds(bounds, 1.01 * pad_m)
+        for y in range(math.floor(south / self._CELL_DEG), math.floor(north / self._CELL_DEG) + 1):
+            for x in range(math.floor(west / self._CELL_DEG), math.floor(east / self._CELL_DEG) + 1):
+                yield y, x
+
+    def touches(self, coords: Sequence[LatLon]) -> bool:
+        for a, b in zip(coords, coords[1:]):
+            candidates = {i for cell in self._cells(a, b, self.radius_m)
+                          for i in self.grid.get(cell, ())}
+            for i in candidates:
+                c, d = self.edges[i]
+                bx, by = to_local_xy(a, b)
+                cx, cy = to_local_xy(a, c)
+                dx, dy = to_local_xy(a, d)
+                cross = bx * (dy - cy) - by * (dx - cx)
+                if abs(cross) > 1e-12:
+                    along_ab = (cx * (dy - cy) - cy * (dx - cx)) / cross
+                    along_cd = (cx * by - cy * bx) / cross
+                    if 0 <= along_ab <= 1 and 0 <= along_cd <= 1:
+                        return True  # edges intersect even if all vertices are far away
+                if min(project_on_edge(a, c, d)[1], project_on_edge(b, c, d)[1],
+                       project_on_edge(c, a, b)[1], project_on_edge(d, a, b)[1]) <= self.radius_m:
+                    return True
+        return False
+
+
 def build_rows(
     lines: Mapping[int, Way],
     frames: Sequence[Frame],
@@ -239,7 +294,7 @@ def build_rows(
     """Snap ``frames`` to ``lines``, cut and aggregate. Returns (rows, stats).
 
     ``lines`` are the roads to cut (stitched ways, or raw ways). One row per
-    piece that received frames.
+    measured piece, plus unmeasured pieces touching the configured neighbourhood.
 
     ``only_ids`` limits which lines are turned into rows (bbox rebuild);
     matching still considers EVERY line, so a frame is never pulled onto a
@@ -268,21 +323,36 @@ def build_rows(
         stats.frames_matched += 1
         by_line[cast(int, match.line_id)].append((match.offset_m, frame))  # OSM way ids
 
+    # Use every measured piece, including ones outside only_ids. Otherwise a
+    # bbox rebuild could drop a rival road that the full build would retain.
+    measured_geometry: list[list[LatLon]] = []
+    for line_id, observations in by_line.items():
+        line = lines[line_id]
+        cum = cumulative_lengths(line.coords)
+        total = cum[-1]
+        count = split_count(total, cfg.segment_length_m)
+        step = total / count
+        occupied = {piece_index_for_offset(offset, total, count) for offset, _ in observations}
+        measured_geometry.extend(
+            line_substring(line.coords, cum, i * step, (i + 1) * step) for i in sorted(occupied)
+        )
+    neighbourhood = _MeasuredNeighbourhood(measured_geometry, cfg.unmeasured_neighbourhood_m)
+
     rows: list[dict] = []
     class_counts: Counter = Counter()
     class_km: defaultdict[int, float] = defaultdict(float)
     level_counts: Counter = Counter()
     level_km: defaultdict[str, float] = defaultdict(float)
-    for line_id in sorted(by_line):
+    for line_id in sorted(lines):
         if only_ids is not None and line_id not in only_ids:
             continue
         line = lines[line_id]
-        stats.lines_with_frames += 1
+        if by_line[line_id]:
+            stats.lines_with_frames += 1
         cum = cumulative_lengths(line.coords)
         total = cum[-1]
         n_pieces = split_count(total, cfg.segment_length_m)
         piece_len = total / n_pieces
-        stats.pieces += n_pieces
 
         buckets: dict[int, list[FrameObs]] = defaultdict(list)
         # Sorted by frame id so the aggregate does not depend on input order.
@@ -291,14 +361,17 @@ def build_rows(
                 FrameObs(frame.score, frame.p_bad, frame.capture_date)
             )
 
-        for i in sorted(buckets):
+        for i in range(n_pieces):
             agg = aggregate_frames(buckets[i], cfg, today)
             coords = (
                 list(line.coords) if n_pieces == 1
                 else line_substring(line.coords, cum, i * piece_len, (i + 1) * piece_len)
             )
+            if not buckets[i] and not neighbourhood.touches(coords):
+                stats.unmeasured_omitted += 1
+                continue
             confidence, capped = agg.confidence, False
-            if label_index is not None:
+            if label_index is not None and agg.n_images:
                 mid_lat = sum(c[0] for c in coords) / len(coords)
                 mid_lon = sum(c[1] for c in coords) / len(coords)
                 confidence, capped = apply_unlabelled_area(
@@ -324,18 +397,22 @@ def build_rows(
                 "capture_date_min": agg.capture_date_min,
                 "capture_date_max": agg.capture_date_max,
             })
+            if agg.rqi is None:
+                continue
             level = confidence_level(confidence, agg.n_images, cfg)
-            rqi = cast(int, agg.rqi)  # every stored piece has frames, hence a class
+            rqi = agg.rqi
             class_counts[rqi] += 1
             class_km[rqi] += piece_len / 1000.0
             level_counts[level] += 1
             level_km[level] += piece_len / 1000.0
 
-    stats.segments = len(rows)
+    measured = [r for r in rows if r["n_images"] > 0]
+    stats.pieces = len(rows)
+    stats.segments = len(measured)
     stats.classes = cfg.scale.ascending
-    stats.km = sum(r["length_m"] for r in rows) / 1000.0
-    stats.median_length_m = _median([r["length_m"] for r in rows])
-    stats.median_images = _median([r["n_images"] for r in rows])
+    stats.km = sum(r["length_m"] for r in measured) / 1000.0
+    stats.median_length_m = _median([r["length_m"] for r in measured])
+    stats.median_images = _median([r["n_images"] for r in measured])
     stats.class_counts = dict(class_counts)
     stats.class_km = dict(class_km)
     stats.level_counts = dict(level_counts)
@@ -345,7 +422,7 @@ def build_rows(
 
 def linestring_wkt(coords: Sequence[LatLon]) -> str:
     """WKT LineString (lon lat order) from ``(lat, lon)`` vertices."""
-    return "LINESTRING(" + ", ".join(f"{lon:.7f} {lat:.7f}" for lat, lon in coords) + ")"
+    return "LINESTRING(" + ", ".join(f"{lon!r} {lat!r}" for lat, lon in coords) + ")"
 
 
 def bounds_of(points: Iterable[LatLon]) -> Optional[Bounds]:
@@ -572,8 +649,9 @@ def rebuild_segments(
     today: Optional[dt.date] = None,
     log: Callable[[str], None] = print,
 ) -> BuildStats:
-    """Rebuild the segment table — fully, or only the lines touching ``bbox``
-    (``(south, west, north, east)``). Idempotent: same inputs → same rows.
+    """Rebuild the segment table — fully, or the lines touching ``bbox`` and
+    their neighbours (``(south, west, north, east)``). All frame measurements
+    inform the bounded geometry selection. Idempotent: same inputs → same rows.
 
     ``merge=False`` cuts every OSM way on its own (no stitching).
 
@@ -610,21 +688,24 @@ def rebuild_segments(
             "full rebuild — doing a full rebuild instead of the bbox one")
         bbox = None
 
-    if bbox is None:
-        load = load_frames(db, cfg)
-    else:
+    if bbox is not None:
         area = pad_bounds(bbox, PAD_M)
         only_ids = {
             line_id for line_id, line in lines.items()
             if bounds_intersect(cast(Bounds, bounds_of(line.coords)), area)  # >= 2 vertices
         }
-        # A line reaches beyond the bbox, and so do its frames: load every
-        # frame around the target lines. (Matching runs against ALL lines.)
+        # A changed measured piece can add/remove unmeasured neighbours even
+        # beyond the original job box. Rewrite those lines in the same batch.
         extent = bounds_of(p for line_id in only_ids for p in lines[line_id].coords)
-        if extent is None:
-            load = FrameLoad(frames=[])
-        else:
-            load = load_frames(db, cfg, pad_bounds(extent, 2 * DEFAULT_MAX_DISTANCE_M))
+        if extent is not None:
+            neighbourhood = pad_bounds(extent, 1.01 * cfg.unmeasured_neighbourhood_m)
+            only_ids.update(
+                line_id for line_id, line in lines.items()
+                if bounds_intersect(cast(Bounds, bounds_of(line.coords)), neighbourhood)
+            )
+    # Neighbourhood membership depends on measured pieces outside the write
+    # area too. Load their frames so partial and full builds make the same cut.
+    load = load_frames(db, cfg)
     frames = load.frames
 
     no_osm = 0

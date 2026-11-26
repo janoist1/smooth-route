@@ -80,11 +80,13 @@ and are edited from the Settings page.
 
 `backend/config/segment_aggregation.json` drives the road-segment layer (code:
 `backend/app/services/segment_aggregation.py`; no defaults in code — a missing key
-is an error). **Re-run `scripts/build_segments.py` after any change.**
+is an error). **Re-run `scripts/build_segments.py` after any change** (writes
+by default; add `--dry-run` to preview without replacing the table).
 
 | Key | Meaning |
 |---|---|
 | `segment_length_m`, `aggregator`, `trim_fraction` | piece length (200 m) and how frame scores combine (`median_score`) |
+| `unmeasured_neighbourhood_m` | keep unmeasured pieces only when their geometry comes within this distance of a measured piece; default/minimum 30 m = twice the route matching radius (15 m) |
 | `thresholds`, `scale` | cut-points + `{classes, higher_is_worse, bad_class}` on the canonical scale; the ML recipe (`ml/segment_recipe.json`, severity numbering) mirrored. A backend test keeps both equal to [shared/rqi_scale.json](shared/rqi_scale.json); `scripts/sync_rqi_scale.py` converts a new recipe |
 | `p_bad_threshold`, `min_images` | good/bad flag from mean P(bad); fewer frames → always "low" |
 | `confidence` | `n_ref`, `spread_ref`, `margin_ref` and the `high` / `medium` level cuts |
@@ -93,6 +95,16 @@ is an error). **Re-run `scripts/build_segments.py` after any change.**
 | `sampling` | collection spacing (`base_spacing_m` 50, `dense_spacing_m` 30, `densify_if`) — see below |
 
 Where the numbers come from: [docs/MODEL_EXPERIMENTS.md](docs/MODEL_EXPERIMENTS.md) (Era 7).
+
+The 30 m neighbourhood retains any road that could beat a measured piece in
+the route match (two 15 m distances by the triangle inequality). Selection is
+per piece, so a nearby crossing does not retain the rest of a long empty road.
+The stored-row multiplier is `1 + nearby_unmeasured / measured`; the builder
+reports it and the omitted count. One parallel empty road of similar length
+adds roughly 1x (about 2x total), while distant roads add nothing. Dense local
+networks can add more; there is no fixed multiplier independent of road density.
+These bounded null-score rows are published for public `routeQuality`; map
+segments and frame/detail-card results exclude them.
 
 ## Collecting Street View frames safely
 

@@ -16,6 +16,9 @@ the target schema first via Alembic — on a fresh Neon DB this also runs
 road_segments (the road-segment layer, built locally by
 scripts/build_segments.py) is full-replaced as well, in the SAME transaction,
 so the public site never shows points and segments from different publishes.
+This includes the bounded unmeasured neighbours: anonymous routeQuality needs
+them to avoid borrowing a measured parallel road's score. The builder prunes
+distant unmeasured pieces before they enter this table or the upload.
 Run build_segments.py before publishing; if the local table is missing or
 empty the target's segments are emptied too (and a warning is printed).
 
@@ -130,7 +133,9 @@ def check_target(cfg, target_url: str) -> list[str]:
 
 
 def read_segments(src_engine) -> list[dict]:
-    """All local road segments as insertable dicts ([] if never built)."""
+    """Measured pieces AND their bounded unmeasured rivals for public routeQuality.
+    Returns insertable dicts ([] if never built); do not filter null scores.
+    """
     if not inspect(src_engine).has_table(RoadSegment.__tablename__):
         print("WARNING: source has no road_segments table — run the migrations "
               "and scripts/build_segments.py; publishing 0 segments")

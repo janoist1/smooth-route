@@ -103,6 +103,12 @@ export const summarizeRouteQuality = (quality: RouteQuality): RouteSummary => {
       ? quality.meanScore
       : null
   const meanScore = hasData ? (backendMean ?? weightedMeanRqi(byClass)) : null
+  // The API applies tuned segment cut-points before rounding the mean score.
+  // Keep the fallback for older payloads and deterministic visual mocks.
+  const meanClass =
+    hasData && typeof quality.meanRqi === 'number' && rqiLevel(quality.meanRqi)
+      ? quality.meanRqi
+      : meanScore
 
   return {
     totalLengthM,
@@ -113,7 +119,7 @@ export const summarizeRouteQuality = (quality: RouteQuality): RouteSummary => {
     classes,
     unknownShare: Math.max(0, 1 - classShare),
     meanScore,
-    meanLabel: rqiLabelHu(meanScore),
-    meanColor: rqiClassColor(meanScore),
+    meanLabel: rqiLabelHu(meanClass),
+    meanColor: rqiClassColor(meanClass),
   }
 }

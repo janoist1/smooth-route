@@ -1,6 +1,7 @@
 {
   "version": 1,
   "segment_length_m": 200,
+  "unmeasured_neighbourhood_m": 30,
   "aggregator": "median_score",
   "trim_fraction": 0.0,
   "thresholds": [2.948, 3.504, 4.423],

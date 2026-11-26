@@ -239,6 +239,7 @@ def test_graphql_contract_matches_what_the_frontend_builds_against():
             "meanScore: Float",
             "impactScore: Float",  # T-47, additive: speed-weighted impact
             "worstSegments: [RoadSegment!]!",
+            "meanRqi: Int",
         ]
         assert "roadSegments(bbox: [Float!]!, zoom: Int!): [RoadSegment!]!" in sdl
         assert "routeQuality(path: [[Float!]!]!): RouteQuality!" in sdl
@@ -494,3 +495,151 @@ def test_segment_candidate_cap_raises(monkeypatch):
 
     with pytest.raises(sr.TooManySegmentCandidates):
         sr.fetch_segments_in_boxes(_Db(), [(0.0, 0.0, 1.0, 1.0)], cfg=object())
+
+
+def _records_from_build(rows):
+    from dataclasses import replace
+
+    return [replace(
+        record(r["id"], 0, 1, r["rqi"], r["score"], n=r["n_images"]),
+        path=r["coords"], length_m=r["length_m"], highway=r["highway"],
+        maxspeed_kmh=r["maxspeed_kmh"],
+    ) for r in rows]
+
+
+def test_builder_stores_unmeasured_roads_for_route_matching():
+    from app.core.rqi_scale import SCALE
+    from app.services.osm_overpass import Way
+    from app.services.road_segments import Frame, build_rows
+    from app.services.segment_aggregation import load_config
+
+    cfg = load_config()
+    best = SCALE.value_of("excellent")
+    roads = {
+        1: Way(1, (at(0, 0), at(300, 0)), "Measured", "residential"),
+        2: Way(2, (at(0, 10), at(300, 10)), "Unmeasured", "residential"),
+    }
+    rows, _ = build_rows(roads, [Frame(1, *at(50, 0), 90, float(best))], cfg)
+    records = _records_from_build(rows)
+    unmeasured = [r for r in rows if r["osm_way_id"] == 2]
+    assert unmeasured and all(r["n_images"] == 0 and r["score"] is None for r in unmeasured)
+    result = summarize_route([at(0, 10), at(300, 10)], records, cfg)
+    assert result.covered_length_m == 0
+    assert result.mean_score is None and result.mean_rqi is None
+    assert result.worst_segments == []
+
+
+def test_speed_boundary_survives_build_and_weights_route_impact():
+    from app.core.rqi_scale import SCALE
+    from app.services.osm_chains import merge_ways
+    from app.services.osm_overpass import Way
+    from app.services.road_segments import Frame, build_rows
+    from app.services.route_scoring import badness, speed_factor
+    from app.services.segment_aggregation import load_config
+
+    cfg = load_config()
+    best, poor = SCALE.value_of("excellent"), SCALE.value_of("poor")
+    roads = {
+        1: Way(1, (at(0, 0), at(150, 0)), "Road", "secondary", 30),
+        2: Way(2, (at(150, 0), at(300, 0)), "Road", "secondary", 90),
+    }
+    frames = [Frame(1, *at(50, 0), 90, float(best)), Frame(2, *at(250, 0), 90, float(poor))]
+    rows, _ = build_rows(merge_ways(roads), frames, cfg)
+    assert [r["maxspeed_kmh"] for r in rows] == [30, 90]
+    result = summarize_route([at(151, 0), at(299, 0)], _records_from_build(rows), cfg)
+    assert result.impact_score == pytest.approx(badness(poor, best) * speed_factor(90))
+
+
+@pytest.mark.parametrize("heading", [90, 270, None])
+@pytest.mark.parametrize("reverse", [False, True])
+def test_read_frame_membership_matches_builder_at_piece_boundary(heading, reverse, monkeypatch):
+    from app.core.rqi_scale import SCALE
+    from app.services import segment_read
+    from app.services.osm_overpass import Way
+    from app.services.road_segments import Frame, build_rows
+    from app.services.segment_geometry import cumulative_lengths, point_at_offset
+
+    coords = (at(0, 0), at(300, 0))
+    if reverse:
+        coords = coords[::-1]
+    road = Way(10, coords, "Road", "residential")
+    cum = cumulative_lengths(coords)
+    boundary = point_at_offset(coords, cum, cum[-1] / 2)
+    score = float(SCALE.value_of("good"))
+    frames = [Frame(1, *point_at_offset(coords, cum, 50), heading, score),
+              Frame(2, *boundary, heading, score),
+              Frame(3, *point_at_offset(coords, cum, 250), heading, score)]
+    rows, _ = build_rows({10: road}, frames, CFG)
+    assert [r["n_images"] for r in rows] == [1, 2]
+    records = _records_from_build(rows)
+    # Exercise the stored precision used by PostGIS and the read-side query.
+    from app.services.road_segments import linestring_wkt
+    for r in records:
+        wkt = linestring_wkt(r.path)
+        r.path[:] = [tuple(reversed(tuple(map(float, point.split()))))
+                     for point in wkt[len("LINESTRING("):-1].split(", ")]
+    assert match_frames_to_segment("10:0", records, frames) == [1]
+    assert match_frames_to_segment("10:1", records[::-1], frames) == [2, 3]
+    monkeypatch.setattr(segment_read, "fetch_segments_in_boxes", lambda *a: records)
+    assert segment_read.segment_id_for_point(None, *boundary, heading) == "10:1"
+    # Immediately before the boundary still belongs to the preceding piece.
+    before = point_at_offset(coords, cum, cum[-1] / 2 - 0.001)
+    assert segment_read.segment_id_for_point(None, *before, heading) == "10:0"
+    assert segment_read.segment_id_for_point(None, *coords[-1], heading) == "10:1"
+
+
+def test_mean_class_uses_segment_cut_points():
+    from app.core.rqi_scale import SCALE
+    from app.services.segment_aggregation import load_config
+
+    cfg = load_config()
+    score = SCALE.from_severity(1.55)
+    expected = cfg.classify(score)
+    assert expected == SCALE.value_of("excellent")
+    result = summarize_route([at(0, 0), at(150, 0)],
+                             [record("1:0", 0, 150, expected, score)], cfg)
+    assert result.mean_score == pytest.approx(score)
+    assert result.mean_rqi == expected
+
+
+@pytest.mark.parametrize("near_cut_point", [False, True])
+def test_graphql_mean_class_is_calculated_before_score_rounding(monkeypatch, no_db, near_cut_point):
+    from app.core.rqi_scale import SCALE
+    from app.graphql.schema import read_schema
+    from app.services import segment_read
+    from app.services.segment_aggregation import load_config
+
+    cfg = load_config()
+    score = SCALE.from_severity(1.55)
+    if near_cut_point:
+        threshold = cfg.thresholds[-1]
+        score = threshold - 0.0001 if cfg.scale.higher_is_worse else threshold + 0.0001
+        assert cfg.classify(round(score, 3)) != cfg.classify(score)
+    rec = record("1:0", 0, 150, cfg.classify(score), score)
+    monkeypatch.setattr(segment_read, "fetch_segments_near_path", lambda *a: [rec])
+    result = read_schema.execute_sync(
+        "query($p: [[Float!]!]!) { routeQuality(path: $p) { meanScore meanRqi } }",
+        variable_values={"p": [list(at(1, 0)), list(at(149, 0))]},
+        context_value={"identity": None},
+    )
+    assert result.errors is None
+    assert result.data["routeQuality"]["meanScore"] == round(score, 3)
+    assert result.data["routeQuality"]["meanRqi"] == cfg.classify(score)
+
+
+def test_unmeasured_rivals_block_frame_matches_but_have_no_card_or_frames(monkeypatch):
+    from app.services import segment_read
+
+    best = CFG.scale.best_to_worst[0]
+    measured = record("1:0", 0, 200, best, float(best))
+    empty = record("2:0", 0, 200, None, None, north=10, n=0)
+    records = [measured, empty]
+    frames = [frame(1, 50, 0, 90), frame(2, 50, 10, 90)]
+    assert match_frames_to_segment(measured.id, records, frames) == [1]
+    assert match_frames_to_segment(empty.id, records, frames) == []
+    monkeypatch.setattr(segment_read, "fetch_segments_in_boxes", lambda *a: records)
+    assert segment_read.segment_id_for_point(None, *at(50, 0), 90) == measured.id
+    assert segment_read.segment_id_for_point(None, *at(50, 10), 90) is None
+    result = summarize_route([at(0, 10), at(200, 10)], records, CFG)
+    assert result.covered_length_m == 0 and result.mean_score is None
+    assert result.worst_segments == []

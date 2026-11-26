@@ -59,6 +59,7 @@ export const GET_ROUTE_QUALITY = gql(`
       coveredLengthM
       lengthByRqi
       meanScore
+      meanRqi
       worstSegments {
         id
         path
