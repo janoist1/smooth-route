@@ -5,7 +5,7 @@ import json
 import os
 import zipfile
 from datetime import datetime
-from typing import Dict, Any
+from typing import Any, Dict, Optional
 
 from app.core.config import settings
 
@@ -21,7 +21,7 @@ class ColabTrainingProvider(BaseTrainingProvider):
     2. A zipped dataset for upload to Colab
     """
     
-    def __init__(self, export_dir: str = None):
+    def __init__(self, export_dir: Optional[str] = None):
         self.export_dir = export_dir or os.path.join(
             settings.resolve_data_dir(), "exports"
         )

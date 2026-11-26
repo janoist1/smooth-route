@@ -50,6 +50,8 @@ def rank_routes(routes: Sequence[RouteCandidate], scale,
             continue
         best = routes[smoothest]
         if use_impact:
+            # use_impact: every measured route has an impact score
+            assert r.impact_score is not None and best.impact_score is not None
             better = r.impact_score < best.impact_score
             tie = r.impact_score == best.impact_score
         else:

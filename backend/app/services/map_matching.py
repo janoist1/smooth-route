@@ -44,8 +44,11 @@ _M_PER_DEG_LAT = 111_320.0
 class Line(Protocol):
     """Anything with an id and ``(lat, lon)`` vertices (an OSM way, a segment)."""
 
-    id: Hashable
-    coords: Sequence[LatLon]
+    @property
+    def id(self) -> Hashable: ...
+
+    @property
+    def coords(self) -> Sequence[LatLon]: ...
 
 
 @dataclass(frozen=True)

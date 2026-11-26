@@ -29,7 +29,7 @@ import math
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Hashable, Iterable, Mapping, Optional, Sequence
+from typing import Any, Hashable, Iterable, Mapping, Optional, Sequence, cast
 
 from app.services.map_matching import DEFAULT_MAX_DISTANCE_M, Line, LineIndex
 from app.services.segment_aggregation import CONFIG_PATH
@@ -137,7 +137,7 @@ def sample_route(route: Sequence[LatLon], spacing_m: float) -> list[LatLon]:
     from types import SimpleNamespace
 
     return [(c.lat, c.lon)
-            for c in sample_line(SimpleNamespace(id="route", coords=list(route)), spacing_m)]
+            for c in sample_line(cast(Any, SimpleNamespace(id="route", coords=list(route))), spacing_m)]
 
 
 # --------------------------------------------------------------------------

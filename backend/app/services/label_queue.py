@@ -401,7 +401,7 @@ def pick_model_best(frames: Sequence[Frame], limit: int,
     """Frames the model rates best (lowest severity score) first, Budapest
     first within 0.1-level bands, spread out; covers the top level."""
     scored = [f for f in frames if f.score is not None]
-    scored.sort(key=lambda f: (round(f.score, 1), area_of(f.lat, f.lon) != PRIORITY_AREA,
+    scored.sort(key=lambda f: (round(f.score or 0.0, 1), area_of(f.lat, f.lon) != PRIORITY_AREA,
                                stable_rank(f.id, seed)))
     taken = PointIndex(max(dup_radius_m, 1.0))
     for lat, lon in occupied:
@@ -477,7 +477,7 @@ def pick_pairs(frames: Sequence[Frame], limit: int,
             continue
         for j in range(i + 1, min(i + 1 + PAIR_LOOKAHEAD, len(scored))):
             b = scored[j]
-            gap = b.score - a.score
+            gap = (b.score or 0.0) - (a.score or 0.0)  # both scored (filtered above)
             if gap > max_gap:
                 break
             if b.id in used or frozenset((a.id, b.id)) in done:

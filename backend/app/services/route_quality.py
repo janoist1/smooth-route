@@ -107,6 +107,7 @@ def compute_route_stats(
         seg = by_id[match.line_id]
         stats.covered_length_m += length
         stats.length_by_rqi[classes.index(seg.rqi)] += length
+        assert seg.score is not None  # `usable` keeps only scored segments
         weighted_score += seg.score * length
         speed = seg.speed_kmh if seg.speed_kmh else route_scoring.speed_kmh(None, None)
         impact += route_scoring.badness(seg.score, best) * route_scoring.speed_factor(speed) * length

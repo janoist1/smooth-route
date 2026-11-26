@@ -8,6 +8,7 @@ automatically by the current YOLO export.
 """
 
 import os
+from typing import Any, Optional
 
 import cv2
 import numpy as np
@@ -26,8 +27,8 @@ class RoadPreprocessor:
 
     def __init__(self, model_name="yolov8n-seg.pt"):
         self.model_name = model_name
-        self.model = None
-        self.fastsam = None
+        self.model: Any = None  # YOLO, loaded lazily
+        self.fastsam: Any = None
         self.fastsam_path = None
 
     def _load_model(self):
@@ -54,7 +55,7 @@ class RoadPreprocessor:
             self.fastsam = FastSAM(model_path)
             self.fastsam_path = model_path
 
-    def process_and_save(self, src_path: str, dst_path: str, options: dict = None):
+    def process_and_save(self, src_path: str, dst_path: str, options: Optional[dict] = None):
         """
         Reads image from src_path, applies masking based on options, and saves to dst_path.
         Options:

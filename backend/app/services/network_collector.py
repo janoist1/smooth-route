@@ -118,7 +118,7 @@ class ResumeLog:
         return key in self.status
 
     def add(self, key: str, status: str, frame_id: Optional[int] = None, size: int = 0) -> None:
-        entry = {"k": key, "s": status}
+        entry: dict[str, object] = {"k": key, "s": status}
         if frame_id is not None:
             entry.update(id=frame_id, b=size)
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -157,7 +157,7 @@ def process_candidate(
     ``QuotaExceeded`` / ``StreetViewFatal`` propagate: they end the run."""
     try:
         # Mapillary picks the image by camera direction, so it gets the bearing.
-        extra = {"heading": candidate.heading} if getattr(client, "wants_heading", False) else {}
+        extra: dict = {"heading": candidate.heading} if getattr(client, "wants_heading", False) else {}
         meta = client.metadata(candidate.lat, candidate.lon, radius=max(1, round(radius_m)), **extra)
     except StreetViewError:
         return META_ERROR, None, 0

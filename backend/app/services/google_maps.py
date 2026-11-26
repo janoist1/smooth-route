@@ -97,6 +97,7 @@ class GoogleMapsService:
     # geocoding of the free-text endpoints; still one request.
     def _directions(self, origin, destination, alternatives: bool):
         try:
+            assert self.client is not None, "Google Maps API key not configured"  # caught below, as before
             return self.client.directions(origin, destination, mode="driving", language="hu", region="hu",
                                           alternatives=alternatives)
         except Exception as exc:
