@@ -56,12 +56,15 @@ def test_no_boxes_means_no_query():
 
 
 def test_box_query_sends_the_boxes_as_four_parallel_arrays():
+    from app.services.segment_read import MAX_SEGMENT_CANDIDATES
     db = FakeDb([row("1:0", 0, 200), row("1:1", 200, 400)])
     records = fetch_segments_in_boxes(db, [(19.0, 47.0, 19.1, 47.1), (20.0, 46.0, 20.5, 46.5)], CFG)
 
     sql, params = db.calls[0]
     assert params == {"west": [19.0, 20.0], "south": [47.0, 46.0],
-                      "east": [19.1, 20.5], "north": [47.1, 46.5]}
+                      "east": [19.1, 20.5], "north": [47.1, 46.5],
+                      "cap": MAX_SEGMENT_CANDIDATES + 1}
+    assert "LIMIT :cap" in sql
     assert "s.n_images > 0" in sql and "DISTINCT ON (s.id)" in sql      # only segments with data
     assert [r.id for r in records] == ["1:0", "1:1"]
     start, end = records[0].path                                         # (lat, lng) order

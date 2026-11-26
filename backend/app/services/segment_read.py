@@ -141,6 +141,32 @@ def normalize_path(path: Sequence[Sequence[float]]) -> list[LatLon]:
     return out
 
 
+DENSIFY_MAX_STEP_M = 1000.0
+MAX_SEGMENT_CANDIDATES = 20000
+
+
+class TooManySegmentCandidates(ValueError):
+    """The envelope query matched more segments than the candidate cap."""
+
+
+def densify_path(path: Sequence[LatLon], max_step_m: float = DENSIFY_MAX_STEP_M) -> list[LatLon]:
+    """Insert points along each edge so consecutive points are ≤ ``max_step_m``
+    apart. Keeps every original vertex; a long straight edge becomes many
+    short ones, so no single envelope has to cover it."""
+    if not path:
+        return []
+    out: list[LatLon] = [path[0]]
+    for a, b in zip(path, path[1:]):
+        dy = (b[0] - a[0]) * 111_320.0
+        dx = (b[1] - a[1]) * 111_320.0 * math.cos(math.radians((a[0] + b[0]) / 2.0))
+        steps = max(1, math.ceil(math.hypot(dx, dy) / max_step_m))
+        for i in range(1, steps):
+            t = i / steps
+            out.append((a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t))
+        out.append(b)
+    return out
+
+
 def path_envelopes(
     path: Sequence[LatLon],
     max_span_deg: float = _ENVELOPE_MAX_SPAN_DEG,
@@ -148,12 +174,15 @@ def path_envelopes(
 ) -> list[tuple[float, float, float, float]]:
     """Cover a path with padded ``(west, south, east, north)`` boxes.
 
-    Consecutive points share a box until it would grow past ``max_span_deg``;
-    the next box starts at the previous point so no edge falls in a gap.
+    The path is first densified (points ≤ 1 km apart) so a long edge is split
+    over many small boxes instead of one huge one. Consecutive points share a
+    box until it would grow past ``max_span_deg``; the next box starts at the
+    previous point so no edge falls in a gap.
     """
     boxes: list[tuple[float, float, float, float]] = []
     if not path:
         return boxes
+    path = densify_path(path)
 
     def close(s: float, w: float, n: float, e: float) -> None:
         boxes.append((w - pad_deg, s - pad_deg, e + pad_deg, n + pad_deg))
@@ -307,13 +336,20 @@ def fetch_segments_in_boxes(
               ON s.geom && ST_MakeEnvelope(b.west, b.south, b.east, b.north, 4326)
             WHERE s.n_images > 0
             ORDER BY s.id
+            LIMIT :cap
             """
         ),
         {
             "west": [b[0] for b in boxes], "south": [b[1] for b in boxes],
             "east": [b[2] for b in boxes], "north": [b[3] for b in boxes],
+            "cap": MAX_SEGMENT_CANDIDATES + 1,
         },
     ).fetchall()
+    if len(rows) > MAX_SEGMENT_CANDIDATES:
+        raise TooManySegmentCandidates(
+            f"too many road segments near the path (more than {MAX_SEGMENT_CANDIDATES}); "
+            "use a shorter path"
+        )
     return [_record(r, cfg) for r in rows]
 
 

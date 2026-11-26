@@ -122,9 +122,11 @@ def test_path_envelope_padding_exceeds_the_route_buffer():
     assert path_envelopes([]) == []
 
 
-def test_single_long_edge_gets_one_box():
+def test_single_long_edge_is_split_into_many_small_boxes():
+    # T-80: the edge is densified first, so it no longer gets one huge box.
     boxes = path_envelopes([(47.0, 19.0), (47.3, 19.4)])
-    assert len(boxes) == 1
+    assert len(boxes) > 1
+    assert all(e - w < 0.05 and n - s < 0.05 for w, s, e, n in boxes)
 
 
 # ---- route summary --------------------------------------------------------
@@ -458,3 +460,37 @@ def test_bbox_query_sends_raw_geometry_from_zoom_18():
     fetch_segments_in_bbox(db, [19.0, 47.49, 19.01, 47.5], 18)
     assert "ST_AsGeoJSON(s.geom, 6)" in db.sql
     assert "ST_Simplify" not in db.sql
+
+
+def test_long_edge_is_densified_into_small_envelopes():
+    """T-80: a ~590 km single edge must not become one country-sized box."""
+    from app.services import segment_read as sr
+
+    path = [(45.8, 16.2), (48.5, 22.8)]
+    dense = sr.densify_path(path)
+    assert dense[0] == path[0] and dense[-1] == path[-1]
+    assert len(dense) > 500
+    boxes = sr.path_envelopes(path)
+    assert len(boxes) > 10
+    limit = sr._ENVELOPE_MAX_SPAN_DEG + 2 * sr._ENVELOPE_PAD_DEG + 0.02
+    for west, south, east, north in boxes:
+        assert east - west <= limit
+        assert north - south <= limit
+
+
+def test_segment_candidate_cap_raises(monkeypatch):
+    from app.services import segment_read as sr
+
+    class _Res:
+        def fetchall(self):
+            return [object()] * 3
+
+    class _Db:
+        def execute(self, *a, **k):
+            return _Res()
+
+    monkeypatch.setattr(sr, "MAX_SEGMENT_CANDIDATES", 2)
+    import pytest
+
+    with pytest.raises(sr.TooManySegmentCandidates):
+        sr.fetch_segments_in_boxes(_Db(), [(0.0, 0.0, 1.0, 1.0)], cfg=object())
