@@ -79,6 +79,53 @@ type JobSummary {
   completedAt: DateTime
 }
 
+type LabelExample {
+  rqi: Int!
+  id: Int!
+  imageUrl: String!
+}
+
+type LabelQueueItem {
+  id: Int!
+  imageUrl: String!
+  latitude: Float!
+  longitude: Float!
+  heading: Float
+  captureDate: String
+  streetViewUrl: String!
+  reason: String!
+  area: String!
+  uncertainty: Float
+  cellLabels: Int!
+  boundary: String
+  modelScore: Float
+  modelRqi: Int
+  modelPBad: Float
+}
+
+type LabelQueueResult {
+  strategy: LabelQueueStrategy!
+  items: [LabelQueueItem!]!
+  stats: LabelQueueStats!
+}
+
+type LabelQueueStats {
+  totalLabelled: Int!
+  labelledToday: Int!
+  eligible: Int!
+  scored: Int!
+  rechecked: Int!
+  recheckSame: Float
+  recheckWithinOne: Float
+}
+
+enum LabelQueueStrategy {
+  UNCERTAIN
+  DIVERSE
+  MIXED
+  RECHECK
+}
+
 type Mutation {
   updateSetting(input: UpdateSettingInput!): Setting!
   applyPreset(values: JSON!): [Setting!]!
@@ -91,6 +138,8 @@ type Mutation {
   detectObjects(input: DetectInput!): [DetectPrediction!]!
   performReviewAction(input: ReviewActionInput!): ReviewActionResult!
   predictDinoRqi(imageFilename: String!): Int
+  quickLabel(input: QuickLabelInput!): QuickLabelResult!
+  undoQuickLabel(pointId: Int!): Boolean!
 }
 
 type Point {
@@ -144,6 +193,25 @@ type Query {
   job(id: String!): Job
   activeJob: Job
   nextTrainingPoint(currentId: Int!, mode: FilterMode! = ALL, model: String! = "yolo"): Int
+  labelQueue(strategy: LabelQueueStrategy! = MIXED, limit: Int! = 20, excludeIds: [Int!] = null): LabelQueueResult!
+  labelExamples(perClass: Int! = 1): [LabelExample!]!
+}
+
+input QuickLabelInput {
+  pointId: Int!
+  rqi: Int!
+  strategy: String = null
+  reason: String = null
+  revealedModel: Boolean! = false
+  elapsedMs: Int = null
+}
+
+type QuickLabelResult {
+  pointId: Int!
+  imageFilename: String!
+  rqi: Int!
+  totalLabelled: Int!
+  labelledToday: Int!
 }
 
 input ReviewActionInput {
