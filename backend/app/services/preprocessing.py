@@ -8,7 +8,7 @@ automatically by the current YOLO export.
 """
 
 import os
-from typing import Optional
+from typing import Any, Optional
 
 import cv2
 import numpy as np
@@ -27,8 +27,8 @@ class RoadPreprocessor:
 
     def __init__(self, model_name="yolov8n-seg.pt"):
         self.model_name = model_name
-        self.model = None
-        self.fastsam = None
+        self.model: Any = None  # YOLO, loaded lazily
+        self.fastsam: Any = None
         self.fastsam_path = None
 
     def _load_model(self):

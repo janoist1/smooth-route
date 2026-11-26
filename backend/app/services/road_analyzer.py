@@ -3,7 +3,7 @@ YOLO-based road damage analyzer: loads the segmentation model and scores a
 single image (damage detection + ROI masking + damage%→RQI).
 """
 
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 import cv2
 import numpy as np
@@ -30,7 +30,7 @@ class RoadDamageAnalyzer:
 
     def __init__(self, model_loader: YoloModelLoader = yolo_model_loader):
         self._model_loader = model_loader
-        self.model = None
+        self.model: Any = None  # YOLO, loaded lazily
         self.current_model_path = None
 
     def _get_setting(self, key: str, default: float) -> float:

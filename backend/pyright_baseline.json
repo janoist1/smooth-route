@@ -1,6 +1,6 @@
 {
  "pyright": "1.1.389",
- "total": 160,
+ "total": 145,
  "errors": {
   "app/api/routes.py::reportGeneralTypeIssues": 1,
   "app/cli.py::reportArgumentType": 1,
@@ -16,10 +16,6 @@
   "app/graphql/queries.py::reportGeneralTypeIssues": 3,
   "app/graphql/queries.py::reportReturnType": 2,
   "app/main.py::reportArgumentType": 1,
-  "app/services/dino_service.py::reportArgumentType": 1,
-  "app/services/dino_service.py::reportOptionalCall": 5,
-  "app/services/dino_service.py::reportOptionalMemberAccess": 5,
-  "app/services/dino_service.py::reportOptionalSubscript": 1,
   "app/services/frame_store.py::reportAttributeAccessIssue": 1,
   "app/services/frame_store.py::reportReturnType": 1,
   "app/services/google_maps.py::reportOptionalMemberAccess": 1,
@@ -32,8 +28,6 @@
   "app/services/label_queue_store.py::reportCallIssue": 4,
   "app/services/label_queue_store.py::reportGeneralTypeIssues": 3,
   "app/services/network_sampling.py::reportArgumentType": 1,
-  "app/services/preprocessing.py::reportOptionalCall": 2,
-  "app/services/road_analyzer.py::reportOptionalCall": 1,
   "app/services/road_quality.py::reportArgumentType": 1,
   "app/services/road_quality.py::reportAttributeAccessIssue": 6,
   "app/services/road_quality.py::reportGeneralTypeIssues": 2,

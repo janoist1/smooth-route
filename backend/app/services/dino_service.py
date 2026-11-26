@@ -27,7 +27,7 @@ every artifact so far uses). Scores are converted at this boundary only, so a
 scale-direction flip needs neither retraining nor a new gate run.
 """
 import os
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 import torch
@@ -91,10 +91,11 @@ class DinoInferenceService:
 
     def __init__(self):
         self.device = self._get_device()
-        self.backbone = None
-        self.processor = None
-        self.pipeline = None          # sklearn scaler+head
-        self.recipe = None            # feature recipe dict (v2) or None (v1)
+        # Loaded lazily by load_model(); typed Any (third-party objects).
+        self.backbone: Any = None
+        self.processor: Any = None
+        self.pipeline: Any = None     # sklearn scaler+head
+        self.recipe: Any = None       # feature recipe dict (v2) or None (v1)
         self.thresholds = None        # ordinal cut-points (v2) or None
         self.p_bad_calibrator = None
         self.rqi_clip = (1, 4)
