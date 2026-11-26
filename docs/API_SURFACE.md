@@ -1,37 +1,105 @@
 # API surface inventory
 
-*Updated 2026-11-26.* GraphQL is the product API; REST is only the job stream.
+*Updated 2026-11-26.* GraphQL (`/graphql`) is the product API; REST is only
+the job stream. The tables below are checked against the schema objects by
+`backend/scripts/check_api_docs.py` (fields, access, read-only flag, and
+`schema.graphql` freshness) — change a resolver, then update its row.
 
-## Primary product API: GraphQL
+## Two schemas, four access levels
 
-The Vite/React frontend uses `/graphql` for points, route processing,
-settings, training and review actions. Automatic YOLO marking runs through the
-`performReviewAction(action_type: "auto_detect")` mutation; the direct
-`detectObjects` mutation stays for programmatic GraphQL consumers.
+`app/graphql/schema.py` builds two schemas from the same resolvers:
 
-Read-only RQI diagnostics (D3): the `Point` type also exposes the raw DINO
-estimate and the calibrated bad-road probability (`dinoScore`, `dinoPBad`,
-derived from `analysisMetadata`); the `rqiModelInfo` query returns the live
-artifact's model card (version, recipe, training size, CV metrics) for the
-settings UI.
+- **Full schema** — local dev / the always-on backend: every row below.
+- **Read-only schema** — the public deploy (`PUBLIC_READ_ONLY=1`): the
+  "RO" = yes rows only. No mutations, no label-queue / pairwise / model-panel
+  fields. Introspection off, unexpected errors masked, POST only.
 
-Image age: `Point.captureDate` (`String`, `"YYYY-MM"`, `null` = unknown) is the
-Street View panorama's **capture month** from the Metadata API `date` field —
-the RQI describes the road as of that month, not as of `createdAt` (our
-download time). Readable anonymously and on the read-only deploy (`point`,
-`points`, `trainingPoints`). Stored as `street_view_images.capture_date`
-(`DATE`, 1st of the month; Alembic `0004`). New points get it from collection
-(`route_collector`) and download (`image_downloader`); existing ones from
-`backend/scripts/backfill_capture_date.py` (rate-limited, re-runnable, only
-looks at `NULL`s). For a point without `pano_id` it only writes a date when the
-panorama live today predates our download month — otherwise Google has
-replaced the imagery since, and the date is not our image's. `publish.py`
-carries the field to Neon. The frontend warns for images older than 4 years
-and can optionally dim those points on the map.
+Access (`app/graphql/permissions.py`):
 
+| Access | Meaning |
+|---|---|
+| `anonymous` | no permission class |
+| `signed-in` | `IsAuthenticated` — any identity |
+| `signed-in*` | `IsAuthenticatedUnlessPublicRead` — signed in on the full backend, anonymous on the read-only deploy |
+| `admin` | `IsAdmin`. Admin rows with RO = yes are on the read-only schema but still answer `FORBIDDEN` without an admin identity |
+
+Request limits (`app/graphql/limits.py`, both schemas): depth ≤ 8, aliases
+≤ 10, ≤ 2000 tokens; per operation at most 1 paid route field (`getRoute` or
+`routeAlternatives`), 1 `routeQuality`, 2 each of `points`, `roadQualityGrid`,
+`roadSegments`, `segmentFrames`; `Point.segmentId` only under `point`. Route
+endpoints given as coordinates must lie in the service area (Hungary + margin).
+Violations are `BAD_USER_INPUT` errors raised before any resolver runs.
+
+## Queries
+
+| Field | Access | RO | Purpose |
+|---|---|---|---|
+| `me` | anonymous | yes | caller identity (`clerkId`, `email`, `role`); `null` when not signed in |
+| `point` | anonymous | yes | one frame by id |
+| `points` | anonymous | yes | frames for the map; `bbox` + `limit` ≤ 20 000, without `bbox` ≤ 1 000 |
+| `roadQualityGrid` | anonymous | yes | zoomed-out overview: average RQI per grid cell, JSON `{cell, cells: [[swLat, swLng, avgRqi]]}` |
+| `roadSegments` | anonymous | yes | road segments with quality in a viewport ([segment layer](#road-segment-layer)) |
+| `routeQuality` | anonymous | yes | quality summary of a path from the stored segments |
+| `segmentFrames` | anonymous | yes | the frames a segment was aggregated from |
+| `getRoute` | signed-in* | yes | one driving route (one paid Google Directions call); kept for API consumers |
+| `routeAlternatives` | signed-in* | yes | up to 3 routes with quality, fastest / smoothest ([routes](#routes)) |
+| `job` | anonymous | yes | job status by id |
+| `activeJob` | anonymous | yes | the running job, if any |
+| `config` | admin | no | server-side Google Maps key; on the read-only schema the guard rejects it for everyone |
+| `settings` | admin | yes | all settings rows |
+| `availableModels` | admin | yes | YOLO weight files in `data/models` |
+| `rqiModelInfo` | admin | yes | model card of the live RQI artifact ([model](#rqi-model-admin)) |
+| `adminStats` | admin | yes | usage / coverage / job stats for the admin page |
+| `trainingPoints` | admin | yes | paged frames for the review screen, by `FilterMode` |
+| `trainingStats` | admin | yes | label counts for the review screen |
+| `nextTrainingPoint` | admin | yes | id of the next frame in review order |
+| `labelQueue` | admin | no | next frames to label, by strategy ([labelling](#labelling-admin)) |
+| `labelExamples` | admin | no | rubric thumbnails per scale level |
+| `pairQueue` | admin | no | frame pairs for pairwise judgment |
+| `modelAdmin` | admin | no | unseen labels, sprint progress, latest retrain report |
+
+## Mutations (full schema only)
+
+| Field | Access | RO | Purpose |
+|---|---|---|---|
+| `processRoute` | signed-in | no | start a route collection + analysis job |
+| `stopJob` | signed-in | no | cancel a job |
+| `updateSetting` | admin | no | change one setting |
+| `applyPreset` | admin | no | change several settings at once |
+| `runAnalysis` | admin | no | start an analysis job over stored frames |
+| `startModelTraining` | admin | no | start a YOLO training job (not the RQI model) |
+| `saveTrainingData` | admin | no | save a review-screen label (RQI, tags, polygons, comment) |
+| `deleteTrainingData` | admin | no | delete a frame's label |
+| `performReviewAction` | admin | no | review-screen actions, incl. automatic YOLO marking (`action_type: "auto_detect"`) |
+| `detectObjects` | admin | no | raw YOLO detection on one image, for API consumers |
+| `predictDinoRqi` | admin | no | RQI class of one image from the live model |
+| `quickLabel` | admin | no | save a quick-rate label |
+| `undoQuickLabel` | admin | no | revert a quick-rate label |
+| `submitPairJudgment` | admin | no | store one pairwise judgment |
+| `undoPairJudgment` | admin | no | delete a pairwise judgment by `clientId` |
+| `startRetrain` | admin | no | start `ml/retrain.py` as a job |
+| `promoteCandidate` | admin | no | make the retrained candidate the live model |
+| `startRescoreAndRebuild` | admin | no | re-score stored frames, then rebuild the segments |
+
+## `Point`
+
+`rqiScore` is the product RQI and `rqiSource` says where it came from;
+`dinoScore` / `dinoPBad` are the raw model estimate and the calibrated
+bad-road probability (from `analysisMetadata`). The labeller fields
+(`manualRqi`, `manualTags`, `manualAnnotations`, `manualComment`) are plain
+fields, readable wherever `point` / `points` are.
+
+`captureDate` (`"YYYY-MM"`, `null` = unknown) is the Street View panorama's
+**capture month** — the RQI describes the road as of that month, not as of
+`createdAt` (our download time). Stored as `street_view_images.capture_date`
+(`DATE`, 1st of the month; Alembic `0004`); filled at collection and download,
+and for older rows by `backend/scripts/backfill_capture_date.py`
+(rate-limited, re-runnable, only `NULL`s; without a `pano_id` it writes a date
+only when the panorama live today predates our download month). `publish.py`
+carries it to Neon. The frontend warns for images older than 4 years.
+
+<a id="road-segment-layer"></a>
 ## Road-segment layer (`roadSegments`, `routeQuality`, `segmentFrames`)
-
-*Added 2026-11-26.*
 
 Quality aggregated on real road geometry: OpenStreetMap ways, stitched into
 roads and cut into pieces of about 200 m, each piece summarising the Street
@@ -62,6 +130,7 @@ type RouteQuality {
   coveredLengthM: Float!    # = sum(lengthByRqi)
   lengthByRqi: [Float!]!    # metres per class, BEST FIRST: Kiváló, Jó, Közepes, Rossz
   meanScore: Float          # length-weighted, on the score scale; null if nothing covered
+  impactScore: Float        # speed-weighted impact, lower is better (see Routes)
   worstSegments: [RoadSegment!]!
 }
 # Query
@@ -90,8 +159,7 @@ are in practice never null; the types stay nullable as the contract says.
   no API call. (It is a viewpoint link: Google picks the nearest panorama.)
 
 **`routeQuality`** — `path` = `[[lat, lng], ...]` (at most 20 000 points and
-2 000 km: the cost grows with the length, sampled every 10 m). The
-path is sampled every 10 m; a sample belongs to the nearest segment within
+800 km, `limits.py`). The path is sampled every 10 m; a sample belongs to the nearest segment within
 **15 m** whose direction is within **45°** of the route's (modulo 180°, so
 both travel directions count). Samples more than 5 m past a segment's end do
 not count, so a data gap is not credited to its neighbours.
@@ -208,78 +276,18 @@ ODbL. Any map that draws `RoadSegment.path` must show
 "© OpenStreetMap contributors" (link: `https://www.openstreetmap.org/copyright`),
 whichever base map is selected.
 
-## Label queue / quick-rate screen (admin-only, 2026-11-26)
-
-Labelling at scale: `labelQueue` picks the unlabelled frames (image on disk,
-no `manual_rqi`) whose label helps the model most, and `/training/quick`
-("Gyors címkézés") rates them one tap at a time. Own resolver module
-(`app/graphql/label_queue.py`), merged into the full schema in `schema.py`; it
-is **not** on the public read schema.
-
-| Operation | Purpose |
-|---|---|
-| `labelQueue(strategy: MIXED\|UNCERTAIN\|DIVERSE, limit, excludeIds)` | next frames + why (`reason`, `area`, `boundary`, `uncertainty`, `cellLabels`) + the model guess (`modelScore/modelRqi/modelPBad`, hidden in the UI until rated) + `stats` |
-| `labelQueue(strategy: RECHECK, …)` | re-check: already-labelled frames, never re-checked, served blind (the old label is not sent): first `data/vlm/label_audit.csv` (human disagrees with model OOF and VLM, by priority), then a random sample stratified by the old level. `stats.rechecked/recheckSame/recheckWithinOne` = owner's self-consistency on that random sample only |
-| `labelExamples(perClass)` | rubric thumbnails for every scale level: integer-labelled frames whose out-of-fold prediction agrees best with the label (`ml/cache/oof_table.csv`); levels without OOF rows (Nagyon rossz) fall back to the live model score |
-| `quickLabel(input: {pointId, rqi, strategy, reason, revealedModel, elapsedMs})` — `rqi` is any level of `shared/rqi_scale.json` (5 = Kiváló … 1 = Nagyon rossz) | upserts `training_data.manual_rqi` (same row shape as `saveTrainingData`; annotations/tags/comment kept); context in `meta_data.quick_label` |
-| (re-check save) | overwriting an existing `manual_rqi` appends `{timestamp, old, new, strategy, reason, direction}` to `meta_data.relabel_history` (`direction` = the scale direction the values were written in, so a flip cannot misread them); `manual_rqi` becomes the new value |
-| `undoQuickLabel(pointId)` | reverts a quick label: deletes a row it created (if nobody annotated it), else restores the previous `manual_rqi`; never touches review-page labels |
-
-Selection (pure logic, `app/services/label_queue.py`, tested in
-`tests/test_label_queue.py`): frames < 50 m from a labelled frame and repeat
-panoramas are excluded; no two served frames are < 50 m apart (incl. the
-`excludeIds` the client holds). **uncertain** = model score closest to an
-ordinal cut-point, round-robin over the Kiváló|Jó, Jó|Közepes, Közepes|Rossz boundaries, near-ties
-Budapest first. **diverse** = ≥ 150 m thinning, one frame per 1 km cell per
-round (the spatial-CV grid of `ml/spatial_cv.py`), emptiest cell first,
-Budapest first, then areas with the fewest labels. **mixed** (default)
-interleaves the two. Model outputs (`modelScore`, `modelRqi`, `boundary`) are
-converted from the model's severity orientation to the canonical scale direction
-(`app.core.rqi_scale`); the model only predicts the scale's `model_levels` (Kiváló … Rossz),
-which is why the queue is also how Nagyon rossz labels get collected. Scores: `analysis_metadata.dino_score` when present,
-else `data/cache/frame_scores.csv` (`backend/scripts/score_frames.py`, same
-v2 artifact, DB untouched).
-
-## REST endpoints (local API only)
-
-Not on the public read-only deploy. One endpoint is left:
-
-| Endpoint | Status |
-|---|---|
-| `GET /api/v1/job/{id}/stream` | **used** — SSE job progress for the React frontend (EventSource cannot do GraphQL) |
-
-Removed 2026-11-26 (T-65), no caller in the frontend, scripts, Makefile,
-tests or deploy config: `GET /api/v1/points`, `GET /api/v1/points/{id}`
-(GraphQL `points` / `point`), `POST /api/v1/process-route` (`processRoute`),
-`GET /api/v1/job/{id}`, `POST /api/v1/job/{id}/stop`, `GET /api/v1/jobs/active`
-(`job`, `stopJob`, `activeJob`). `tests/test_api_surface.py` pins the router to
-the stream alone.
-
-`/images`, `/previews` and `/api/v1/exports` serve files, not business data.
-
-## Route alternatives (`routeAlternatives`, 2026-11-26)
+<a id="routes"></a>
+## Routes (`getRoute`, `routeAlternatives`)
 
 `routeAlternatives(origin, destination)`: up to 3 driving routes from ONE
 Google Directions request (`alternatives=true`, billed like `getRoute`), each
 with `distanceM`, `durationS`, `summary`, `points`, its `quality`
-(RouteQuality from the stored segments, no extra Google call) and `coverage`.
-`fastestIndex`; `smoothestIndex` = lowest speed-weighted impact (below) among routes at
+(`RouteQuality` from the stored segments, no extra Google call) and `coverage`.
+`fastestIndex`; `smoothestIndex` = lowest speed-weighted impact among routes at
 most `ROUTE_SMOOTH_MAX_EXTRA_DURATION` (0.2 = +20 %) slower than the fastest
-AND with at least `ROUTE_SMOOTH_MIN_COVERAGE` (0.5) measured; null when none
+AND with at least `ROUTE_SMOOTH_MIN_COVERAGE` (0.5) measured; `null` when none
 qualifies. Quality is compared through `app.core.rqi_scale` (direction-free).
-Same permission as `getRoute`; on the public schema at most 1 per request.
-The planner uses it instead of `getRoute` (which stays for API consumers).
-
-## Removed
-
-`POST /api/v1/inference/detect` is gone: it had no caller, and the GraphQL
-`detectObjects` and the product's `performReviewAction` already cover it. There
-is no separate REST annotation endpoint.
-
-`GET /api/v1/config` is gone (2026-11-26) and the GraphQL `config` field is
-admin-only: both handed the server-side Google Maps key to anonymous callers
-(also on the public read-only deploy), and their only consumer, the static
-`map.html`, no longer exists.
+The planner uses it instead of `getRoute`.
 
 **Speed-weighted impact (T-47).** `RouteQuality.impactScore` (also inside each
 route alternative): the average number of levels below Kiváló per measured
@@ -290,42 +298,97 @@ better. Speed = OSM `maxspeed` (stored as `road_segments.maxspeed_kmh`, Alembic
 `backend/config/route_scoring.json` (editable without a rebuild). Labels stay
 surface-only; speed only enters route comparison. `meanScore` is unchanged.
 
-## Labelling sprint + pairwise mode (T-63, 2026-11-26)
+<a id="labelling-admin"></a>
+## Labelling (admin, full schema only)
 
-- `labelQueue(strategy: SPRINT)`: the learning-curve sprint (~1000 labels on
-  new streets): emptiest 1 km cells first, Budapest first, at most one frame
-  per 75 m, and every 4th frame from the ones the model rates best (so
-  Kiváló gets covered). `stats.sprintLabelled / sprintTarget` drive the
-  progress bar; the page suggests `make retrain` after every 200 (never
-  promotes anything by itself).
-- `pairQueue(limit, excludeIds)` → pairs of frames the model scores within
-  0.25 levels, ≥ 500 m apart, never judged before (model guess hidden).
-  `submitPairJudgment(input: {clientId, frameAId, frameBId, result: A|B|EQUAL,
-  elapsedMs})` stores one row in `pair_judgments` (Alembic 0009; retry-safe by
-  `clientId`); `undoPairJudgment(clientId)`. All admin-only, not public.
-- `ml/pairwise_scores.py`: Bradley–Terry MAP fit (labels as prior, model
-  score as weak prior) → `ml/cache/pairwise_scores.csv` for experiments.
-- Fix: since the 0006 flip `analysis_metadata.dino_score` is canonical; the
-  label queue now converts it to the model's severity orientation once
-  (`_severity_row`) instead of mixing the two.
+Resolvers in `app/graphql/label_queue.py`, selection logic in
+`app/services/label_queue.py` (`tests/test_label_queue.py`). The quick-rate
+screen is `/training/quick`; the model guess is hidden until a frame is rated.
 
-## Admin model panel (T-68, 2026-11-26)
+| `labelQueue` strategy | Serves |
+|---|---|
+| `MIXED` (default) | `UNCERTAIN` and `DIVERSE` interleaved |
+| `UNCERTAIN` | model score closest to a class cut-point, round-robin over the three boundaries, Budapest first on near-ties |
+| `DIVERSE` | ≥ 150 m thinning, one frame per 1 km cell per round (grid of `ml/spatial_cv.py`), emptiest cell first |
+| `SPRINT` | learning-curve sprint on new streets: emptiest 1 km cells, Budapest first, ≤ 1 frame per 75 m, every 4th from the frames the model rates best |
+| `RECHECK` | already-labelled frames served blind: first `data/vlm/label_audit.csv` (human vs model OOF and VLM disagreement), then a random sample stratified by the old level |
 
-Admin page → "Modell" panel; admin-only GraphQL (`app/graphql/model_admin.py`,
-not on the public schema, logic in `app/services/model_ops.py`):
+Each item carries why it was picked (`reason`, `area`, `boundary`,
+`uncertainty`, `cellLabels`) and the model guess (`modelScore`, `modelRqi`,
+`modelPBad`). `stats` adds `sprintLabelled / sprintTarget` (progress bar; the
+page suggests `make retrain` after every 200) and
+`rechecked / recheckSame / recheckWithinOne` (the owner's self-consistency on
+the random re-check sample).
 
-- `modelAdmin`: labels the champion has not seen (not in
+- Unlabelled strategies serve frames with an image on disk and no
+  `manual_rqi`; frames < 50 m from a labelled frame and repeat panoramas are
+  excluded, and no two served frames are < 50 m apart (incl. `excludeIds`).
+- Model outputs are converted from the model's severity orientation to the
+  canonical scale (`app.core.rqi_scale`). The model only predicts the scale's
+  `model_levels` (Kiváló … Rossz), so the queue is also how Nagyon rossz labels
+  get collected. Scores: `analysis_metadata.dino_score`, else
+  `data/cache/frame_scores.csv` (`backend/scripts/score_frames.py`).
+- `labelExamples(perClass)`: integer-labelled frames whose out-of-fold
+  prediction agrees best with the label (`ml/cache/oof_table.csv`); levels
+  without OOF rows fall back to the live model score.
+- `quickLabel(input: {pointId, rqi, strategy, reason, revealedModel,
+  elapsedMs})` — `rqi` is any level of `shared/rqi_scale.json`. Upserts
+  `training_data.manual_rqi` (same row as `saveTrainingData`; annotations, tags
+  and comment kept), context in `meta_data.quick_label`. Overwriting an existing
+  label appends `{timestamp, old, new, strategy, reason, direction}` to
+  `meta_data.relabel_history`.
+- `undoQuickLabel(pointId)`: deletes a row it created (if nobody annotated
+  it), else restores the previous `manual_rqi`; never touches review-page labels.
+- **Pairwise:** `pairQueue(limit, excludeIds)` → pairs the model scores within
+  0.25 levels, ≥ 500 m apart, never judged before. `submitPairJudgment(input:
+  {clientId, frameAId, frameBId, result: A|B|EQUAL, elapsedMs})` stores one row
+  in `pair_judgments` (Alembic `0009`; retry-safe by `clientId`).
+  `ml/pairwise_scores.py` fits Bradley–Terry scores from them
+  (`ml/cache/pairwise_scores.csv`, experiments only).
+
+<a id="rqi-model-admin"></a>
+## RQI model (admin)
+
+- `rqiModelInfo` — model card of the live artifact: `version`, `backbone`,
+  `recipe`, `head`, `nTrain`, CV metrics (`qwk`, `mae`, `exactAcc`,
+  `badRoadAcc`, `badRoadAuc`), where they come from (`metricsSource`,
+  `metricsProtocol`, `metricsMeasuredOn`), segment-level and new-area numbers
+  (`segmentQwk`, `segmentLengthM`, `newAreaQwk`), `scaleMeaning`;
+  `available = false` when no artifact is loaded.
+- `modelAdmin` (`app/graphql/model_admin.py`, logic in
+  `app/services/model_ops.py`) — labels the champion has not seen (not in
   `ml/cache/dataset_v2.csv`) by area and level, sprint progress, the
-  learning-curve hint, and the latest retrain report in plain Hungarian
-  (from `ml/cache/retrain/<run>/summary.json`: verdict, spatial gate
-  PASS/FAIL, paired ΔQWK with 95% CI, Budapest / leave-Budapest-out).
-- `startRetrain` → job id: runs `ml/retrain.py` (= `make retrain`) in the
-  background; progress over the existing SSE job stream. Never promotes.
-- `promoteCandidate(confirm: "ÉLESÍTÉS")`: only with the exact phrase, an
-  existing candidate and a PASS gate; keeps `ml/cache/rqi_model.<UTC>.bak.joblib`,
-  swaps atomically, reloads the live model, refreshes `ml/model_card.json`
-  as a job.
-- `startRescoreAndRebuild` → job id: `rescore_dino.py` then
+  learning-curve hint, and the latest retrain report in plain Hungarian (from
+  `ml/cache/retrain/<run>/summary.json`).
+- `startRetrain` → job id; runs `ml/retrain.py` (= `make retrain`), progress
+  over the SSE job stream. Never promotes.
+- `promoteCandidate(confirm: "ÉLESÍTÉS")` — only with the exact phrase, an
+  existing candidate and a PASS gate; keeps
+  `ml/cache/rqi_model.<UTC>.bak.joblib`, swaps atomically, reloads the live
+  model, refreshes `ml/model_card.json` as a job.
+- `startRescoreAndRebuild` → job id; `rescore_dino.py`, then
   `build_segments.py --offline` (offered after a promotion).
+
 One model job at a time.
 
+## REST (full backend only)
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/v1/job/{id}/stream` | SSE job progress for the frontend (EventSource cannot do GraphQL) |
+
+`tests/test_api_surface.py` pins the router to this one route. `/images`,
+`/previews` and `/api/v1/exports` serve files, not business data. The
+read-only deploy serves `/graphql` alone.
+
+## Removed
+
+- REST `GET /api/v1/points`, `GET /api/v1/points/{id}`,
+  `POST /api/v1/process-route`, `GET /api/v1/job/{id}`,
+  `POST /api/v1/job/{id}/stop`, `GET /api/v1/jobs/active` (2026-11-26, T-65) —
+  no caller; the GraphQL fields of the same names cover them.
+- REST `POST /api/v1/inference/detect` — covered by `detectObjects` /
+  `performReviewAction`.
+- REST `GET /api/v1/config` (2026-11-26) — handed the server-side Google Maps
+  key to anonymous callers; the GraphQL `config` field became admin-only for
+  the same reason.
