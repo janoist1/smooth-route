@@ -15,7 +15,7 @@ the dashboards (owner checklist below). Nothing here knows who is calling.
 | `POST /graphql` (read schema) | yes | full schema (reads + mutations) |
 | `GET /graphql` (queries via GET, GraphiQL) | no | yes |
 | `/health`, `/` | yes | yes |
-| REST `/api/v1/*`, `/images/*`, `/api/v1/exports/*`, `/previews` | **not mounted** | yes |
+| REST job stream `/api/v1/job/{id}/stream` (the only REST route left, T-65), `/images/*`, `/api/v1/exports/*`, `/previews` | **not mounted** | yes |
 | `/docs`, `/redoc`, `/openapi.json` | no | yes |
 | Introspection (`__schema`, `__type`; `__typename` is fine) | no | yes (codegen) |
 | Unexpected exception text in errors | masked (`Unexpected error.`, logged server-side) | shown |

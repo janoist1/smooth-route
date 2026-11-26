@@ -3,27 +3,16 @@
 from app.api.routes import router
 
 
-def test_duplicate_rest_inference_endpoint_is_removed():
+def test_only_the_job_progress_stream_remains():
+    # The frontend follows jobs over SSE; everything else is GraphQL. The old
+    # REST routes had no caller (T-65) and must not come back unnoticed.
     paths = {route.path for route in router.routes}
+    assert paths == {"/api/v1/job/{job_id}/stream"}
 
-    assert "/api/v1/inference/detect" not in paths
 
-
-def test_config_endpoint_leaking_maps_key_is_removed():
-    # It served the server-side Google Maps key anonymously (also on the public
-    # read-only deploy); its only consumer, the static map.html, is gone.
+def test_removed_routes_stay_removed():
     paths = {route.path for route in router.routes}
-
-    assert "/api/v1/config" not in paths
-
-
-def test_rest_endpoints_needed_by_static_ui_and_sse_remain():
-    paths = {route.path for route in router.routes}
-
-    assert {
-        "/api/v1/points",
-        "/api/v1/points/{point_id}",
-        "/api/v1/process-route",
-        "/api/v1/job/{job_id}",
-        "/api/v1/job/{job_id}/stream",
-    } <= paths
+    for gone in ("/api/v1/inference/detect", "/api/v1/config", "/api/v1/points",
+                 "/api/v1/points/{point_id}", "/api/v1/process-route", "/api/v1/job/{job_id}",
+                 "/api/v1/job/{job_id}/stop", "/api/v1/jobs/active"):
+        assert gone not in paths

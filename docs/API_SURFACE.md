@@ -1,6 +1,6 @@
 # API surface inventory
 
-*Updated 2026-11-26.* GraphQL is the product API; REST is down to the job stream.
+*Updated 2026-11-26.* GraphQL is the product API; REST is only the job stream.
 
 ## Primary product API: GraphQL
 
@@ -242,17 +242,18 @@ v2 artifact, DB untouched).
 
 ## REST endpoints (local API only)
 
-None of these is on the public read-only deploy. The frontend uses only the job
-stream; the rest have **no caller** in the repo (GraphQL covers them: `points`,
-`processRoute`, `job`, `stopJob`) and are kept only for ad-hoc scripting —
-candidates for removal.
+Not on the public read-only deploy. One endpoint is left:
 
 | Endpoint | Status |
 |---|---|
 | `GET /api/v1/job/{id}/stream` | **used** — SSE job progress for the React frontend (EventSource cannot do GraphQL) |
-| `GET /api/v1/points`, `GET /api/v1/points/{id}` | unused (GraphQL `points` / `point`) |
-| `POST /api/v1/process-route` | unused (GraphQL `processRoute`) |
-| `GET /api/v1/job/{id}`, `POST /api/v1/job/{id}/stop`, `GET /api/v1/jobs/active` | unused (GraphQL `job`, `stopJob`) |
+
+Removed 2026-11-26 (T-65), no caller in the frontend, scripts, Makefile,
+tests or deploy config: `GET /api/v1/points`, `GET /api/v1/points/{id}`
+(GraphQL `points` / `point`), `POST /api/v1/process-route` (`processRoute`),
+`GET /api/v1/job/{id}`, `POST /api/v1/job/{id}/stop`, `GET /api/v1/jobs/active`
+(`job`, `stopJob`, `activeJob`). `tests/test_api_surface.py` pins the router to
+the stream alone.
 
 `/images`, `/previews` and `/api/v1/exports` serve files, not business data.
 
