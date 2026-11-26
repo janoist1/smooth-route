@@ -4,7 +4,16 @@ import { expectSession, hasClerkSessionCookie, setAuthSettled } from './tokenBri
 
 // Clerk (~90 kB) is not in the first download: the island loads in its own
 // chunk right after the app starts, beside the app rather than around it.
-const ClerkIsland = lazy(() => import('./ClerkIsland'))
+// A failed chunk fetch (offline, blocker, stale deploy) must not blank the app:
+// fall back to an empty island and settle as anonymous.
+const ClerkIsland = lazy(() =>
+  import('./ClerkIsland').catch(() => {
+    expectSession(false)
+    setAuthSettled(true)
+    const Empty: React.FC = () => null
+    return { default: Empty }
+  }),
+)
 
 if (authEnabled && typeof document !== 'undefined') {
   // Until the island knows the sign-in state, the viewer is "loading"; a
