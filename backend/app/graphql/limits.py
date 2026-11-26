@@ -90,6 +90,7 @@ MAX_ENCODED_POLYLINE_CHARS = 50_000
 # --- How often a root field may appear in one operation (distinct aliases) ----
 MAX_ROOT_FIELD_COUNT = {
     "getRoute": 1,  # paid Google call
+    "routeAlternatives": 1,  # the same paid call (alternatives=true)
     "routeQuality": 1,  # heaviest PostGIS query
     "roadSegments": 2,
     "points": 2,
@@ -393,6 +394,7 @@ ROOT_FIELD_CHECKS: dict[str, Callable[[dict], None]] = {
     "points": _check_points,
     "roadQualityGrid": _check_grid,
     "getRoute": _check_route,
+    "routeAlternatives": _check_route,
     "roadSegments": _check_segments,
     "routeQuality": _check_route_quality,
 }

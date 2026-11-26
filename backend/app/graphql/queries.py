@@ -84,6 +84,25 @@ class AdminStats:
 STREET_VIEW_FREE_TIER = 10000
 
 
+def route_quality_type(result) -> RouteQuality:
+    """segment_read.RouteQualityResult -> GraphQL RouteQuality (also used by
+    routeAlternatives)."""
+    # coveredLengthM is DEFINED as the sum of the per-class lengths, so the
+    # two can never disagree (not even by rounding).
+    length_by_rqi = [round(v, 1) for v in result.length_by_rqi]
+    covered = round(sum(length_by_rqi), 1)
+    return RouteQuality(
+        total_length_m=max(round(result.total_length_m, 1), covered),
+        covered_length_m=covered,
+        length_by_rqi=length_by_rqi,
+        mean_score=(
+            None if result.mean_score is None or covered <= 0
+            else round(result.mean_score, 3)
+        ),
+        worst_segments=[_road_segment(r) for r in result.worst_segments],
+    )
+
+
 def _road_segment(record) -> RoadSegment:
     """services.segment_read.SegmentRecord → GraphQL RoadSegment."""
     from app.services.capture_date import format_capture_date
@@ -417,20 +436,7 @@ class Query:
             result = compute(db, path)
         finally:
             db.close()
-        # coveredLengthM is DEFINED as the sum of the per-class lengths, so the
-        # two can never disagree (not even by rounding).
-        length_by_rqi = [round(v, 1) for v in result.length_by_rqi]
-        covered = round(sum(length_by_rqi), 1)
-        return RouteQuality(
-            total_length_m=max(round(result.total_length_m, 1), covered),
-            covered_length_m=covered,
-            length_by_rqi=length_by_rqi,
-            mean_score=(
-                None if result.mean_score is None or covered <= 0
-                else round(result.mean_score, 3)
-            ),
-            worst_segments=[_road_segment(r) for r in result.worst_segments],
-        )
+        return route_quality_type(result)
 
     @strawberry.field
     def segment_frames(self, segment_id: strawberry.ID) -> List[Point]:

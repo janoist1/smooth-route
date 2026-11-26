@@ -4,6 +4,7 @@ import { bindActionCreators } from '@reduxjs/toolkit'
 import { actions } from './slice'
 import * as selectors from './selectors'
 import type { RoadPoint, RoadPointDetail } from './types'
+import type { RouteAlternative } from './alternatives'
 import type { QualityGrid } from './aggregation'
 import type { RootState } from '../../store'
 import { selectJob } from '../api'
@@ -26,6 +27,8 @@ export interface UseMap {
   destination: string
   pickingLocationFor: 'origin' | 'destination' | null
   routePoints: [number, number][] | null
+  routeAlternatives: RouteAlternative[] | null
+  selectedRouteIndex: number | null
   
   // Job State
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -42,6 +45,7 @@ export interface UseMap {
   planRoute: (args: { origin: string; destination: string }) => void
   analyzeRoute: (args: { origin: string; destination: string }) => void
   clearRoute: () => void
+  selectRouteAlternative: (index: number) => void
   setRouteForm: (payload: { field: 'origin' | 'destination'; value: string }) => void
   startPickingLocation: (field: 'origin' | 'destination') => void
   cancelPickingLocation: () => void
@@ -60,6 +64,8 @@ export const useMap = (): UseMap => {
 
   // Route Planner State
   const routePoints = useSelector(selectors.selectRoutePoints)
+  const routeAlternatives = useSelector(selectors.selectRouteAlternatives)
+  const selectedRouteIndex = useSelector(selectors.selectSelectedRouteIndex)
   const isPlanningRoute = useSelector(selectors.selectIsPlanningRoute)
   const isAnalyzingRoute = useSelector(selectors.selectIsAnalyzingRoute)
   const routeAnalysisJobId = useSelector(selectors.selectRouteAnalysisJobId)
@@ -84,6 +90,8 @@ export const useMap = (): UseMap => {
     
     // Route Planner
     routePoints,
+    routeAlternatives,
+    selectedRouteIndex,
     isPlanningRoute,
     isAnalyzingRoute,
     routeAnalysisJobId,

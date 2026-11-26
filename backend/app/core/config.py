@@ -17,6 +17,12 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5433/smooth_route"
     GOOGLE_MAPS_API_KEY: Optional[str] = None
 
+    # Route alternatives: "Legsimább" = best length-weighted quality among the
+    # routes at most this much slower than the fastest (0.2 = +20 %), and only
+    # if at least this share of the route has quality data.
+    ROUTE_SMOOTH_MAX_EXTRA_DURATION: float = 0.2
+    ROUTE_SMOOTH_MIN_COVERAGE: float = 0.5
+
     # Auth (Clerk). AUTH_MODE:
     #   "clerk"    — verify Bearer JWTs against the Clerk JWKS (default, prod-safe)
     #   "disabled" — single-user local mode: every request acts as admin.

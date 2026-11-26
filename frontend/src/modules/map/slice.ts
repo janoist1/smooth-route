@@ -1,4 +1,5 @@
 import { createSlice, createAction } from '@reduxjs/toolkit'
+import type { RouteAlternative } from './alternatives'
 import type { PayloadAction } from '@reduxjs/toolkit'
 import { createSagaAction } from 'saga-toolkit'
 import type { MapState, RoadPoint, RoadPointDetail } from './types'
@@ -20,6 +21,8 @@ export const initialState: MapState = {
     zoom: 13,
   },
   routePoints: null,
+  routeAlternatives: null,
+  selectedRouteIndex: null,
   isPlanningRoute: false,
   isAnalyzingRoute: false,
   routeAnalysisJobId: null,
@@ -90,7 +93,20 @@ const mapSlice = createSlice({
       state.isAnalyzingRoute = true
     },
                    
+    setRouteAlternatives(state, action: PayloadAction<{ routes: RouteAlternative[]; selected: number | null }>) {
+      state.routeAlternatives = action.payload.routes
+      state.selectedRouteIndex = action.payload.selected
+    },
+    /** Show another of the planned alternatives (its quality is re-fetched). */
+    selectRouteAlternative(state, action: PayloadAction<number>) {
+      const route = state.routeAlternatives?.find(r => r.index === action.payload)
+      if (!route) return
+      state.selectedRouteIndex = route.index
+      state.routePoints = route.points
+    },
     clearRoute(state) {
+      state.routeAlternatives = null
+      state.selectedRouteIndex = null
       state.routePoints = null
       state.routeAnalysisJobId = null
       state.isAnalyzingRoute = false
@@ -151,6 +167,8 @@ const mapSlice = createSlice({
         state.isPlanningRoute = true
         state.error = null
         state.routePoints = null
+        state.routeAlternatives = null
+        state.selectedRouteIndex = null
       })
       .addCase(planRoute.fulfilled, (state, action: PayloadAction<[number, number][]>) => {
         state.isPlanningRoute = false

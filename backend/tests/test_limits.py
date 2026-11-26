@@ -273,7 +273,7 @@ class TestFrontendDocumentsPass:
         "GetRoadSegments": {"zoom": 15, "bbox": [19.0, 47.45, 19.1, 47.52]},
         "GetRouteQuality": {"path": [[47.4979, 19.0402], [47.53, 21.63]]},
         "GetRoadQualityGrid": {"zoom": 8, "bbox": [14.0, 45.0, 24.0, 50.0]},
-        "GetRoute": {"origin": "47.4979,19.0402", "destination": "Debrecen"},
+        "RouteAlternatives": {"origin": "47.4979,19.0402", "destination": "Debrecen"},
         "GetPointDetail": {"id": 1},
     }
 
@@ -294,7 +294,8 @@ class TestFrontendDocumentsPass:
     def test_all_queries_pass(self, read_schema):
         docs = self.documents()
         names = {parse(d).definitions[0].name.value for d in docs}
-        assert {"GetPoints", "GetRoadQualityGrid", "GetRoute"} <= names
+        # The planner asks routeAlternatives (one Directions call) instead of getRoute.
+        assert {"GetPoints", "GetRoadQualityGrid", "RouteAlternatives"} <= names
         for source in docs:
             document = parse(source)
             name = document.definitions[0].name.value
