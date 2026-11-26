@@ -149,6 +149,49 @@ bash ml/export_labels.sh                       # -> ml/labels.csv (Docker kell)
 Régi (v1) szkriptek: `ml/legacy/` (`extract_features.py`, `train.py`, `save_model.py`) —
 referenciának maradnak, az éles artifact a v2 receptből jön.
 
+## Frame quality flags
+
+`ml/frame_quality.py` marks every frame that should **not** count toward road
+quality. The result is written per frame to
+`street_view_images.analysis_metadata.frame_quality`:
+`{"usable", "reasons", "road_prob", "blur", "brightness", "dup_of", "version": 1}`.
+Consumers (the road-segment builder) skip a frame only when `usable` is
+explicitly `false`. Frames without the key (new since the last run) count as
+usable.
+
+Reasons:
+- **Image problems:** `missing_image`, `no_imagery` (the "Sorry, we have no
+  imagery here" placeholder), `dark`, `blur`.
+- **Scene problems:** `not_road` (the v2 CLIP road filter below 0.5, or below
+  0.9 for `CAoS…` user photospheres), `indoor`, `tunnel_garage`, and `hood`
+  (the own vehicle covers the bottom of the frame).
+- **Duplicates:** `duplicate` (`dup_of` points at the kept frame). A duplicate
+  is a near-identical picture (CLIP cosine ≥ 0.995) within 25 m and 30° of
+  heading, or the same spot within 1 m.
+
+The `wall` and `obstructed` reasons exist but are disabled. Their zero-shot
+prompts flagged valid roads, for example motorways with a truck ahead.
+
+Thresholds live in `THRESHOLDS` and were calibrated so that the 1903
+labelled RQI 1–4 frames are almost never flagged (0.16% outside duplicates).
+They were also checked against a blind visual review of 40 frames. A broken,
+shaded or patched road is a valid frame.
+
+Rerun after new frames are added, or after the pano_id backfill. The stages
+cache under `ml/cache/frame_quality/` and resume, so only new frames are
+recomputed:
+
+```bash
+.venv/bin/python ml/frame_quality.py all          # manifest -> clip -> pixels -> dups -> decide
+.venv/bin/python ml/frame_quality.py write        # dry run: summary + example payloads
+docker exec smooth-route-db-1 pg_dump -U postgres -Fc smooth_route > data/backups/pre_frame_quality_$(date +%Y%m%d%H%M).dump
+.venv/bin/python ml/frame_quality.py write --commit --backup data/backups/<that dump>
+.venv/bin/python -m pytest -q ml/tests/test_frame_quality.py
+```
+
+`calibrate` prints feature quantiles on labelled frames against all frames.
+`sheet --ids … --blind` renders small contact sheets for a visual check.
+
 ## Élesítési kapu (KÖTELEZŐ, ne lépd át)
 
 Új vagy módosított `ml/cache/rqi_model.joblib` **csak akkor élesíthető**, ha az
