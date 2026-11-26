@@ -3,6 +3,7 @@
   "segment_length_m": 200,
   "aggregator": "median_score",
   "trim_fraction": 0.0,
+  "scale_direction": "lower_is_better",
   "thresholds": [
     1.577,
     2.496,

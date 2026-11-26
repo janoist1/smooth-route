@@ -30,15 +30,18 @@ import spatial_cv as S  # noqa: E402
 
 warnings.filterwarnings("ignore")
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import rqi_scale as R  # noqa: E402
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CACHE = os.path.join(ROOT, "ml", "cache")
-N_SPLITS, SEED, BAD_FROM = 5, 42, 3
+N_SPLITS, SEED, BAD_FROM = 5, 42, R.BAD_FROM
 
 
 def load(backbone):
     df = pd.read_csv(os.path.join(CACHE, "dataset_v2.csv"))
     F = np.load(os.path.join(CACHE, f"feats_v2_{backbone}.npz"))
-    keep = (df["rqi"].values != 5) & (df["is_road_prob"].values >= 0.55)
+    keep = (~np.isin(df["rqi"].values, R.DROPPED_LEVELS)) & (df["is_road_prob"].values >= 0.55)
     f = {k: F[k][keep] for k in F.files}
     df = df[keep].reset_index(drop=True)
     v = {
@@ -51,12 +54,12 @@ def load(backbone):
 
 def metrics(yc, pred, thresholds=None):
     if thresholds is None:
-        yp = np.clip(np.round(pred), 1, 4).astype(int)
+        yp = np.clip(np.round(pred), R.MODEL_MIN, R.MODEL_MAX).astype(int)
     else:
         yp = np.digitize(pred, thresholds) + 1
     mae = mean_absolute_error(yc, yp)
     exact = np.mean(yc == yp)
-    qwk = cohen_kappa_score(yc, yp, weights="quadratic", labels=[1, 2, 3, 4])
+    qwk = cohen_kappa_score(yc, yp, weights="quadratic", labels=R.MODEL_LEVELS)
     return mae, exact, qwk, yp
 
 
@@ -72,7 +75,7 @@ def tune_thresholds(y_true, pred):
             for t in grid:
                 cand = sorted(th[:i] + [t] + th[i + 1:])
                 q = cohen_kappa_score(y_true, np.digitize(pred, cand) + 1,
-                                      weights="quadratic", labels=[1, 2, 3, 4])
+                                      weights="quadratic", labels=R.MODEL_LEVELS)
                 if q > best_q:
                     best_q, best_t = q, t
             th[i] = best_t
@@ -137,7 +140,7 @@ def main():
     yp = oof_t.astype(int)
     mae_t = mean_absolute_error(yc, yp)
     exact_t = np.mean(yc == yp)
-    qwk_t = cohen_kappa_score(yc, yp, weights="quadratic", labels=[1, 2, 3, 4])
+    qwk_t = cohen_kappa_score(yc, yp, weights="quadratic", labels=R.MODEL_LEVELS)
     print(f"with nested tuned thresholds: MAE={mae_t:.3f} exact={exact_t:.3f} "
           f"QWK={qwk_t:.4f}")
 

@@ -32,6 +32,8 @@ from sklearn.model_selection import StratifiedGroupKFold
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
+import rqi_scale as R  # noqa: F401  canonical scale, ML severity view (shared/rqi_scale.json)
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # RQI_ML_COORDS: alternative coordinate file (used by ml/retrain.py runs).
 COORDS = os.environ.get("RQI_ML_COORDS") or os.path.join(ROOT, "ml", "image_coords.csv")
@@ -40,8 +42,9 @@ CELL_M = 1000
 N_SPLITS = 5
 INNER_SPLITS = 4
 SEED = 42
-RQI_LABELS = [1, 2, 3, 4]
-BAD_FROM = 3
+RQI_LABELS = R.MODEL_LEVELS         # [1, 2, 3, 4] (severity, 1 = best)
+BAD_FROM = R.BAD_FROM               # 3: severity >= 3 is a bad road
+DROPPED_LEVELS = R.DROPPED_LEVELS   # [5]: too few labels, never trained
 _LAT_REF = 47.0  # all data is in Hungary (46.8-47.5 N); fixed for determinism
 
 AREA_LABELS = {

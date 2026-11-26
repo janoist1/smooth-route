@@ -252,13 +252,16 @@ class TestBuildQueue:
 # --- store helpers (pure parts) ----------------------------------------------
 
 def test_model_rqi_uses_the_cut_points():
+    from app.core.rqi_scale import SCALE
     from app.services.label_queue_store import model_rqi
 
+    # raw model scores are severity (1 = Kiváló); the class comes out canonical
+    sv = SCALE.from_severity
     assert model_rqi(None, CUTS) is None
-    assert model_rqi(1.49, CUTS) == 1
-    assert model_rqi(1.5, CUTS) == 2
-    assert model_rqi(3.19, CUTS) == 3
-    assert model_rqi(3.9, CUTS) == 4
+    assert model_rqi(1.49, CUTS) == sv(1)
+    assert model_rqi(1.5, CUTS) == sv(2)
+    assert model_rqi(3.19, CUTS) == sv(3)
+    assert model_rqi(3.9, CUTS) == sv(4)
 
 
 def test_every_scale_level_can_be_labelled_and_nothing_else():
@@ -267,7 +270,7 @@ def test_every_scale_level_can_be_labelled_and_nothing_else():
 
     assert store.VALID_RQI == tuple(SCALE.values)
     assert SCALE.worst in store.VALID_RQI  # Nagyon rossz: never predicted, still labelable
-    for bad in (SCALE.best - 1, SCALE.worst + 1):
+    for bad in (SCALE.min_value - 1, SCALE.max_value + 1):
         # Validation runs before any DB access (db=None would fail later).
         with pytest.raises(store.QuickLabelError):
             store.save_quick_label(None, 1, bad)
@@ -277,15 +280,17 @@ def test_model_outputs_are_converted_to_the_canonical_direction(monkeypatch):
     from app.core.rqi_scale import SCALE
     from app.services import label_queue_store as store
 
-    # Today the canonical scale is the severity orientation: identities.
-    assert store.canonical_boundary("2|3") == "2|3"
-    assert store.canonical_score(2.4) == pytest.approx(2.4)
-    # After a direction flip only the conversion changes, not the queue logic.
-    monkeypatch.setattr(store, "SCALE", SCALE.mirrored())
-    lo, hi = SCALE.best, SCALE.worst
-    assert store.model_rqi(1.0, CUTS) == lo + hi - 1
-    assert store.canonical_boundary("1|2") == f"{lo + hi - 1}|{lo + hi - 2}"
-    assert store.canonical_score(1.0) == pytest.approx(lo + hi - 1.0)
+    # Severity in, canonical out (5 = Kiváló since 2026-11-26: 6 - x).
+    sv = SCALE.from_severity
+    assert store.canonical_boundary("2|3") == f"{int(sv(2))}|{int(sv(3))}"
+    assert store.canonical_score(2.4) == pytest.approx(sv(2.4))
+    # With the other numbering only the conversion changes, not the queue logic.
+    mirrored = SCALE.mirrored()
+    monkeypatch.setattr(store, "SCALE", mirrored)
+    mv = mirrored.from_severity
+    assert store.model_rqi(1.0, CUTS) == mv(1)
+    assert store.canonical_boundary("1|2") == f"{int(mv(1))}|{int(mv(2))}"
+    assert store.canonical_score(1.0) == pytest.approx(mv(1.0))
     assert store.canonical_boundary(None) is None
 
 

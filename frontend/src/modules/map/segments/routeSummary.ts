@@ -1,7 +1,8 @@
 // Route quality summary maths (pure). Turns the `routeQuality` payload into
 // the numbers the summary card draws: coverage, the stacked-bar shares and the
 // length-weighted average.
-import { getRQIColor } from '../../ui'
+import { RQI_UNKNOWN, getRQIColor, nearestRqiLevel, rqiLevel } from '../../ui'
+import type { RqiLevelKey } from '../../ui'
 import { RQI_CLASSES, rqiLabelHu } from './labels'
 import type { RouteQuality } from './types'
 
@@ -9,8 +10,10 @@ import type { RouteQuality } from './types'
 export const LOW_COVERAGE_RATIO = 0.3
 
 export interface RouteClassShare {
-  /** Quality class 1–4. */
+  /** Quality class (a canonical model level). */
   rqi: number
+  /** Level key ('excellent' …), stable whatever the numbering direction. */
+  key: RqiLevelKey
   label: string
   color: string
   lengthM: number
@@ -27,11 +30,11 @@ export interface RouteSummary {
   hasData: boolean
   /** True when some, but under LOW_COVERAGE_RATIO, of the route is measured. */
   lowCoverage: boolean
-  /** One entry per class 1..4 (zero-length classes included). */
+  /** One entry per model level, best first (zero-length classes included). */
   classes: RouteClassShare[]
   /** Share of the route without data (0–1) — the grey end of the bar. */
   unknownShare: number
-  /** Length-weighted mean on the 1–4 scale; null without data. */
+  /** Length-weighted mean RQI score; null without data. */
   meanScore: number | null
   /** Hungarian label of the mean ("Jó"); "Nincs adat" without data. */
   meanLabel: string
@@ -41,19 +44,22 @@ export interface RouteSummary {
 
 /**
  * Colour for a CONTINUOUS score, by the class its label names. getRQIColor's
- * own bands are cut at whole numbers (2.4 would be yellow) while the label
- * bands are cut at the halves (2.4 is "Jó") — going through the class keeps a
- * badge's colour and text in agreement.
+ * own bands round toward the worse level (Jó + 0.4 would be Közepes) while the
+ * label takes the nearest level — going through the class keeps a badge's
+ * colour and text in agreement.
  */
 export const rqiClassColor = (score?: number | null): string => {
-  if (score == null || !Number.isFinite(score)) return getRQIColor(null)
-  return getRQIColor(Math.max(1, Math.ceil(score - 0.5)))
+  if (score == null || !Number.isFinite(score)) return RQI_UNKNOWN.color
+  return rqiLevel(nearestRqiLevel(score))?.color ?? RQI_UNKNOWN.color
 }
 
 const nonNegative = (value: unknown): number =>
   typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0
 
-/** Length-weighted mean class from the per-class metres; null when all are 0. */
+/**
+ * Length-weighted mean class from the per-class metres (index i ↔ the i-th
+ * model level, best first, as the API sends lengthByRqi); null when all are 0.
+ */
 export const weightedMeanRqi = (lengthByRqi: number[]): number | null => {
   let length = 0
   let weighted = 0
@@ -83,6 +89,7 @@ export const summarizeRouteQuality = (quality: RouteQuality): RouteSummary => {
   const scale = classified > totalLengthM && classified > 0 ? totalLengthM / classified : 1
   const classes: RouteClassShare[] = RQI_CLASSES.map((rqi, i) => ({
     rqi,
+    key: rqiLevel(rqi)?.key ?? 'fair',
     label: rqiLabelHu(rqi),
     color: getRQIColor(rqi),
     lengthM: byClass[i],

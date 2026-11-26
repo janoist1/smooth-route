@@ -1,5 +1,9 @@
 import React, { useMemo } from 'react'
 import { AlertTriangle, TrendingUp, Target, List, Image as ImageIcon } from 'lucide-react'
+import { RQI_LEVELS } from '../../ui'
+
+// Axis ticks: every level value of the canonical scale, ascending.
+const RQI_TICKS = RQI_LEVELS.map(l => l.value).sort((a, b) => a - b)
 
 // Reuse type from TrainingList to avoid circular dependency heaven if possible,
 // or preferably import from a shared types file if refactored.
@@ -168,7 +172,7 @@ const EvaluationDashboard: React.FC<EvaluationDashboardProps> = ({ points, onNav
               />
 
               {/* Grid Lines & Labels */}
-              {[1, 2, 3, 4, 5].map(tick => {
+              {RQI_TICKS.map(tick => {
                 const pos = getCoord(tick)
                 const yPos = getYCoord(tick)
                 return (

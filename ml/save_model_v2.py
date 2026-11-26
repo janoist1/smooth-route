@@ -38,6 +38,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVR
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import rqi_scale as R  # noqa: E402
 import spatial_cv as S  # noqa: E402
 from spatial_cv import tune_thresholds  # noqa: E402,F401  (re-exported)
 
@@ -46,10 +47,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # own ml/cache/retrain/<run>/ so the shared caches are never touched).
 CACHE = os.environ.get("RQI_ML_CACHE") or os.path.join(ROOT, "ml", "cache")
 
-DROP_RQI5 = True
+DROP_RQI5 = True  # drop the levels the model is not trained on (R.DROPPED_LEVELS, i.e. 5)
 ROAD_PROB_MIN = 0.55
-RQI_MIN, RQI_MAX = 1, 4
-BAD_FROM = 3
+RQI_MIN, RQI_MAX = R.MODEL_MIN, R.MODEL_MAX  # 1, 4 (severity)
+BAD_FROM = R.BAD_FROM  # 3
 N_SPLITS = S.N_SPLITS
 SEED = S.SEED
 
@@ -119,7 +120,7 @@ def main():
     X_all = build_features(args.recipe, args.backbone)
     keep = df["is_road_prob"].values >= ROAD_PROB_MIN
     if DROP_RQI5:
-        keep &= df["rqi"].values != 5
+        keep &= ~np.isin(df["rqi"].values, R.DROPPED_LEVELS)
     X, df = X_all[keep], df[keep].reset_index(drop=True)
     y = df["manual_rqi"].values.astype(float)
     yc = df["rqi"].values.astype(int)
@@ -178,7 +179,11 @@ def main():
         "bad_from": BAD_FROM,
         "road_prob_min": ROAD_PROB_MIN,
         "n_train": int(len(df)),
-        "scale_meaning": "1=excellent .. 4=poor (lower=better road)",
+        # Orientation of everything above (head output, thresholds, calibrator
+        # input). The backend converts to the canonical scale with it.
+        "scale_direction": R.SCALE_DIRECTION,
+        "scale_version": R.SCALE.version,
+        "scale_meaning": R.SCALE_MEANING,
         "cv_metrics": cv,
         "reliability": reliability,
     }

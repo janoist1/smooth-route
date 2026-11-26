@@ -103,7 +103,7 @@ const RouteQualityCard: React.FC<RouteQualityCardProps> = ({
               .map(c => (
                 <span
                   key={c.rqi}
-                  data-testid={`route-bar-${c.rqi}`}
+                  data-testid={`route-bar-${c.key}`}
                   title={`${c.label}: ${formatKm(c.lengthM)}`}
                   style={{ width: `${(c.share * 100).toFixed(2)}%`, background: c.color }}
                 />
@@ -114,7 +114,7 @@ const RouteQualityCard: React.FC<RouteQualityCardProps> = ({
             {summary.classes
               .filter(c => c.lengthM > 0)
               .map(c => (
-                <li key={c.rqi} data-testid={`route-class-${c.rqi}`}>
+                <li key={c.rqi} data-testid={`route-class-${c.key}`}>
                   <span className="route-quality__dot" style={roadColor(c.color)} />
                   {c.label} {formatKm(c.lengthM)}
                 </li>

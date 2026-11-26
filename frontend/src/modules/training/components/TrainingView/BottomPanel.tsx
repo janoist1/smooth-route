@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import type { Annotation } from '../../types'
+import { RQI_LEVELS, RQI_MODEL_LEVELS, getRQIColor, rqiLevel, rqiTextColor } from '../../../ui'
 
 interface BottomPanelProps {
   manualRqi: number | null
@@ -12,11 +13,8 @@ interface BottomPanelProps {
   setComment: (val: string) => void
 }
 
-const getColorForRqi = (score: number) => {
-  if (score <= 2.0) return '#22c55e'
-  if (score <= 3.5) return '#facc15'
-  return '#ef4444'
-}
+// Levels the model is not trained on (Nagyon rossz): selectable, but flagged.
+const UNTRAINED = RQI_LEVELS.filter(l => !RQI_MODEL_LEVELS.includes(l.value))
 
 export const BottomPanel: React.FC<BottomPanelProps> = ({
   manualRqi,
@@ -66,13 +64,15 @@ export const BottomPanel: React.FC<BottomPanelProps> = ({
           gap: '8px',
         }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontWeight: 600 }}>Minőség (RQI 1–4)</span>
+          <span style={{ fontWeight: 600 }}>
+            Minőség (RQI){manualRqi ? `: ${rqiLevel(manualRqi)?.label_hu ?? manualRqi}` : ''}
+          </span>
           <span
             style={{
-              background: manualRqi ? getColorForRqi(manualRqi) : '#333',
+              background: manualRqi ? getRQIColor(manualRqi) : '#333',
               padding: '2px 8px',
               borderRadius: '4px',
-              color: 'white',
+              color: manualRqi ? rqiTextColor(getRQIColor(manualRqi)) : 'white',
               fontWeight: 'bold',
               fontSize: '14px',
             }}>
@@ -86,7 +86,7 @@ export const BottomPanel: React.FC<BottomPanelProps> = ({
             gap: '8px',
             justifyContent: 'space-between',
           }}>
-          {[1, 2, 3, 4, 5].map(score => {
+          {RQI_LEVELS.map(({ value: score, label_hu, rubric_hu }) => {
             const selected = manualRqi === score
             return (
               <button
@@ -94,13 +94,15 @@ export const BottomPanel: React.FC<BottomPanelProps> = ({
                 type="button"
                 onClick={() => setRqi(score)}
                 aria-pressed={selected}
+                aria-label={`${score} – ${label_hu}`}
+                title={`${label_hu}: ${rubric_hu}`}
                 style={{
                   width: '48px',
                   height: '42px',
                   borderRadius: '8px',
                   border: selected ? '1px solid rgba(255,255,255,0.4)' : '1px solid #444',
-                  background: selected ? getColorForRqi(score) : '#2a2a2a',
-                  color: selected ? '#111' : '#ccc',
+                  background: selected ? getRQIColor(score) : '#2a2a2a',
+                  color: selected ? rqiTextColor(getRQIColor(score)) : '#ccc',
                   fontWeight: 700,
                   fontSize: '16px',
                   cursor: 'pointer',
@@ -126,6 +128,11 @@ export const BottomPanel: React.FC<BottomPanelProps> = ({
               {polygonCount} ({coveragePercent})
             </span>
           </div>
+          {UNTRAINED.some(l => l.value === manualRqi) && (
+            <p style={{ margin: '0 0 4px', fontSize: '10px', color: '#fbbf24' }}>
+              {UNTRAINED.map(l => l.label_hu).join(', ')}: ritka; a modell nem tanul rá.
+            </p>
+          )}
           <p style={{ margin: 0, fontSize: '9px', color: '#555', fontStyle: 'italic' }}>
             A humán osztályzat a <code>manual_rqi</code> mezőbe kerül. Modelltréning:
             {' '}<code>ml/README.md</code>.

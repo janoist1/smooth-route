@@ -7,7 +7,8 @@ briefs: [docs/TEAM.md](docs/TEAM.md).
 ## The project in one paragraph
 
 Kátyúőr / smooth-route estimates road quality from Google Street View frames
-(RQI 1–4, **1 = excellent, 4 = poor**; 5 is unused) and shows it on a map for route
+(RQI, **one 5-level scale defined in [shared/rqi_scale.json](shared/rqi_scale.json)**:
+5 = Kiváló … 1 = Nagyon rossz, higher is better, the model predicts 2–5) and shows it on a map for route
 planning. The **live RQI engine** is the `ml/` v2 model (frozen DINOv2-small + SVR
 head + tuned cut-points, in the `ml/cache/rqi_model.joblib` artifact), loaded by the
 backend's `dino_service.py` and run on the **raw image**. YOLO (`road_analyzer.py`)
@@ -27,6 +28,7 @@ public site is read-only (Vercel + Neon); analysis runs locally.
 | **Labelling** | [docs/TrainingGuide.md](docs/TrainingGuide.md) | — |
 | **"Why is it like this?" / model history** | [docs/MODEL_EXPERIMENTS.md](docs/MODEL_EXPERIMENTS.md) | — |
 | **Unclear term** (QWK, MAE, spatial CV…) | [docs/GLOSSARY.md](docs/GLOSSARY.md) | — |
+| **RQI scale** (levels, labels, colours, bad road, direction flip) | [shared/README.md](shared/README.md), [shared/rqi_scale.json](shared/rqi_scale.json) | — |
 | **Team, briefs, merge/push flow** | [docs/TEAM.md](docs/TEAM.md) | — |
 | **Ticket board** (what's in progress, your ticket) | `python3 tools/board.py list` — rules in [docs/TEAM.md](docs/TEAM.md#ticket-board) | — |
 | **Launch copy / name / checklist** | [docs/LAUNCH.md](docs/LAUNCH.md) | — |
@@ -61,6 +63,10 @@ runs the build on push, so run it locally too. **Not green = not done.**
   CV (1 km cells, seed=42, nested cut-point tuning), champion thresholds **QWK ≥ 0.774,
   MAE ≤ 0.405, bad-AUC ≥ 0.934**. To replace the champion, the paired ΔQWK 95% CI must
   be above 0. Never cite the old leaky 0.889/0.195/0.970. Details: [ml/README.md](ml/README.md).
+- **RQI scale.** Never hard-code a level, threshold or direction (`<= 2`, `>= 3`,
+  `[1, 2, 3, 4]`, `!= 5`, `6 - x`). Use the helpers over
+  [shared/rqi_scale.json](shared/rqi_scale.json) (`app.core.rqi_scale`, `modules/ui`
+  `rqiScale.ts`, `ml/rqi_scale.py`) — [shared/README.md](shared/README.md).
 - **Raw image.** The model runs on the raw frame; never add preprocessing
   (FastSAM/CLAHE…) to the RQI path — training used raw images too.
 - **Canonical data dir:** root `data/` for backend and ML (a relative `DATA_DIR`

@@ -1,9 +1,33 @@
 import React from 'react'
 import { useQuery } from '@apollo/client/react'
 import { Loader2, ImageIcon, DollarSign, MapPin, Users } from 'lucide-react'
-import { StatCard, StatsGrid } from 'modules/ui'
+import {
+  RQI_AT_OR_BETTER_SIGN,
+  RQI_WORSE_THAN_SIGN,
+  StatCard,
+  StatsGrid,
+  rqiLevel,
+  rqiValue,
+} from 'modules/ui'
 import { gql } from 'modules/graphql'
 import MainLayout from '../MainLayout'
+
+// Distribution buckets as the backend's adminStats counts them (good = up to
+// Jó, fair = Közepes, poor = worse than Közepes); text and colours from the
+// canonical scale, e.g. "Jó (RQI ≥ 4)", "Közepes (3–4)", "Rossz (< 3)" while 5 = Kiváló.
+const GOOD = rqiValue('good')
+const FAIR = rqiValue('fair')
+const RQI_BUCKETS = {
+  good: { label: `${rqiLevel(GOOD)?.label_hu} (RQI ${RQI_AT_OR_BETTER_SIGN} ${GOOD})`, color: rqiLevel(GOOD)?.color },
+  fair: {
+    label: `${rqiLevel(FAIR)?.label_hu} (${Math.min(GOOD, FAIR)}–${Math.max(GOOD, FAIR)})`,
+    color: rqiLevel(FAIR)?.color,
+  },
+  poor: {
+    label: `${rqiLevel(rqiValue('poor'))?.label_hu} (${RQI_WORSE_THAN_SIGN} ${FAIR})`,
+    color: rqiLevel(rqiValue('poor'))?.color,
+  },
+}
 
 const ADMIN_STATS_QUERY = gql(`
   query AdminStats {
@@ -163,9 +187,9 @@ const AdminStatsPage: React.FC = () => {
             <div style={card}>
               <h3 style={{ fontSize: '1rem', marginBottom: 16 }}>Útminőség-eloszlás</h3>
               {([
-                ['Jó (RQI ≤ 2)', s.rqiGood, '#34d399'],
-                ['Közepes (2–3)', s.rqiFair, '#facc15'],
-                ['Rossz (> 3)', s.rqiPoor, '#f87171'],
+                [RQI_BUCKETS.good.label, s.rqiGood, RQI_BUCKETS.good.color],
+                [RQI_BUCKETS.fair.label, s.rqiFair, RQI_BUCKETS.fair.color],
+                [RQI_BUCKETS.poor.label, s.rqiPoor, RQI_BUCKETS.poor.color],
               ] as const).map(([label, count, color]) => (
                 <div key={label} style={{ marginBottom: 12 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: 4 }}>

@@ -29,6 +29,8 @@ import pandas as pd
 import torch
 from PIL import Image
 
+import rqi_scale as R  # script dir is on sys.path
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LABELS = os.path.join(ROOT, "ml", "labels.csv")
 # The backend and ML pipeline share the canonical root data/images directory.
@@ -73,7 +75,8 @@ NOTROAD_PROMPTS = [
 def load_manifest():
     df = pd.read_csv(LABELS)
     df = df[df["manual_rqi"].notna()].copy()
-    df["rqi"] = df["manual_rqi"].round().clip(1, 5).astype(int)
+    # labels.csv is in ML severity orientation (see ml/rqi_scale.py)
+    df["rqi"] = df["manual_rqi"].round().clip(R.MIN_LEVEL, R.MAX_LEVEL).astype(int)
     df["path"] = df["image_filename"].apply(find_image)
     df = df[df["path"].notna()].drop_duplicates("image_filename").reset_index(drop=True)
     return df[["image_filename", "manual_rqi", "rqi", "tags", "path"]]

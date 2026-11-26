@@ -12,6 +12,10 @@ export default defineConfig({
       modules: path.resolve(import.meta.dirname, './src/modules'),
     },
   },
+  // Tests may read ../shared (the canonical RQI scale) to check the bundled copy.
+  server: {
+    fs: { allow: [import.meta.dirname, path.resolve(import.meta.dirname, '../shared')] },
+  },
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],

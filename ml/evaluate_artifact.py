@@ -108,7 +108,7 @@ def main(argv):
     df = pd.read_csv(os.path.join(CACHE, "dataset_v2.csv"))
     keep = df["is_road_prob"].values >= ROAD_PROB_MIN
     if DROP_RQI5:
-        keep &= df["rqi"].values != 5
+        keep &= ~np.isin(df["rqi"].values, S.DROPPED_LEVELS)
     X, df = X_all[keep], df[keep].reset_index(drop=True)
     y = df["manual_rqi"].values.astype(float)
     yc = df["rqi"].values.astype(int)

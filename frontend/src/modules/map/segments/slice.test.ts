@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { RQI_MODEL_LEVELS } from '../../ui'
 import reducer, { actions, initialState } from './slice'
 import { actions as mapActions } from '../slice'
 import { isUnknownFieldError } from './api'
@@ -225,7 +226,7 @@ describe('mock data follows the API contract', () => {
     expect(mockRoadSegments(bbox, 14)).toEqual(segments) // deterministic
     for (const s of segments) {
       expect(s.path.length).toBeGreaterThanOrEqual(2)
-      expect([1, 2, 3, 4]).toContain(s.rqi)
+      expect(RQI_MODEL_LEVELS).toContain(s.rqi)
       expect(s.confidence).toBeGreaterThanOrEqual(0)
       expect(s.confidence).toBeLessThanOrEqual(1)
       expect(['high', 'medium', 'low']).toContain(s.confidenceLevel)
