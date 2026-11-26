@@ -1,5 +1,6 @@
 """Label queue: pure selection logic (no DB, no torch) + GraphQL permission wiring."""
 import math
+from collections import Counter
 
 import pytest
 
@@ -330,15 +331,27 @@ class TestRecheck:
     def frames(self):
         return [frame(i, dx=i * 10) for i in range(1, 13)]  # dense: no spatial rules apply
 
-    def test_suspicious_first_in_priority_order_then_stratified_sample(self):
-        level_of = {i: (i - 1) % 4 + 1 for i in range(1, 13)}  # levels 1..4, three frames each
-        items = lq.pick_recheck(self.frames(), level_of, [7, 3, 99], 8, [1, 2, 3, 4])
+    @pytest.mark.parametrize("seed", [0, 17])
+    def test_suspicious_first_then_blind_sample_with_unchanged_level_counts(self, seed):
+        from app.core.rqi_scale import SCALE
+
+        levels = sorted(SCALE.values, key=SCALE.worst_first_key, reverse=True)
+        frames = [frame(i, dx=i * 10) for i in range(1, len(levels) * 3 + 1)]
+        level_of = {f.id: levels[(f.id - 1) % len(levels)] for f in frames}
+        items = lq.pick_recheck(frames, level_of, [7, 3, 99], 8, levels, seed=seed)
         assert ids(items)[:2] == [7, 3]  # unknown id 99 ignored
         assert [it.reason for it in items[:2]] == ["recheck_suspicious"] * 2
         sample = items[2:]
         assert {it.reason for it in sample} == {"recheck_sample"}
-        # Round-robin over the old levels, best to worst.
-        assert [level_of[it.frame.id] for it in sample] == [1, 2, 3, 4, 1, 2]
+        old_levels = [level_of[it.frame.id] for it in sample]
+        round_robin = [*levels, levels[0]]
+        assert Counter(old_levels) == Counter(round_robin)
+        assert old_levels != round_robin
+        assert old_levels != sorted(old_levels)
+        assert old_levels != sorted(old_levels, reverse=True)
+        repeated = lq.pick_recheck(list(reversed(frames)), level_of, [7, 3, 99], 8,
+                                   levels, seed=seed)
+        assert ids(items) == ids(repeated)
 
     def test_excluded_and_limit(self):
         level_of = {i: 1 for i in range(1, 13)}
@@ -382,19 +395,157 @@ def test_consistency_stats_original_vs_latest_and_direction_aware():
 def test_rubric_examples_need_enough_labels_the_model_agrees_with():
     from app.services.label_queue_store import pick_examples
 
-    def c(gap, pid, tier=0, dx=0.0):
+    def c(gap, pid, dx=0.0):
         lat, lon = at(BP, dx)
-        return (tier, gap, pid, pid, f"f{pid}.jpg", lat, lon)
+        return (gap, pid, pid, f"f{pid}.jpg", lat, lon)
 
     cands = {
         1: [c(0.1, 1), c(0.2, 2, dx=1000), c(0.4, 3, dx=2000), c(1.5, 4)],   # 3 agree
         2: [c(0.1, 10), c(0.2, 11, dx=1000), c(2.0, 12, dx=2000)],           # only 2 agree
         3: [c(None, 20), c(None, 21), c(None, 22)],                          # no model view
-        4: [c(0.3, 31, tier=1), c(0.4, 30, tier=0, dx=1000), c(0.1, 32, tier=1, dx=2000)],
+        4: [c(0.3, 31), c(0.4, 30, dx=1000), c(0.1, 32, dx=2000)],
     }
     got = pick_examples(cands, per_class=1, min_agreeing=3)
-    assert got == [(1, 1, "f1.jpg"), (4, 30, "f30.jpg")]  # honest OOF tier first
+    assert got == [(1, 1, "f1.jpg"), (4, 32, "f32.jpg")]  # smallest current gap first
     assert [r[1] for r in pick_examples(cands, per_class=3, min_agreeing=3) if r[0] == 1] == [1, 2, 3]
+
+
+@pytest.fixture
+def rubric_store(monkeypatch):
+    """In-memory query results: no Postgres, image files or model artifact needed."""
+    from app.services import label_queue_store as store
+
+    class Result(list):
+        def all(self):
+            return self
+
+    class Database:
+        examples = Result()
+        labels = Result()
+
+        def execute(self, statement, *args):
+            return self.examples if "JOIN street_view_images" in str(statement) else self.labels
+
+    db, files, cache = Database(), set(), {}
+    monkeypatch.setattr(store, "image_files", lambda: files)
+    monkeypatch.setattr(store, "load_score_cache", lambda: cache)
+    monkeypatch.setattr(store, "cut_points", lambda: CUTS)
+    return store, db, files, cache
+
+
+def rubric_row(pid, level, score, *, quality=None, pano=None, name=None):
+    lat, lon = at(BP, dx_m=pid * 1000)
+    metadata = {"dino_score": score}
+    if quality is not None:
+        metadata["frame_quality"] = quality
+    return (float(level), pid, name or f"f{pid}.jpg", lat, lon, pano, metadata)
+
+
+def test_rubric_examples_require_current_label_and_model_level_agreement(rubric_store):
+    from app.core.rqi_scale import SCALE
+
+    store, db, files, _ = rubric_store
+    level = SCALE.from_severity(2)
+    # A stale export error cannot qualify these: the CURRENT label disagrees.
+    db.examples.extend(rubric_row(i, level, SCALE.best) for i in range(1, 4))
+    # Even a small continuous gap is insufficient across the tuned cut-point.
+    db.examples.extend(rubric_row(i, SCALE.from_severity(3), SCALE.from_severity(3.3))
+                       for i in range(4, 7))
+    db.examples.extend(rubric_row(i, level, SCALE.from_severity(2 + gap))
+                       for i, gap in ((10, 0.2), (11, 0.0), (12, 0.1)))
+    files.update(row[2] for row in db.examples)
+    assert store.label_examples(db, per_class=3) == [
+        (level, 11, "f11.jpg"), (level, 12, "f12.jpg"), (level, 10, "f10.jpg"),
+    ]
+
+
+@pytest.mark.parametrize("invalid", [
+    "unusable_bool", "unusable_text", "photosphere", "missing_image", "missing_score",
+    "nan", "infinite", "fractional_label",
+])
+def test_rubric_examples_filter_untrustworthy_frames_before_counting(rubric_store, invalid):
+    from app.core.rqi_scale import SCALE
+
+    store, db, files, _ = rubric_store
+    level = SCALE.from_severity(2)
+    kwargs = {}
+    score = level
+    label = level
+    if invalid.startswith("unusable"):
+        kwargs["quality"] = {"usable": False if invalid == "unusable_bool" else "false"}
+    elif invalid == "photosphere":
+        kwargs["pano"] = "CAoSF0NJSE0w-user-photo"
+    elif invalid == "missing_score":
+        score = None
+    elif invalid == "nan":
+        score = "nan"
+    elif invalid == "infinite":
+        score = "inf"
+    elif invalid == "fractional_label":
+        label += 0.5
+    db.examples.extend([rubric_row(1, level, level), rubric_row(2, level, level),
+                       rubric_row(3, label, score, **kwargs)])
+    files.update(row[2] for row in db.examples if invalid != "missing_image" or row[1] != 3)
+    # Two trustworthy frames cannot meet the three-frame minimum.
+    assert store.label_examples(db) == []
+
+
+def test_rubric_examples_convert_cache_severity_and_prefer_stored_canonical_scores(rubric_store):
+    from app.core.rqi_scale import SCALE
+
+    store, db, files, cache = rubric_store
+    level = SCALE.from_severity(2)
+    db.examples.extend(rubric_row(i, level, None) for i in range(1, 4))
+    db.examples.append(rubric_row(4, level, SCALE.best))
+    files.update(row[2] for row in db.examples)
+    cache.update({row[2]: (2.0, None) for row in db.examples})
+    assert store.label_examples(db, per_class=6) == [
+        (level, i, f"f{i}.jpg") for i in range(1, 4)
+    ]
+
+
+def test_rubric_examples_leave_unpredicted_level_without_thumbnail(rubric_store):
+    from app.core.rqi_scale import SCALE
+
+    store, db, files, _ = rubric_store
+    # Even a zero gap cannot turn an unsupported model class into a trusted example.
+    db.examples.extend(rubric_row(i, SCALE.worst, SCALE.worst) for i in range(1, 4))
+    files.update(row[2] for row in db.examples)
+    assert store.label_examples(db) == []
+
+
+def test_rubric_examples_do_not_count_duplicate_images(rubric_store):
+    from app.core.rqi_scale import SCALE
+
+    store, db, files, _ = rubric_store
+    db.examples.extend(rubric_row(i, SCALE.best, SCALE.best, name="same.jpg")
+                       for i in range(1, 4))
+    files.add("same.jpg")
+    assert store.label_examples(db) == []
+
+
+def test_recheck_excludes_all_rubric_examples_and_duplicate_image_rows(rubric_store, monkeypatch):
+    from app.core.rqi_scale import SCALE
+
+    store, db, files, _ = rubric_store
+    db.examples.extend(rubric_row(i, SCALE.best, SCALE.best) for i in range(1, 8))
+    db.examples.extend(rubric_row(i, SCALE.worst, SCALE.best) for i in range(8, 11))
+    # Another point using the same photo must not leak the known label either.
+    db.examples.append(rubric_row(11, SCALE.best, SCALE.best, name="f1.jpg"))
+    files.update(row[2] for row in db.examples)
+    db.labels.extend((name, level, False) for level, _, name, *_ in db.examples)
+    frame_rows = [(pid, f"images/{name}", lat, lon, 0, 0, pano, None,
+                   SCALE.to_severity(meta["dino_score"]), None)
+                  for _, pid, name, lat, lon, pano, meta in db.examples]
+    monkeypatch.setattr(store, "_frame_rows", lambda db: frame_rows)
+    monkeypatch.setattr(store, "_audit_order", lambda: ["f1.jpg", "f7.jpg"])
+    examples = store.label_examples(db, per_class=store.EXAMPLE_MAX_PER_CLASS)
+    assert len(examples) == 6
+    result, info, _ = store.build_recheck(db, limit=20, exclude_ids=[8])
+    assert set(ids(result.items)) == {7, 9, 10}
+    assert not {pid for _, pid, _ in examples} & set(info)
+    assert 11 not in info
+    assert result.items[0].reason == "recheck_suspicious"
 
 
 def test_stored_canonical_scores_become_severity_once():

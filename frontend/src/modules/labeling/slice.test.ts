@@ -129,6 +129,33 @@ describe('server acknowledgements', () => {
     expect(s.error).toContain('boom')
   })
 
+  it('a failed save drops its queued undo without duplicating the restored frame', () => {
+    let s = reducer(withQueue([1, 2]), actions.rate({ id: 1, rqi: 3 }))
+    const saveSeq = s.outbox[0].seq
+    s = reducer(s, actions.undoLast())
+    s = reducer(s, actions.writeFailed({ seq: saveSeq, message: 'boom' }))
+    expect(s.outbox).toEqual([])
+    expect(s.queue.map(i => i.id)).toEqual([1, 2])
+    expect(s.history).toEqual([])
+    expect(s.sessionRated).toBe(0)
+    expect(s.stats).toMatchObject({ totalLabelled: 100, labelledToday: 5 })
+  })
+
+  it('a failed save preserves the undo belonging to a later re-rate of the same frame', () => {
+    let s = reducer(withQueue([1, 2]), actions.rate({ id: 1, rqi: 3 }))
+    const failedSeq = s.outbox[0].seq
+    s = reducer(s, actions.undoLast())
+    s = reducer(s, actions.rate({ id: 1, rqi: 4 }))
+    const laterSave = s.outbox[2]
+    s = reducer(s, actions.undoLast())
+    const laterUndo = s.outbox[3]
+    s = reducer(s, actions.writeFailed({ seq: failedSeq, message: 'boom' }))
+    expect(s.outbox).toEqual([laterSave, laterUndo])
+    expect(laterUndo).toMatchObject({ kind: 'undo', saveSeq: laterSave.seq })
+    expect(s.queue.map(i => i.id)).toEqual([1, 2])
+    expect(s.sessionRated).toBe(0)
+  })
+
   it('a failed undo keeps the screen as is and explains the label stayed', () => {
     let s = reducer(withQueue([1, 2]), actions.rate({ id: 1, rqi: 3 }))
     s = reducer(s, actions.undoLast())

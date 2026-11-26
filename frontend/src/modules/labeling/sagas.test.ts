@@ -10,6 +10,8 @@ import type { LabelQueuePage, QueueItem } from './types'
 type Call = { op: string; vars: Record<string, unknown> }
 const calls: Call[] = []
 let failNextSave = false
+// Simulates the backend's one-step quick-label undo, including an older label.
+const storedLabels = new Map<number, { rqi: number; previousRqi?: number }>()
 
 const item = (id: number): QueueItem => ({
   id,
@@ -46,6 +48,15 @@ vi.mock('../graphql', () => ({
       failNextSave = false
       throw new Error('db down')
     }
+    if (isUndo) {
+      const id = options.variables.pointId as number
+      const previousRqi = storedLabels.get(id)?.previousRqi
+      if (previousRqi == null) storedLabels.delete(id)
+      else storedLabels.set(id, { rqi: previousRqi })
+    } else {
+      const { pointId, rqi } = options.variables.input as { pointId: number; rqi: number }
+      storedLabels.set(pointId, { rqi, previousRqi: storedLabels.get(pointId)?.rqi })
+    }
     return isUndo ? { undoQuickLabel: true } : { quickLabel: { pointId: 0, rqi: 0, totalLabelled: 0, labelledToday: 0 } }
   },
 }))
@@ -69,7 +80,12 @@ const settle = (ms = 150) => new Promise(r => setTimeout(r, ms))
 
 describe('label writer saga', () => {
   // Skips persist in localStorage (by design); isolate the tests.
-  beforeEach(() => window.localStorage.clear())
+  beforeEach(() => {
+    window.localStorage.clear()
+    calls.length = 0
+    failNextSave = false
+    storedLabels.clear()
+  })
 
   it('loads a page on entry, excluding nothing yet', async () => {
     calls.length = 0
@@ -136,5 +152,27 @@ describe('label writer saga', () => {
     expect(s.queue[0].id).toBe(1)
     expect(s.error).toContain('db down')
     expect(s.sessionRated).toBe(0)
+  })
+
+  it('a failed save followed by undo keeps the original label on the server', async () => {
+    const store = makeStore()
+    store.dispatch(actions.enter())
+    await settle()
+    const original = { rqi: 4, previousRqi: 3 }
+    storedLabels.set(1, original)
+    calls.length = 0
+    failNextSave = true
+
+    store.dispatch(actions.rate({ id: 1, rqi: 2 }))
+    store.dispatch(actions.undoLast()) // queued while the failed save is in flight
+    await settle()
+
+    expect(calls.filter(c => c.op === 'save' || c.op === 'undo').map(c => c.op)).toEqual(['save'])
+    expect(storedLabels.get(1)).toEqual(original)
+    const s = store.getState().labeling
+    expect(s.outbox).toEqual([])
+    expect(s.queue.map(i => i.id)).toEqual([1, 2, 3])
+    expect(s.sessionRated).toBe(0)
+    expect(s.error).toContain('db down')
   })
 })

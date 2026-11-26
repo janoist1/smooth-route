@@ -117,7 +117,7 @@ const slice = createSlice({
       if (!entry) return
       state.queue.unshift(entry.item)
       if (entry.kind === 'rated') {
-        state.outbox.push({ seq: state.nextSeq++, kind: 'undo', id: entry.item.id })
+        state.outbox.push({ seq: state.nextSeq++, kind: 'undo', id: entry.item.id, saveSeq: entry.seq })
         state.sessionRated = Math.max(0, state.sessionRated - 1)
         if (entry.isNew) bumpStats(state, -1)
       } else {
@@ -140,6 +140,12 @@ const slice = createSlice({
       if (write?.kind === 'undo') {
         state.error = `A visszavonás nem sikerült, a címke megmaradt: ${action.payload.message}`
         return
+      }
+      // The writer is serial, so the paired undo is still queued. Drop it:
+      // undoing a failed save could revert an older label already in the DB.
+      // Match the save sequence, not the frame id: a later re-rate has its own undo.
+      if (write?.kind === 'save') {
+        state.outbox = state.outbox.filter(w => w.kind !== 'undo' || w.saveSeq !== write.seq)
       }
       // A failed save: put the frame back on screen so the rating is not lost silently.
       const idx = state.history.findIndex(h => h.kind === 'rated' && h.seq === action.payload.seq)

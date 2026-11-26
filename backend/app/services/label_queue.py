@@ -502,8 +502,9 @@ def pick_recheck(frames: Sequence[Frame], level_of: dict[int, int],
 
     First the ``suspicious_ids`` in their given (priority) order: frames whose
     human label disagrees with both the model and the VLM. Then a random
-    sample stratified by the old label (round-robin over ``levels``, best to
-    worst), the consistency control. ``frames`` must already exclude frames
+    sample stratified by the old label, the consistency control. Round-robin
+    selection keeps the per-level counts; a separate seeded shuffle hides
+    the old label's position. ``frames`` must already exclude frames
     re-checked before; ``level_of`` maps frame id -> old level (never sent to
     the client).
     """
@@ -525,6 +526,7 @@ def pick_recheck(frames: Sequence[Frame], level_of: dict[int, int],
             strata[lv].append(f)
     for members in strata.values():
         members.sort(key=lambda f: stable_rank(f.id, seed), reverse=True)
+    sample_start = len(out)
     while len(out) < limit and any(strata.values()):
         for lv in levels:
             if len(out) >= limit:
@@ -534,6 +536,10 @@ def pick_recheck(frames: Sequence[Frame], level_of: dict[int, int],
                 out.append(QueueItem(frame=f, reason="recheck_sample",
                                      area=area_of(f.lat, f.lon), uncertainty=None,
                                      cell_labels=0))
+    out[sample_start:] = sorted(
+        out[sample_start:],
+        key=lambda item: (stable_rank(("recheck_order", item.frame.id), seed), item.frame.id),
+    )
     return out
 
 

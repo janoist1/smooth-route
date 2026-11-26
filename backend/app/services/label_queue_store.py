@@ -12,8 +12,8 @@
   ``meta_data.quick_label`` so undo can restore the previous state.
 
 Scale: label values are the canonical levels of shared/rqi_scale.json
-(``app.core.rqi_scale.SCALE``, 1..5 today, 5 = Nagyon rossz). Model scores,
-cut-points and the OOF table are in the fixed *severity* orientation (1 = best)
+(``app.core.rqi_scale.SCALE``, 1..5 today, 5 = Kiváló). Queue model scores and
+cut-points are in the fixed *severity* orientation (1 = best)
 and are converted with ``SCALE.from_severity`` before they leave this module.
 
 Torch-free: the cut-points are read from the joblib artifact (sklearn only).
@@ -21,6 +21,7 @@ Torch-free: the cut-points are read from the joblib artifact (sklearn only).
 from __future__ import annotations
 
 import csv
+import math
 import os
 import time
 from dataclasses import dataclass
@@ -36,6 +37,8 @@ from app.core.paths import data_path
 from app.core.rqi_scale import SCALE
 from app.core.timeutil import utcnow
 from app.services import label_queue as lq
+from app.services.segment_aggregation import frame_usable
+from app.services.sv_client import is_google_pano
 
 SCORE_CACHE_FIELDS = ["image_filename", "score", "p_bad", "model_version"]
 QUICK_LABEL_AGENT = "quick-label"
@@ -244,7 +247,9 @@ def _audit_order() -> list[str]:
 
 def build_recheck(db: Session, limit: int, exclude_ids: Iterable[int] = ()):
     """Re-check queue: labelled frames not re-checked yet (the old label is
-    never returned), suspicious ones first, then a level-stratified sample."""
+    never returned), suspicious ones first, then a shuffled stratified sample.
+    Reserve every example the rubric API can expose: its label is already known.
+    """
     labels = {
         name: (_float(rqi), bool(done)) for name, rqi, done in db.execute(text(
             "SELECT image_filename, manual_rqi, (meta_data::jsonb) ? 'relabel_history' "
@@ -252,13 +257,14 @@ def build_recheck(db: Session, limit: int, exclude_ids: Iterable[int] = ()):
     }
     files = image_files()
     cache = load_score_cache()
+    example_names = {name for _, _, name in label_examples(db, per_class=EXAMPLE_MAX_PER_CLASS)}
     frames: list[lq.Frame] = []
     info: dict[int, FrameInfo] = {}
     level_of: dict[int, int] = {}
     id_of: dict[str, int] = {}
     for (fid, url, lat, lon, heading, pitch, pano, cdate, score, p_bad) in _frame_rows(db):
         name = _filename(url)
-        if name not in labels or name not in files:
+        if name not in labels or name not in files or name in example_names:
             continue
         old, done = labels[name]
         if done:
@@ -485,29 +491,8 @@ def undo_quick_label(db: Session, point_id: int) -> bool:
 
 # --- rubric examples ------------------------------------------------------------
 
-OOF_TABLE = _PROJECT_ROOT / "ml" / "cache" / "oof_table.csv"
-EXAMPLE_MIN_ROAD_PROB = 0.9
 EXAMPLE_SPACING_M = 300.0
-
-
-def _oof_errors() -> dict[str, float]:
-    """|out-of-fold prediction - label| per labelled image (ml/cache/oof_table.csv,
-    written by the ml/ pipeline); only confident road images."""
-    out: dict[str, float] = {}
-    try:
-        with OOF_TABLE.open() as fh:
-            for row in csv.DictReader(fh):
-                try:
-                    if float(row.get("is_road_prob") or 1.0) < EXAMPLE_MIN_ROAD_PROB:
-                        continue
-                    out[row["image_filename"]] = abs(float(row["err"]))
-                except (KeyError, ValueError):
-                    continue
-    except OSError:
-        pass
-    return out
-
-
+EXAMPLE_MAX_PER_CLASS = 6
 EXAMPLE_AGREE_MAX_GAP = 0.5   # |model - human| in levels for "the model agrees"
 EXAMPLE_MIN_AGREEING = 3      # fewer agreeing labels -> no example for that level
 
@@ -516,19 +501,20 @@ def pick_examples(cands: dict[int, list[tuple]], per_class: int,
                   min_agreeing: int = EXAMPLE_MIN_AGREEING,
                   max_gap: float = EXAMPLE_AGREE_MAX_GAP,
                   spacing_m: float = EXAMPLE_SPACING_M) -> list[tuple[int, int, str]]:
-    """Pure selection. ``cands[level]`` = (tier, gap, order, pid, name, lat, lon)
-    with tier 0 = honest OOF gap, 1 = live-model gap. Only frames whose label
-    the model agrees with (gap <= max_gap) can be examples, and a level needs at
+    """Pure selection. ``cands[level]`` = (gap, order, pid, name, lat, lon).
+    Only frames whose current label the model agrees with (gap <= max_gap)
+    can be examples, and a level needs at
     least ``min_agreeing`` of them, else it gets none (the UI says "még nincs
     példa") rather than a misleading picture."""
     out = []
     for level, rows in cands.items():
-        agreeing = sorted(r for r in rows if r[1] is not None and r[1] <= max_gap)
+        agreeing = sorted(r for r in rows if r[0] is not None and math.isfinite(r[0])
+                          and 0 <= r[0] <= max_gap)
         if len(agreeing) < min_agreeing:
             continue
         taken = lq.PointIndex(spacing_m)
         n = 0
-        for _tier, _gap, _order, pid, name, lat, lon in agreeing:
+        for _gap, _order, pid, name, lat, lon in agreeing:
             if n >= per_class:
                 break
             if lat is not None and lon is not None:
@@ -543,33 +529,41 @@ def pick_examples(cands: dict[int, list[tuple]], per_class: int,
 def label_examples(db: Session, per_class: int = 1) -> list[tuple[int, int, str]]:
     """(level, point id, filename) of clear labelled exemplars per level.
 
-    Integer labels only. "Clear" = the model agrees with the human label: the
-    honest out-of-fold prediction (ml/cache/oof_table.csv) when available,
-    else the live model score. Levels with too few agreeing labels (today:
-    the extreme level the model never predicts) get no example — see
-    pick_examples. Several examples of one level are EXAMPLE_SPACING_M apart.
+    Integer labels only, with a local image, usable frame quality and no user
+    photosphere id. The live model's predicted level must equal the CURRENT
+    manual_rqi, with a continuous score within EXAMPLE_AGREE_MAX_GAP. Stored
+    canonical scores take precedence over the severity score cache. Old OOF
+    errors cannot establish agreement: they refer to labels at export time.
+    Levels with too few agreeing frames get no example (including levels the
+    model cannot predict). Several examples are EXAMPLE_SPACING_M apart.
     """
-    per_class = max(1, min(int(per_class), 6))
+    per_class = max(1, min(int(per_class), EXAMPLE_MAX_PER_CLASS))
     rows = db.execute(text(
         "SELECT td.manual_rqi, svi.id, td.image_filename, svi.latitude, svi.longitude, "
-        "svi.analysis_metadata->>'dino_score' "
+        "svi.pano_id, svi.analysis_metadata "
         "FROM training_data td "
         "JOIN street_view_images svi ON svi.image_url = 'images/' || td.image_filename "
         "WHERE td.manual_rqi = ANY(:levels) "
-        "ORDER BY td.created_at, td.id"
+        "ORDER BY td.created_at, td.id, svi.id"
     ), {"levels": [float(v) for v in VALID_RQI]}).all()
     files = image_files()
-    errors = _oof_errors()
     cache = load_score_cache()
+    cuts = cut_points()
     cands: dict[int, list[tuple]] = {r: [] for r in VALID_RQI}
-    for order, (rqi, pid, name, lat, lon, score) in enumerate(rows):
-        if name not in files:
+    seen: set[str] = set()
+    for order, (rqi, pid, name, lat, lon, pano, metadata) in enumerate(rows):
+        if rqi not in VALID_RQI or name not in files or name in seen:
             continue
-        gap, tier = errors.get(name), 0  # |severity difference|: direction-free
-        if gap is None:
-            s = _float(score)  # stored canonical (see _severity_row)
-            if s is None and name in cache:
-                s = canonical_score(cache[name][0])  # cache is severity
-            gap, tier = (abs(s - rqi) if s is not None else None), 1
-        cands[int(rqi)].append((tier, gap, order, pid, name, lat, lon))
+        metadata = metadata if isinstance(metadata, dict) else {}
+        if not frame_usable(metadata) or not is_google_pano({"pano_id": pano}):
+            continue
+        score = _float(metadata.get("dino_score"))  # canonical (see _severity_row)
+        if score is None and name in cache:
+            score = canonical_score(cache[name][0])  # cache is severity
+        if score is None or not math.isfinite(score):
+            continue
+        if model_rqi(float(SCALE.to_severity(score)), cuts) != int(rqi):
+            continue
+        seen.add(name)
+        cands[int(rqi)].append((abs(score - rqi), order, pid, name, lat, lon))
     return pick_examples(cands, per_class)
