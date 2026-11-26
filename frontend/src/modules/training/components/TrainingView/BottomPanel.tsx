@@ -66,7 +66,7 @@ export const BottomPanel: React.FC<BottomPanelProps> = ({
           gap: '8px',
         }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontWeight: 600 }}>Minőség (RQI 1–5)</span>
+          <span style={{ fontWeight: 600 }}>Minőség (RQI 1–4)</span>
           <span
             style={{
               background: manualRqi ? getColorForRqi(manualRqi) : '#333',

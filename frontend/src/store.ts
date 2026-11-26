@@ -3,7 +3,13 @@ import createSagaMiddleware from 'redux-saga'
 import { all } from 'redux-saga/effects'
 
 // Reducers
-import { reducer as mapReducer, sagas as mapSagas, mapInitialState } from './modules/map'
+import {
+  reducer as mapReducer,
+  sagas as mapSagas,
+  mapInitialState,
+  roadsReducer,
+  roadsSagas,
+} from './modules/map'
 import { reducer as trainingReducer, sagas as trainingSagas } from './modules/training'
 import { reducer as settingsReducer, sagas as settingsSagas } from './modules/settings'
 import { reducer as appReducer } from './modules/app'
@@ -14,12 +20,13 @@ import { reducer as labelingReducer, sagas as labelingSagas } from './modules/la
 import globalSagas from './sagas'
 
 function* rootSaga() {
-  const allSagas = [...mapSagas, ...trainingSagas, ...settingsSagas, ...globalSagas, ...apiSagas, ...labelingSagas]
+  const allSagas = [...mapSagas, ...roadsSagas, ...trainingSagas, ...settingsSagas, ...globalSagas, ...apiSagas, ...labelingSagas]
   yield all(allSagas)
 }
 
 const rootReducer = combineReducers({
   map: mapReducer,
+  roads: roadsReducer,
   training: trainingReducer,
   settings: settingsReducer,
   app: appReducer,

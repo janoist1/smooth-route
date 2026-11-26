@@ -2,8 +2,13 @@ import type { SagaIterator } from 'redux-saga'
 import { takeLatest, put, call, select } from 'redux-saga/effects'
 import { matchPath, type PathMatch } from 'react-router-dom'
 import { actions as trainingActions, selectors as trainingSelectors } from 'modules/training'
-import { actions as mapActions, selectors as mapSelectors } from 'modules/map'
-import { shouldShowGrid } from 'modules/map/aggregation'
+import {
+  actions as mapActions,
+  selectors as mapSelectors,
+  roadsActions,
+  roadsSelectors,
+  layersForZoom,
+} from 'modules/map'
 import { actions as settingsActions } from 'modules/settings'
 import { actions as routingActions } from 'modules/routing'
 import { actions as labelingActions } from 'modules/labeling'
@@ -80,12 +85,13 @@ function* handleMapHome(_match: PathMatch, searchParams: URLSearchParams): SagaI
   ]
 
   // Zoomed out: road-quality grid (honest whole-network picture, no
-  // truncation). Zoomed in: individual clickable points.
-  if (shouldShowGrid(zoom)) {
-    yield put(mapActions.fetchGrid({ bbox, zoom }))
-  } else {
-    yield put(mapActions.fetchPoints(bbox))
-  }
+  // truncation). From zoom 13: coloured road segments. Individual clickable
+  // frame dots only join in at street level (see layersForZoom).
+  const segmentsSupported: boolean = yield select(roadsSelectors.selectSegmentsSupported)
+  const layers = layersForZoom(zoom, segmentsSupported)
+  if (layers.grid) yield put(mapActions.fetchGrid({ bbox, zoom }))
+  if (layers.segments) yield put(roadsActions.fetchSegments({ bbox, zoom }))
+  if (layers.frames) yield put(mapActions.fetchPoints(bbox))
 
   // Restore a route analysis job still running on the backend (survives reload)
   yield put(mapActions.reconnectRouteJob())
