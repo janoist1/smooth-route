@@ -61,10 +61,11 @@ class DbFrameStore:
         return False
 
     def save(self, frame: NewFrame, jpeg: bytes) -> int:
-        from app.models.models import StreetViewImage
+        from app.models.models import StreetViewImage, street_view_location
 
         row: Any = StreetViewImage(  # ORM row: legacy Column models type as Column[...] (see DEVELOPMENT.md)
             latitude=frame.lat, longitude=frame.lon, heading=frame.heading, pitch=frame.pitch,
+            location=street_view_location(frame.lat, frame.lon),
             pano_id=frame.pano_id, capture_date=frame.capture_date,
             image_url=None, rqi_score=None,       # pending analysis
             analysis_metadata={"imagery": frame.imagery} if frame.imagery else None,

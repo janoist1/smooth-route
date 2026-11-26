@@ -5,15 +5,18 @@ minus the ones that already have a stored neighbour. Second pass
 (``densify_low_confidence``): only when the job left low-confidence segments,
 and a quota / billing stop is an error, not a silent short run."""
 import datetime as dt
+import sqlite3
 from collections import Counter
 from types import SimpleNamespace
 
 import pytest
+from sqlalchemy.dialects import sqlite
 
 from app.services import frame_store, network_collector, network_sampling, sv_client
 from app.services import route_collector as rc
 from app.services.network_collector import STOP_BUDGET, STOP_DONE, STOP_TROUBLE, RunResult
 from app.services.network_sampling import SamplingConfig
+from app.services.segment_geometry import haversine_m
 from app.services.sv_client import StreetViewFatal
 from geo_helpers import at
 
@@ -121,6 +124,9 @@ def test_first_pass_stores_one_pending_point_per_50_m(monkeypatch, updates):
     assert session.lookups == 10 and len(session.added) == 10
     first = session.added[0]
     assert (first.latitude, first.longitude) == maps.sampled[0]
+    for row in session.added:
+        assert row.location.srid == 4326
+        assert row.location.data == f"POINT({row.longitude} {row.latitude})"
     assert (first.heading, first.pitch, first.pano_id) == (90.0, -10.0, "pano0")
     assert first.capture_date == dt.date(2023, 5, 1)
     assert first.image_url.startswith("https://") and first.rqi_score is None   # pending
@@ -154,6 +160,68 @@ def test_points_with_a_stored_neighbour_are_not_stored_again(monkeypatch, update
     assert len(maps.sampled) == 4
     assert [row.pano_id for row in session.added] == ["pano1", "pano3"]
     assert updates[-1][1]["message"] == "2 új mérési pont rögzítve."
+
+
+@pytest.mark.parametrize("coordinate_distance,location_distance,expected_added", [
+    (3.0, None, 0),  # Legacy NULL geometry must still dedupe, even with opposite heading.
+    (6.0, None, 1),  # The lat/lon fallback must still respect the radius.
+    (100.0, 3.0, 0),  # Prefer stored geometry when it is present.
+    (3.0, 100.0, 1),
+])
+def test_dedupe_uses_legacy_coordinates_and_prefers_stored_location(
+    monkeypatch, updates, coordinate_distance, location_distance, expected_added,
+):
+    """Evaluate the collector's actual predicate with local spatial-function fakes."""
+    maps = FakeMaps(route_dicts(50))
+    session = FakeSession()
+    sampled = rc.sample_route([at(0, 0), at(50, 0)], SAMPLING.base_spacing_m)[0]
+    lat, lon = at(coordinate_distance, 0, origin=sampled)
+    location = None
+    if location_distance is not None:
+        location_lat, location_lon = at(location_distance, 0, origin=sampled)
+        location = f"POINT({location_lon} {location_lat})"
+
+    def distance(a, b):
+        if a is None or b is None:
+            return None
+        def latlon(wkt):
+            lon, lat = map(float, wkt.removeprefix("POINT(").removesuffix(")").split())
+            return lat, lon
+        return haversine_m(latlon(a), latlon(b))
+
+    # No PostGIS/server: execute only a SELECT over one literal legacy row.
+    connection = sqlite3.connect(":memory:")
+    connection.create_function("ST_MakePoint", 2, lambda lon, lat: f"POINT({lon} {lat})")
+    connection.create_function("ST_SetSRID", 2, lambda point, srid: point)
+    connection.create_function("ST_GeomFromText", 2, lambda point, srid: point)
+    connection.create_function("ST_DistanceSphere", 2, distance)
+
+    class SpatialQuery(FakeQuery):
+        def filter(self, criterion):
+            self.criterion = criterion
+            return self
+
+        def first(self):
+            self.session.lookups += 1
+            predicate = self.criterion.compile(
+                dialect=sqlite.dialect(), compile_kwargs={"literal_binds": True},
+            )
+            found = connection.execute(
+                f"SELECT {predicate} FROM (SELECT ? AS latitude, ? AS longitude, "
+                "? AS location, 270.0 AS heading) AS street_view_images",
+                (lat, lon, location),
+            ).fetchone()[0]
+            return object() if found else None
+
+    monkeypatch.setattr(session, "query", lambda model: SpatialQuery(session))
+    monkeypatch.setattr(rc, "google_maps_service", maps)
+    monkeypatch.setattr(rc, "SessionLocal", lambda: session)
+    try:
+        rc.collect_points("A", "B", "job1")
+    finally:
+        connection.close()
+    assert session.lookups == 1
+    assert len(session.added) == expected_added
 
 
 def test_route_lookup_failure_is_raised_to_the_job(monkeypatch, updates):
