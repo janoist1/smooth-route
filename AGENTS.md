@@ -34,6 +34,7 @@ public site is read-only (Vercel + Neon); analysis runs locally.
 | **Team, briefs, merge/push flow** | [docs/TEAM.md](docs/TEAM.md) | — |
 | **Ticket board** (what's in progress, your ticket) | `python3 tools/board.py list` — rules in [docs/TEAM.md](docs/TEAM.md#ticket-board) | — |
 | **Launch copy / name / checklist** | [docs/LAUNCH.md](docs/LAUNCH.md) | — |
+| **Product context / similar initiatives** (competitors, reusable datasets, OSM smoothness routing, partners) | [docs/LANDSCAPE.md](docs/LANDSCAPE.md) | — |
 
 Never load `docs/archive/**`, `ml/legacy/`, `scripts/legacy/` — history only.
 Principle: **one file = one responsibility, self-contained.** If your row's files
