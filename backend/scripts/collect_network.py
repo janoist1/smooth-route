@@ -224,12 +224,17 @@ def main() -> None:
             PASS2_JOB_CAP if args.densify else PASS1_JOB_CAP)
         rate = rate_from_env()
 
+        # --max-mb is a ceiling for the JOB: pass 2 counts what pass 1 stored.
+        other_pass_bytes = pass1_log.bytes_saved if args.densify else 0
+
         print(f"job {job_name} — {what}; spacing {spacing:g} m")
         print(f"plan: {sum(len(m) for _c, m in plan)} points in {len(plan)} cells "
               f"({sum(len(m) for _c, m in plan) * spacing / 1000:.0f} km of road without frames); "
               f"already handled {len(resume.status)}, open {open_points}")
         print(f"{quota.summary()}; this run: at most {job_cap} images, "
-              f"{args.max_mb:g} MB for the job, {rate:g} request/s")
+              f"{args.max_mb:g} MB for the job "
+              f"({(resume.bytes_saved + other_pass_bytes) / 1e6:.0f} MB stored so far), "
+              f"{rate:g} request/s")
 
         if args.dry_run:
             budget = max(0, min(job_cap, quota.remaining()))
@@ -265,7 +270,8 @@ def main() -> None:
         result = run_plan(
             todo, client=client, store=store, lines=lines, resume=resume,
             job=JobBudget(job_cap), radius_m=spacing / 2.0,
-            max_bytes=int(args.max_mb * 1e6), on_progress=progress,
+            max_bytes=max(0, int(args.max_mb * 1e6) - other_pass_bytes),
+            on_progress=progress,
         )
     finally:
         db.close()
