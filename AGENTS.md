@@ -77,6 +77,8 @@ zsákutcák. Fogalmak: [docs/GLOSSARY.md](docs/GLOSSARY.md).
 - **Egy review-felület, két panel:** a címkézés `/training/:id/review`-n megy
   (pontozás + poligonjelölés); nincs külön `/training/dino` útvonal, és a régi
   DINO-*tanítás* gomb megszűnt. Az RQI-modellt az `ml/` pipeline tanítja, nem a web.
+  Gyors, mobilos RQI-címkézés: `/training/quick` (label queue, ld.
+  [docs/API_SURFACE.md](docs/API_SURFACE.md)); ugyanabba a `training_data`-ba ír.
 - **Két backend-függőséglista:** `backend/pyproject.toml` (teljes, torch-csal) és
   `backend/requirements.txt` (torch-mentes, CSAK a Vercel-deployhoz; a
   `.vercelignore` rejti el a pyproject-et). Új futásidejű függőség a read-only
