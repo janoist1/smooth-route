@@ -18,9 +18,10 @@ const TokenBridge: React.FC = () => {
   const { getToken, isLoaded, isSignedIn } = useAuth()
 
   useEffect(() => {
+    if (!isLoaded) return
     setAuthTokenGetter(() => getToken())
     return () => setAuthTokenGetter(null)
-  }, [getToken])
+  }, [getToken, isLoaded])
 
   const known = useRef<boolean | undefined>(undefined)
   useEffect(() => {
