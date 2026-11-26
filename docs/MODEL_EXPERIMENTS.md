@@ -278,3 +278,55 @@ worth the confusion of a second, weaker opinion. Budapest still needs human labe
 4. **Treat an ordinal scale as ordinal** (regression + tuned cut-points).
 5. **A calibrated probability is worth more than a bare class** — the product
    promise is "good or bad, and how sure".
+
+## Era 12 — Pairwise "which road is worse?" judgments (pilot, T-53, 2026-11-26)
+
+> **TL;DR:** Fable judges compared 117 blind pairs of labelled frames. On the
+> 87 pairs where the human grades differ, they picked the human's worse road
+> **88.5 %** of the time (95 % CI 80–94 %), and **95 %** on the three quarters
+> they rated high or medium confidence. That is far better than the order
+> implied by absolute VLM grades (65.5 %, because a third come out tied), and
+> **exactly as good as the champion model on the same pairs (88.5 %)**, with
+> different mistakes. Good enough for ranking labels from confident pairs
+> outside Budapest; not a replacement for human grades.
+
+**Setup.** `ml/pairwise_pilot.py make` sampled pairs from the 1903 labelled
+frames (`ml/cache/dataset_v2.csv`, 1 = best). It kept usable road frames
+only, stratified by human |Δ| (30 / 45 / 30 / 12 pairs for Δ = 0 / 1 / 2 / 3),
+half within one region and half across, at least 300 m apart (neighbouring
+frames are often the same panorama), each frame used once, A/B order random.
+Frames were hard-linked under blind names (`data/vlm/pairwise/run1/`,
+gitignored); 12 fresh Fable subagents judged ≤ 10 pairs each, two at a time,
+seeing only their own pairs. Prompt: the pilot rubric as context plus "which
+pavement is in worse condition, A or B, or equal?" and a confidence. The
+judges returned JSON in their reply; their own file writes did not reach
+disk. `ml/pairwise_pilot.py score` compares against the human order, the
+absolute VLM grades of Era 9 (`vlm_attributes.csv` → `rqi_guess`) and the
+champion's out-of-fold scores (`oof_spatial_champion.csv`).
+
+| order source (pairs with human Δ ≥ 1, n = 87) | correct | notes |
+|---|---|---|
+| **VLM pairwise** | **88.5 %** [80.1, 93.6] | always decides; Δ1 84 %, Δ2 90 %, Δ3 100 % |
+| VLM pairwise, high + medium confidence (65 pairs) | **95.4 %** | high 25/25, medium 92.5 %, low 68 % |
+| VLM absolute grades (Era 9) | 65.5 % [55, 75] | 34.5 % ties, **0** reversed; coin-flipped ties → ~83 % |
+| champion model (OOF score) | 88.5 % [80.1, 93.6] | Δ1 84 %, Δ2 90 %, Δ3 100 % |
+
+- **Different errors:** both right on 70 pairs, VLM only 7, model only 7,
+  both wrong 3. A combination could reach ~96 % on these pairs.
+- **Region:** within-region 90.7 % vs cross-region 86.4 % (model 86 / 91 %).
+  Pairs with a Budapest frame: VLM **67 %** (n = 18), model 78 %. Five of the
+  ten VLM errors involve Budapest.
+- **Ties:** on equal-grade pairs the judges said "equal" only 10 % of the
+  time (prompt allowed it only when no difference was visible). Pairwise data
+  therefore carries no tie information; treat Δ = 0 pairs as noise.
+- 7 of the 10 errors were low-confidence calls, 8 of 10 had Δ = 1.
+
+**Verdict.** Reliable enough to *generate ranking labels* if filtered:
+keep only high/medium-confidence judgments (≈ 95 % agreement on ~75 % of
+pairs), avoid Budapest until it has more human labels, and use the pairs as
+an extra ranking loss next to human grades, never instead of them. Because
+the VLM is not better than the champion on average but errs differently,
+the most useful pairs are the ones where it **disagrees** with the model;
+those go to the owner first. The same "which is worse?" format suits the
+planned swipe game for faster human labelling. Pilot size is small
+(87 decisive pairs); confirm on ~300 pairs before training on them.
