@@ -29,7 +29,7 @@ public site is read-only (Vercel + Neon); analysis runs locally.
 | **Cloud workstation (AWS)** — remote agents/data box | [docs/CLOUD_WORKSTATION.md](docs/CLOUD_WORKSTATION.md); `scripts/cloud/` (plan by default, `APPLY=1` runs) | `ml/**`, `frontend/**` |
 | **Public API limits / security / cost abuse** | [docs/SECURITY.md](docs/SECURITY.md); code: `backend/app/graphql/limits.py` | `ml/**` |
 | **Imagery sources** (Street View vs Mapillary, licence, attribution) | [docs/IMAGERY_SOURCES.md](docs/IMAGERY_SOURCES.md); `backend/app/services/mapillary_client.py` | `frontend/**` |
-| **Labelling** (review page, quick-rate queue) | [docs/TrainingGuide.md](docs/TrainingGuide.md); queue API: [docs/API_SURFACE.md](docs/API_SURFACE.md#label-queue--quick-rate-screen-admin-only-2026-11-26) | — |
+| **Labelling** (review page, quick-rate queue) | [docs/TrainingGuide.md](docs/TrainingGuide.md); queue API: [docs/API_SURFACE.md](docs/API_SURFACE.md#labelling-admin) | — |
 | **"Why is it like this?" / model history** | [docs/MODEL_EXPERIMENTS.md](docs/MODEL_EXPERIMENTS.md) | — |
 | **Unclear term** (QWK, MAE, spatial CV…) | [docs/GLOSSARY.md](docs/GLOSSARY.md) | — |
 | **RQI scale** (levels, labels, colours, bad road, direction flip) | [shared/README.md](shared/README.md), [shared/rqi_scale.json](shared/rqi_scale.json) | — |
@@ -56,6 +56,7 @@ explain the task, open nothing else.
 ```bash
 cd backend && uvx ruff check . && ../.venv/bin/python -m pytest -q   # isolated, no DB/torch
 cd backend && ../.venv/bin/python scripts/check_types.py           # pyright basic: no NEW type errors
+cd backend && ../.venv/bin/python scripts/check_api_docs.py        # schema == docs/API_SURFACE.md + schema.graphql (<1 s, no DB; not in CI)
 cd frontend && npm ci && npm run typecheck && npm run lint && npm test && npm run build
 ```
 

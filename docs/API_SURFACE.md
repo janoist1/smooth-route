@@ -5,7 +5,7 @@ the job stream. The tables below are checked against the schema objects by
 `backend/scripts/check_api_docs.py` (fields, access, read-only flag, and
 `schema.graphql` freshness) — change a resolver, then update its row.
 
-## Two schemas, three access levels
+## Two schemas, four access levels
 
 `app/graphql/schema.py` builds two schemas from the same resolvers:
 
