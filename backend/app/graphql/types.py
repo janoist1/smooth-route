@@ -6,6 +6,29 @@ from enum import Enum
 
 from app.services.capture_date import format_capture_date
 
+def street_view_link(
+    latitude: float,
+    longitude: float,
+    heading: float,
+    pitch: Optional[float] = None,
+    pano_id: Optional[str] = None,
+) -> str:
+    """Free Google Maps Street View deep-link (no API call, no stored image).
+
+    Uses the exact pano_id when available, else the coordinates (Google
+    resolves the nearest panorama). One scheme for points and segments.
+    """
+    base = "https://www.google.com/maps/@?api=1&map_action=pano"
+    view = f"&heading={heading}&pitch={pitch or 0}"
+    if pano_id:
+        return f"{base}&pano={pano_id}{view}"
+    return f"{base}&viewpoint={latitude},{longitude}{view}"
+
+
+# Segment links look down at the road like the analysed frames do.
+SEGMENT_VIEW_PITCH = -20.0
+
+
 @strawberry.enum
 class FilterMode(Enum):
     ALL = "all"
@@ -45,11 +68,25 @@ class Point:
         Uses the exact pano_id when available, else the point's coordinates
         (Google resolves the nearest panorama).
         """
-        base = "https://www.google.com/maps/@?api=1&map_action=pano"
-        view = f"&heading={self.heading}&pitch={self.pitch or 0}"
-        if self.pano_id:
-            return f"{base}&pano={self.pano_id}{view}"
-        return f"{base}&viewpoint={self.latitude},{self.longitude}{view}"
+        return street_view_link(
+            self.latitude, self.longitude, self.heading, self.pitch, self.pano_id
+        )
+
+    @strawberry.field
+    def segment_id(self) -> Optional[strawberry.ID]:
+        """The road segment (`RoadSegment.id`) this frame belongs to; null if
+        it is not on a segment. Resolved with one small query per point — ask
+        for it on a single `point`, not on a long `points` list.
+        """
+        from app.graphql.resolver_helpers import get_db_session
+        from app.services.segment_read import segment_id_for_point
+
+        db = get_db_session()
+        try:
+            found = segment_id_for_point(db, self.latitude, self.longitude, self.heading)
+        finally:
+            db.close()
+        return strawberry.ID(found) if found else None
 
     @strawberry.field
     def capture_date(self) -> Optional[str]:
@@ -232,10 +269,11 @@ class RoadSegment:
     id: strawberry.ID
     # [[lat, lng], ...]
     path: List[List[float]]
-    # RQI level on the canonical scale (shared/rqi_scale.json; one of the model
-    # levels, Kiváló … Rossz); null if the piece has no frames.
+    # RQI level on the canonical scale (shared/rqi_scale.json, 5 = Kiváló); null
+    # if the piece has no frames. backend/config/segment_aggregation.json's
+    # "scale" block mirrors that file (a test keeps them equal).
     rqi: Optional[int]
-    # Aggregated continuous score on the same canonical scale.
+    # Aggregated continuous score on the same scale.
     score: Optional[float]
     # Mean P(road is bad = Közepes or worse) of the frames, 0-1.
     p_bad: Optional[float]
@@ -250,6 +288,25 @@ class RoadSegment:
     # Oldest / newest Street View capture month on the segment ("YYYY-MM").
     capture_date_min: Optional[str]
     capture_date_max: Optional[str]
+    # Why the confidence is not high — the factor that limits it most:
+    # "few_images" | "disagreement" | "near_threshold" | "old_images".
+    # Null for a high-confidence segment.
+    confidence_reason: Optional[str] = None
+    # Midpoint of the piece + the road's bearing there (for streetViewUrl).
+    mid_lat: strawberry.Private[Optional[float]] = None
+    mid_lng: strawberry.Private[Optional[float]] = None
+    mid_heading: strawberry.Private[Optional[float]] = None
+
+    @strawberry.field
+    def street_view_url(self) -> Optional[str]:
+        """Street View deep-link at the middle of the segment, looking along
+        the road (same scheme as `Point.streetViewUrl`)."""
+        if self.mid_lat is None or self.mid_lng is None:
+            return None
+        return street_view_link(
+            round(self.mid_lat, 6), round(self.mid_lng, 6),
+            round(self.mid_heading or 0.0, 1), SEGMENT_VIEW_PITCH,
+        )
 
 
 @strawberry.type
@@ -258,8 +315,9 @@ class RouteQuality:
     total_length_m: float
     # Length of the path that runs along a segment with data.
     covered_length_m: float
-    # 4 numbers, best first: metres in Kiváló, Jó, Közepes, Rossz
-    # (the scale's model levels, best -> worst).
+    # Metres per RQI class, BEST FIRST (Kiváló, Jó, Közepes, Rossz — the
+    # scale's model levels best -> worst), whatever the numbering direction.
+    # Always sums to coveredLengthM.
     length_by_rqi: List[float]
     # Length-weighted mean segment score over the covered part; null if none.
     mean_score: Optional[float]

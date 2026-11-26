@@ -37,3 +37,6 @@ backend/debug_*.jpg
 /package-lock.json
 .vercel
 .env*
+
+# Team ticket board data + render (lives in the main checkout; see tools/board.py)
+/board/

@@ -57,9 +57,16 @@ through `RQI_MODEL_LEVELS` / `SCALE.model_levels`, never with `i + 1`. In tests,
 write values as `sv(k)` (`SCALE.from_severity` / `fromSeverity`) so they hold in
 either numbering.
 
+**Segment layer.** `backend/config/segment_aggregation.json` restates the scale
+for the segment code (`"scale": {"classes", "higher_is_worse", "bad_class"}` +
+canonical-numbering `thresholds`, read only by `RqiScale` in
+`segment_aggregation.py`). `backend/tests/test_rqi_scale.py` fails if that block
+disagrees with this file, or if its thresholds are not the ML recipe's mirrored;
+`scripts/sync_rqi_scale.py --flip` mirrors it together with the JSON.
+
 **Severity numbering.** Model outputs, model cut-points (`thresholds` in
-`ml/cache/rqi_model.joblib`, `backend/config/segment_aggregation.json`,
-`ml/segment_recipe.json`, all tagged `"scale_direction": "lower_is_better"`),
+`ml/cache/rqi_model.joblib` and `ml/segment_recipe.json`, the latter tagged
+`"scale_direction": "lower_is_better"`),
 the P(bad) calibrator input and the YOLO damage-% bands use a fixed *severity*
 numbering: 1 = Kiváló, higher = worse. That was the numbering before the flip.
 Everything ML stores (`ml/labels.csv`, caches) is severity too. Values change
@@ -67,8 +74,6 @@ numbering only at these boundaries:
 
 - **model → DB:** `dino_service` converts with the artifact's `scale_direction`
   (written by `save_model_v2.py`; artifacts without it are severity);
-  `segment_aggregation` converts frame scores to severity, cuts, and converts
-  back;
 - **DB → ML:** `ml/export_labels.sh` selects `R.sql_to_severity("manual_rqi")`,
   which is `(6 - manual_rqi)` now.
 
@@ -94,6 +99,9 @@ migrate in one step.
 
 Tooling, all tested:
 
+- `scripts/sync_rqi_scale.py --flip` mirrors the JSON (values, `bad_from`,
+  `model_levels`, direction) and the segment config's `scale` block + thresholds,
+  then syncs the copies. Flipping twice restores both files byte-for-byte.
 - `backend/alembic/pending/rqi_flip_direction.py` (revision `0006`, revises
   `0005`) is the data migration, **inactive** outside `versions/`. It mirrors
   `training_data.manual_rqi`, `street_view_images.rqi_score` /
@@ -119,7 +127,8 @@ Steps at the go:
 4. Run `backend/scripts/rqi_flip_dry_run.py` and `backend/scripts/rqi_flip_rehearsal.py`;
    both must PASS.
 5. Local DB: stop the dev server, run `alembic upgrade head` (from `backend/`).
-   Then regenerate `data/cache/frame_scores.csv` (label queue).
+   The migration also mirrors `road_segments`; a fresh `build_segments.py` run
+   gives the same result. Then regenerate `data/cache/frame_scores.csv` (label queue).
 6. ML check: `bash ml/export_labels.sh`; `git diff --stat ml/labels.csv` must be
    empty. Optionally re-run `ml/evaluate_artifact.py`.
 7. Public site, with owner approval: `backend/scripts/publish.py` (upgrades Neon,

@@ -30,7 +30,6 @@ path of the read-only deploy.
 """
 from __future__ import annotations
 
-import dataclasses
 import datetime as dt
 import hashlib
 import json
@@ -57,6 +56,7 @@ from app.services.osm_overpass import (
     Way,
     cache_path,
     pad_bounds,
+    tile_of,
     tiles_for_points,
 )
 from app.core.rqi_scale import SCALE
@@ -65,8 +65,10 @@ from app.services.segment_aggregation import (
     SegmentConfig,
     aggregate_frames,
     confidence_level,
+    config_to_dict,
     frame_p_bad,
     frame_score,
+    frame_usable,
     load_config,
 )
 from app.services.segment_geometry import (
@@ -108,6 +110,8 @@ class Frame:
 class BuildStats:
     mode: str = "full"
     tiles: int = 0
+    tiles_missing: int = 0      # occupied but not cached (cached-only build)
+    frames_no_osm: int = 0      # frames in those tiles, left out
     ways_loaded: int = 0
     lines: int = 0              # after stitching ways into roads
     lines_with_frames: int = 0
@@ -115,8 +119,10 @@ class BuildStats:
     segments: int = 0           # pieces with data = stored rows
     frames_total: int = 0
     frames_unscored: int = 0
+    frames_unusable: int = 0    # frame_quality.usable == false
     frames_matched: int = 0
     frames_unmatched: int = 0
+    classes: tuple[int, ...] = ()      # class labels of the configured scale
     class_counts: dict[int, int] = field(default_factory=dict)
     class_km: dict[int, float] = field(default_factory=dict)
     level_counts: dict[str, int] = field(default_factory=dict)
@@ -134,17 +140,19 @@ class BuildStats:
             f"mode:                {self.mode}",
             f"OSM ways:            {self.ways_loaded} from {self.tiles} tiles "
             f"→ {self.lines} lines after stitching",
+            *([f"  PARTIAL:           {self.tiles_missing} tiles not cached — "
+               f"{self.frames_no_osm} frames there left out"] if self.tiles_missing else []),
             f"lines with frames:   {self.lines_with_frames}",
             f"segments with data:  {self.segments} ({self.km:.1f} km; "
             f"median {self.median_length_m:.0f} m, {self.median_images:.0f} frames) — "
             f"{self.pieces - self.segments} frame-less pieces not stored",
             f"frames:              {self.frames_total} total, "
-            f"{self.frames_unscored} unscored (skipped)",
+            f"{self.frames_unscored} unscored + {self.frames_unusable} unusable (skipped)",
             f"  matched:           {self.frames_matched} ({pct:.1f} % of scored)",
             f"  unmatched:         {self.frames_unmatched}",
             "class distribution:",
         ]
-        for rqi in SCALE.model_levels:  # best first
+        for rqi in self.classes:
             n = self.class_counts.get(rqi, 0)
             share = 100.0 * n / self.segments if self.segments else 0.0
             out.append(
@@ -266,6 +274,7 @@ def build_rows(
             level_km[level] += piece_len / 1000.0
 
     stats.segments = len(rows)
+    stats.classes = cfg.scale.ascending
     stats.km = sum(r["length_m"] for r in rows) / 1000.0
     stats.median_length_m = _median([r["length_m"] for r in rows])
     stats.median_images = _median([r["n_images"] for r in rows])
@@ -305,7 +314,7 @@ def build_fingerprint(
     payload = {
         "engine": ENGINE_VERSION,
         "merge": bool(merge),
-        "config": dataclasses.asdict(cfg),
+        "config": config_to_dict(cfg),
         "tiles": sorted([t[0], t[1], size] for t, size in tiles.items()),
     }
     return hashlib.sha1(json.dumps(payload, sort_keys=True).encode()).hexdigest()
@@ -326,10 +335,17 @@ def occupied_tiles(db, tile_deg: float) -> set[Tile]:
     return tiles_for_points(((r[0], r[1]) for r in rows), tile_deg)
 
 
-def load_frames(db, bounds: Optional[Bounds] = None) -> tuple[list[Frame], int]:
-    """Scored frames (optionally inside ``bounds``) and the count of unscored
-    ones that were skipped. Only the two metadata keys we need are pulled out
-    of the (large) analysis_metadata JSON, server-side.
+@dataclass
+class FrameLoad:
+    frames: list[Frame]
+    unscored: int = 0      # no RQI yet
+    unusable: int = 0      # frame_quality.usable == false
+
+
+def load_frames(db, cfg: SegmentConfig, bounds: Optional[Bounds] = None) -> FrameLoad:
+    """The frames the builder may use (optionally inside ``bounds``), plus how
+    many were skipped as unscored / marked unusable. Only the metadata keys we
+    need are pulled out of the (large) analysis_metadata JSON, server-side.
     """
     where = ["latitude IS NOT NULL", "longitude IS NOT NULL"]
     params: dict = {}
@@ -342,7 +358,8 @@ def load_frames(db, bounds: Optional[Bounds] = None) -> tuple[list[Frame], int]:
             f"""
             SELECT id, latitude, longitude, heading, dino_rqi_score, capture_date,
                    analysis_metadata->>'dino_score' AS dino_score,
-                   analysis_metadata->>'dino_p_bad' AS dino_p_bad
+                   analysis_metadata->>'dino_p_bad' AS dino_p_bad,
+                   analysis_metadata->'frame_quality'->>'usable' AS usable
             FROM street_view_images
             WHERE {" AND ".join(where)}
             ORDER BY id
@@ -351,20 +368,32 @@ def load_frames(db, bounds: Optional[Bounds] = None) -> tuple[list[Frame], int]:
         params,
     ).fetchall()
 
-    frames: list[Frame] = []
-    unscored = 0
+    return frames_from_rows(rows, cfg)
+
+
+def frames_from_rows(rows: Iterable, cfg: SegmentConfig) -> FrameLoad:
+    """Rows (id, latitude, longitude, heading, dino_rqi_score, capture_date,
+    dino_score, dino_p_bad, usable) → usable, scored frames. Pure."""
+    load = FrameLoad(frames=[])
     for r in rows:
-        meta = {"dino_score": r.dino_score, "dino_p_bad": r.dino_p_bad}
+        meta = {
+            "dino_score": r.dino_score,
+            "dino_p_bad": r.dino_p_bad,
+            "frame_quality": {"usable": r.usable},
+        }
+        if not frame_usable(meta):
+            load.unusable += 1
+            continue
         score = frame_score(r.dino_rqi_score, meta)
         if score is None:
-            unscored += 1
+            load.unscored += 1
             continue
-        frames.append(Frame(
+        load.frames.append(Frame(
             id=r.id, lat=r.latitude, lon=r.longitude, heading=r.heading,
-            score=score, p_bad=frame_p_bad(r.dino_rqi_score, meta),
+            score=score, p_bad=frame_p_bad(r.dino_rqi_score, meta, cfg.scale),
             capture_date=r.capture_date,
         ))
-    return frames, unscored
+    return load
 
 
 _FINGERPRINT_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -444,6 +473,7 @@ def rebuild_segments(
     cfg: Optional[SegmentConfig] = None,
     client: Optional[OverpassClient] = None,
     allow_fetch: bool = True,
+    cached_only: bool = False,
     merge: bool = True,
     dry_run: bool = False,
     today: Optional[dt.date] = None,
@@ -453,6 +483,11 @@ def rebuild_segments(
     (``(south, west, north, east)``). Idempotent: same inputs → same rows.
 
     ``merge=False`` cuts every OSM way on its own (no stitching).
+
+    ``cached_only=True`` builds from the OSM tiles already on disk and leaves
+    out the frames of tiles that are not (a partial layer while Overpass is
+    slow or unreachable). The next normal build sees a different tile set and
+    rebuilds everything.
 
     Raises ``OverpassError`` when a needed tile is neither cached nor
     fetchable; nothing is written in that case.
@@ -465,7 +500,11 @@ def rebuild_segments(
         client = OverpassClient(data_path("osm"), log=log)
 
     tiles = occupied_tiles(db, client.tile_deg)
-    ways = client.load_ways(tiles, allow_fetch=allow_fetch)
+    missing: set[Tile] = set()
+    if cached_only:
+        missing = {t for t in tiles if not client.is_cached(t)}
+        tiles -= missing
+    ways = client.load_ways(tiles, allow_fetch=allow_fetch and not cached_only)
     lines = merge_ways(ways) if merge else dict(ways)
     fingerprint = build_fingerprint(
         {t: cache_path(client.cache_dir, t, client.tile_deg).stat().st_size for t in tiles},
@@ -479,7 +518,7 @@ def rebuild_segments(
         bbox = None
 
     if bbox is None:
-        frames, unscored = load_frames(db)
+        load = load_frames(db, cfg)
     else:
         area = pad_bounds(bbox, PAD_M)
         only_ids = {
@@ -490,16 +529,26 @@ def rebuild_segments(
         # frame around the target lines. (Matching runs against ALL lines.)
         extent = bounds_of(p for line_id in only_ids for p in lines[line_id].coords)
         if extent is None:
-            frames, unscored = [], 0
+            load = FrameLoad(frames=[])
         else:
-            frames, unscored = load_frames(db, pad_bounds(extent, 2 * DEFAULT_MAX_DISTANCE_M))
+            load = load_frames(db, cfg, pad_bounds(extent, 2 * DEFAULT_MAX_DISTANCE_M))
+    frames = load.frames
+
+    no_osm = 0
+    if missing:
+        covered = [f for f in frames if tile_of(f.lat, f.lon, client.tile_deg) not in missing]
+        no_osm = len(frames) - len(covered)
+        frames = covered
 
     rows, stats = build_rows(lines, frames, cfg, today, only_ids=only_ids)
     stats.mode = "full" if bbox is None else f"bbox {bbox} ({len(only_ids or ())} lines)"
     stats.tiles = len(tiles)
+    stats.tiles_missing = len(missing)
+    stats.frames_no_osm = no_osm
     stats.ways_loaded = len(ways)
-    stats.frames_unscored = unscored
-    stats.frames_total = len(frames) + unscored
+    stats.frames_unscored = load.unscored
+    stats.frames_unusable = load.unusable
+    stats.frames_total = len(frames) + load.unscored + load.unusable + no_osm
 
     if not dry_run:
         write_rows(db, rows, only_ids, fingerprint)

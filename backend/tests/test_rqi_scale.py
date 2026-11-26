@@ -193,3 +193,31 @@ def test_ml_severity_of_each_level_survives_a_flip():
         assert F.to_severity(F.value_of(lv.key)) == R.SCALE.to_severity(lv.value)
     assert F.severity_values(F.model_levels) == R.MODEL_LEVELS
     assert int(F.to_severity(F.bad_from)) == R.BAD_FROM
+
+
+# ----- the segment layer's config must agree with the canonical scale -------
+
+def test_segment_config_scale_matches_the_canonical_scale():
+    """backend/config/segment_aggregation.json carries its own "scale" block
+    (RqiScale in segment_aggregation). It must state exactly what
+    shared/rqi_scale.json states, so the two can never drift apart."""
+    from app.services.segment_aggregation import load_config
+    seg = load_config().scale
+    assert tuple(sorted(seg.classes)) == tuple(sorted(SCALE.model_levels))
+    assert seg.higher_is_worse == SCALE.lower_is_better
+    assert seg.bad_class == SCALE.bad_from
+    assert seg.best_to_worst == SCALE.model_levels  # best first, both sides
+
+
+def test_segment_thresholds_are_the_ml_recipe_in_canonical_numbering():
+    """The ML recipe (ml/segment_recipe.json) is tuned in severity numbering;
+    the backend config holds the same cut-points on the canonical scale."""
+    from app.services.segment_aggregation import load_config
+    recipe_path = os.path.join(REPO_ROOT, "ml", "segment_recipe.json")
+    if not os.path.exists(recipe_path):
+        pytest.skip("ml/ not present")
+    with open(recipe_path, encoding="utf-8") as f:
+        recipe = json.load(f)
+    assert recipe.get("scale_direction", SEVERITY) == SEVERITY
+    canonical = sorted(round(SCALE.to_severity(t), 3) for t in load_config().thresholds)
+    assert canonical == pytest.approx(sorted(recipe["thresholds"]))

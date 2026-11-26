@@ -7,19 +7,22 @@ copy. Edit shared/rqi_scale.json only, then run:
 
     python scripts/sync_rqi_scale.py          # write the copies
     python scripts/sync_rqi_scale.py --check  # exit 1 if a copy drifted
-    python scripts/sync_rqi_scale.py --flip   # PHASE 2 ONLY: mirror the numbering
-                                              # (1 = best <-> 5 = best) + sync; must
-                                              # ship together with the data migration
+    python scripts/sync_rqi_scale.py --flip   # mirror the numbering (1 = best <-> 5 = best)
+                                              # + the segment config's "scale" block and
+                                              # thresholds + sync; ships together with the
+                                              # data migration (shared/README.md)
 
 Backend pytest and Vitest also fail on drift (test_rqi_scale.py, rqiScale.test.ts).
 """
 import importlib.util
 import json
 import os
+import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SOURCE = os.path.join(ROOT, "shared", "rqi_scale.json")
+SEGMENT_CONFIG = os.path.join(ROOT, "backend", "config", "segment_aggregation.json")
 COPIES = (
     os.path.join(ROOT, "backend", "app", "core", "rqi_scale.json"),
     os.path.join(ROOT, "frontend", "src", "modules", "ui", "utils", "rqiScale.json"),
@@ -38,6 +41,31 @@ def flip_source():
     with open(SOURCE, "w", encoding="utf-8") as f:
         f.write(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
     print(f"shared/rqi_scale.json: direction {scale.direction} -> {data['direction']}")
+    flip_segment_config(scale)
+
+
+def flip_segment_config(scale):
+    """Mirror the segment layer's own "scale" block + cut-points (RqiScale in
+    backend/app/services/segment_aggregation.py) so it keeps matching the
+    canonical scale (pinned by backend/tests/test_rqi_scale.py)."""
+    if not os.path.exists(SEGMENT_CONFIG):
+        return
+    with open(SEGMENT_CONFIG, encoding="utf-8") as f:
+        cfg = json.load(f)
+    mirror = scale.min_value + scale.max_value
+    cfg["thresholds"] = sorted(round(mirror - t, 3) for t in cfg["thresholds"])
+    sc = cfg["scale"]
+    sc["classes"] = sorted(mirror - c for c in sc["classes"])
+    sc["higher_is_worse"] = not sc["higher_is_worse"]
+    sc["bad_class"] = mirror - sc["bad_class"]
+    text = json.dumps(cfg, ensure_ascii=False, indent=2) + "\n"
+    # keep short numeric lists on one line, as the file is written by hand
+    text = re.sub(r"\[\s*([-\d.,\s]+?)\s*\]",
+                  lambda m: "[" + ", ".join(x.strip() for x in m.group(1).split(",")) + "]", text)
+    with open(SEGMENT_CONFIG, "w", encoding="utf-8") as f:
+        f.write(text)
+    print(f"backend/config/segment_aggregation.json: thresholds {cfg['thresholds']}, "
+          f"classes {sc['classes']}, higher_is_worse {sc['higher_is_worse']}")
 
 
 def main(argv):

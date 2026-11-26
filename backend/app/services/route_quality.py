@@ -7,10 +7,15 @@ stands for a known number of metres, so the summary is plain bookkeeping:
 
 - ``total_length_m``    the whole path
 - ``covered_length_m``  metres whose sample matched a segment WITH data
-- ``length_by_rqi``     those metres split by the segment's class: 4 numbers,
-                         BEST FIRST (Kiváló, Jó, Közepes, Rossz = SCALE.model_levels)
+- ``length_by_rqi``     those metres split by the segment's class, one entry
+                        per class, BEST FIRST (``RqiScale.best_to_worst``), so
+                        the API keeps its meaning whichever way the scale runs
 - ``mean_score``        length-weighted mean of the segments' scores
 - ``matched_m``         metres matched per segment id (for the worst-list)
+
+``covered_length_m`` always equals ``sum(length_by_rqi)``: a segment without
+a class does not count as coverage. Which class labels exist and which end of
+the scale is "worst" comes from ``RqiScale`` (the config), never from here.
 
 No DB access here: the resolver loads the candidate segments and passes them
 in, which keeps this unit-testable and torch/numpy-free.
@@ -20,8 +25,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Hashable, Optional, Sequence
 
-from app.core.rqi_scale import SCALE
 from app.services.map_matching import LineIndex
+from app.services.segment_aggregation import RqiScale
 from app.services.segment_geometry import LatLon, densify
 
 ROUTE_BUFFER_M = 15.0
@@ -54,7 +59,7 @@ class SegmentRef:
 class RouteStats:
     total_length_m: float = 0.0
     covered_length_m: float = 0.0
-    length_by_rqi: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0, 0.0])
+    length_by_rqi: list[float] = field(default_factory=list)   # per class, best first
     mean_score: Optional[float] = None
     matched_m: dict[Hashable, float] = field(default_factory=dict)
 
@@ -62,6 +67,7 @@ class RouteStats:
 def compute_route_stats(
     path: Sequence[LatLon],
     segments: Sequence[SegmentRef],
+    scale: RqiScale,
     *,
     buffer_m: float = ROUTE_BUFFER_M,
     max_bearing_diff_deg: float = ROUTE_MAX_BEARING_DIFF_DEG,
@@ -69,11 +75,12 @@ def compute_route_stats(
 ) -> RouteStats:
     """Match ``path`` (``[(lat, lon), ...]``) to ``segments`` and add it up.
 
-    Segments without data (``rqi`` / ``score`` None) are ignored: a stretch
-    covered only by them counts as uncovered.
+    Segments without data (``rqi`` / ``score`` None, or a class the scale does
+    not know) are ignored: a stretch covered only by them counts as uncovered.
     """
-    stats = RouteStats()
-    usable = [s for s in segments if s.rqi is not None and s.score is not None]
+    classes = scale.best_to_worst
+    stats = RouteStats(length_by_rqi=[0.0] * len(classes))
+    usable = [s for s in segments if s.rqi in classes and s.score is not None]
     by_id = {s.id: s for s in usable}
     index = LineIndex(usable)
 
@@ -89,9 +96,7 @@ def compute_route_stats(
             continue
         seg = by_id[match.line_id]
         stats.covered_length_m += length
-        # slot = severity - 1 (0 = Kiváló … 3 = Rossz), whatever the numbering
-        slot = min(len(stats.length_by_rqi), max(1, int(SCALE.to_severity(seg.rqi)))) - 1
-        stats.length_by_rqi[slot] += length
+        stats.length_by_rqi[classes.index(seg.rqi)] += length
         weighted_score += seg.score * length
         stats.matched_m[seg.id] = stats.matched_m.get(seg.id, 0.0) + length
 
@@ -103,10 +108,11 @@ def compute_route_stats(
 def worst_segment_ids(
     stats: RouteStats,
     segments: Sequence[SegmentRef],
+    scale: RqiScale,
     eligible: Optional[set] = None,
     limit: int = WORST_SEGMENTS_LIMIT,
 ) -> list[Hashable]:
-    """Ids of the worst segments actually driven, worst score first.
+    """Ids of the worst segments actually driven, worst first.
 
     ``eligible`` restricts the list (the resolver passes the ids whose
     confidence is not "low"). A segment qualifies when the route covers at
@@ -125,6 +131,6 @@ def worst_segment_ids(
             needed = min(MIN_MATCHED_M, MIN_MATCHED_FRACTION * seg.length_m)
         if metres + 1e-9 < needed:
             continue
-        candidates.append((SCALE.worst_first_key(seg.score), -metres, str(seg_id), seg_id))
+        candidates.append((-scale.badness(seg.score), -metres, str(seg_id), seg_id))
     candidates.sort()
     return [c[3] for c in candidates[:limit]]
