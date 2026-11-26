@@ -189,6 +189,36 @@ and fixed). Code: `ml/vlm_attributes.py`, `ml/vlm_feature_eval.py`.
 - **AI-labelling pilot (T-4, earlier):** VLM labellers agreed with the expert at QWK
   0.63 / 0.72, below the model itself (0.84) → no VLM labelling at scale.
 
+## Era 10 — unlabelled frames: regional normalisation, self-training (2026-11-26)
+
+Can the ~15k unlabelled frames fix regional generalisation? (`ml/semisup_regional.py`;
+champion recipe, official spatial CV **and** leave-one-area-out (LORO), paired vs
+champion; frame positions from Postgres into gitignored `ml/cache/frame_meta.csv`.)
+Regional offset = mean predicted − mean true score of an area when that area is
+left out (severity units, + = predicted worse). For the champion: Budapest −0.35,
+Törökbálint +0.27, Székesfehérvár +0.48, Tapolca −0.32. The model pulls a new
+region towards the training average.
+
+| Candidate | spatial ΔQWK [95% CI] | LORO QWK (champion 0.663) | LORO ΔQWK [95% CI] |
+|---|---|---|---|
+| features − area mean (± whitening) | −0.094 / −0.085 (sig.) | 0.430 / 0.419 | −0.23 / −0.24 (sig.) |
+| features − mean of frames within 1 / 3 km | −0.18 … −0.21 (sig.) | 0.28–0.49 | −0.18 … −0.39 (sig.) |
+| [features, features − area / 3 km mean] | +0.003 / +0.008 (n.s.) | 0.597 / 0.604 | −0.066 / −0.059 |
+| self-training, strict pool (no test cells/area), w 0.3 | +0.009 [−0.003, +0.018] | 0.575 | −0.088 [−0.160, −0.026] |
+| self-training, test area's unlabelled frames too | – | 0.645 | −0.017 [−0.054, +0.022] |
+
+- **Regional normalisation fails.** The areas genuinely differ in road quality
+  (mean label 1.4–2.7), so subtracting a regional feature mean removes real signal
+  together with the camera/scene offset; the regional offsets *grow*.
+- **Self-training does not generalise.** About 700 confident, neighbour-consistent
+  pseudo-labels per fold barely move spatial CV and hurt a new region. Pseudo-labels
+  repeat the model's own regional bias. Using the new region's own frames
+  (transductive) also fails to help, and Budapest gets slightly worse in every
+  variant.
+- **Verdict:** no candidate; the champion stays. Regional generalisation needs
+  labels from the region (incl. excellent Budapest roads), not more of the model's
+  own guesses.
+
 ## Where the model is unsure: novelty and geography (2026-11-26)
 
 Can we tell in advance where predictions are unreliable?
