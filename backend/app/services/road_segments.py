@@ -57,6 +57,7 @@ from app.services.osm_overpass import (
     Way,
     cache_path,
     pad_bounds,
+    tile_of,
     tiles_for_points,
 )
 from app.services.segment_aggregation import (
@@ -107,6 +108,8 @@ class Frame:
 class BuildStats:
     mode: str = "full"
     tiles: int = 0
+    tiles_missing: int = 0      # occupied but not cached (cached-only build)
+    frames_no_osm: int = 0      # frames in those tiles, left out
     ways_loaded: int = 0
     lines: int = 0              # after stitching ways into roads
     lines_with_frames: int = 0
@@ -133,6 +136,8 @@ class BuildStats:
             f"mode:                {self.mode}",
             f"OSM ways:            {self.ways_loaded} from {self.tiles} tiles "
             f"→ {self.lines} lines after stitching",
+            *([f"  PARTIAL:           {self.tiles_missing} tiles not cached — "
+               f"{self.frames_no_osm} frames there left out"] if self.tiles_missing else []),
             f"lines with frames:   {self.lines_with_frames}",
             f"segments with data:  {self.segments} ({self.km:.1f} km; "
             f"median {self.median_length_m:.0f} m, {self.median_images:.0f} frames) — "
@@ -443,6 +448,7 @@ def rebuild_segments(
     cfg: Optional[SegmentConfig] = None,
     client: Optional[OverpassClient] = None,
     allow_fetch: bool = True,
+    cached_only: bool = False,
     merge: bool = True,
     dry_run: bool = False,
     today: Optional[dt.date] = None,
@@ -452,6 +458,11 @@ def rebuild_segments(
     (``(south, west, north, east)``). Idempotent: same inputs → same rows.
 
     ``merge=False`` cuts every OSM way on its own (no stitching).
+
+    ``cached_only=True`` builds from the OSM tiles already on disk and leaves
+    out the frames of tiles that are not (a partial layer while Overpass is
+    slow or unreachable). The next normal build sees a different tile set and
+    rebuilds everything.
 
     Raises ``OverpassError`` when a needed tile is neither cached nor
     fetchable; nothing is written in that case.
@@ -464,7 +475,11 @@ def rebuild_segments(
         client = OverpassClient(data_path("osm"), log=log)
 
     tiles = occupied_tiles(db, client.tile_deg)
-    ways = client.load_ways(tiles, allow_fetch=allow_fetch)
+    missing: set[Tile] = set()
+    if cached_only:
+        missing = {t for t in tiles if not client.is_cached(t)}
+        tiles -= missing
+    ways = client.load_ways(tiles, allow_fetch=allow_fetch and not cached_only)
     lines = merge_ways(ways) if merge else dict(ways)
     fingerprint = build_fingerprint(
         {t: cache_path(client.cache_dir, t, client.tile_deg).stat().st_size for t in tiles},
@@ -493,12 +508,20 @@ def rebuild_segments(
         else:
             frames, unscored = load_frames(db, pad_bounds(extent, 2 * DEFAULT_MAX_DISTANCE_M))
 
+    no_osm = 0
+    if missing:
+        covered = [f for f in frames if tile_of(f.lat, f.lon, client.tile_deg) not in missing]
+        no_osm = len(frames) - len(covered)
+        frames = covered
+
     rows, stats = build_rows(lines, frames, cfg, today, only_ids=only_ids)
     stats.mode = "full" if bbox is None else f"bbox {bbox} ({len(only_ids or ())} lines)"
     stats.tiles = len(tiles)
+    stats.tiles_missing = len(missing)
+    stats.frames_no_osm = no_osm
     stats.ways_loaded = len(ways)
     stats.frames_unscored = unscored
-    stats.frames_total = len(frames) + unscored
+    stats.frames_total = len(frames) + unscored + no_osm
 
     if not dry_run:
         write_rows(db, rows, only_ids, fingerprint)
