@@ -5,7 +5,7 @@ PYTHON_VENV = .venv
 PYTHON = $(PYTHON_VENV)/bin/python
 UVICORN = $(PYTHON_VENV)/bin/uvicorn
 
-.PHONY: setup backend frontend dev lint clean retrain
+.PHONY: setup backend frontend dev lint clean retrain postprocess
 
 setup:
 	@echo "🔍 Setting up environments..."
@@ -78,3 +78,8 @@ clean:
 # Flags: make retrain ARGS="--force"   (also --min-new N, --no-extract, --labels CSV)
 retrain:
 	$(PYTHON) ml/retrain.py $(ARGS)
+
+# Post-process newly collected frames (frame quality -> DINO re-score -> segments
+# -> collector report). Incremental, idempotent, safe while the collector runs.
+postprocess:
+	bash backend/scripts/postprocess_new_frames.sh

@@ -253,3 +253,25 @@ def test_build_payload():
     assert p[2] == {"usable": False, "reasons": ["missing_image"], "road_prob": None, "blur": None,
                     "brightness": None, "dup_of": None, "version": 1}
     assert list(p[0]) == ["usable", "reasons", "road_prob", "blur", "brightness", "dup_of", "version"]
+
+
+# --- incremental write -------------------------------------------------------
+def test_changed_payloads_only_new_or_different():
+    import json
+    p1 = {"usable": True, "reasons": [], "road_prob": 0.9, "blur": 1.0, "brightness": 2.0,
+          "dup_of": None, "version": 1}
+    p2 = dict(p1, usable=False, reasons=["duplicate"], dup_of=1)
+    payloads = [(1, json.dumps(p1)), (2, json.dumps(p2)), (3, json.dumps(p1))]
+    existing = {1: p1, 2: dict(p2, dup_of=None, usable=True, reasons=[]), 3: None}
+    assert [i for i, _ in fq.changed_payloads(payloads, existing)] == [2, 3]
+
+
+def test_unsettled_ids_skips_only_young_missing_images():
+    now = pd.Timestamp("2026-11-26 14:00")
+    df = pd.DataFrame({
+        "id": [1, 2, 3, 4],
+        "reasons": ["missing_image", "missing_image", "", "not_road"],
+        "created_at": ["2026-11-26 13:55", "2026-11-26 12:00", "2026-11-26 13:59", "2026-11-26 13:59"],
+    })
+    assert fq.unsettled_ids(df, now, 15) == {1}
+    assert fq.unsettled_ids(df, now, 0) == set()

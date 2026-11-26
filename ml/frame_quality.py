@@ -776,7 +776,7 @@ def cmd_manifest(args=None):
     try:
         df = pd.read_sql_query(
             "SELECT id, latitude, longitude, heading, pano_id, image_url, capture_date, "
-            "dino_rqi_score, (analysis_metadata->>'dino_score') AS dino_score "
+            "dino_rqi_score, (analysis_metadata->>'dino_score') AS dino_score, created_at "
             "FROM street_view_images ORDER BY id", conn)
     finally:
         conn.close()
@@ -937,7 +937,8 @@ def cmd_decide(args=None):
     cols = (["id", "filename", "latitude", "longitude", "heading", "pano_id", "capture_date",
              "dino_rqi_score", "dino_score", "manual_rqi", "exists", "readable", "road_prob"]
             + P_COLS + [c for c in PIXEL_COLS if c not in ("id", "readable")]
-            + ["usable", "reasons", "dup_of", "dup_cluster"])
+            + ["usable", "reasons", "dup_of", "dup_cluster"]
+            + (["created_at"] if "created_at" in out else []))
     out[cols].to_csv(QUALITY_CSV, index=False, float_format="%.9g")
     print(f"[decide] {len(out)} rows -> {QUALITY_CSV}")
 
@@ -1162,6 +1163,44 @@ VERIFY_SQL = (
     "FROM street_view_images")
 
 
+def changed_payloads(payloads, existing):
+    """Keep (id, json) pairs whose payload differs from the stored one or that
+    have none. existing: {id: stored frame_quality dict or None}."""
+    return [(i, js) for i, js in payloads if existing.get(i) != json.loads(js)]
+
+
+def unsettled_ids(df, now, settle_min):
+    """Frames with no image yet that were created less than settle_min minutes
+    ago: the collector may still be writing their file. Not written now (a
+    later run flags them as missing_image if the file never appears)."""
+    created = pd.to_datetime(df.get("created_at"), errors="coerce")
+    if created is None or settle_min <= 0:
+        return set()
+    young = (now - created) < pd.Timedelta(minutes=settle_min)
+    missing = df["reasons"].astype(str).str.contains("missing_image")
+    return set(df.loc[young & missing, "id"].astype(int))
+
+
+def incremental_payloads(payloads, df, settle_min=15):
+    """Only rows that need a write: new or changed payloads, minus unsettled frames."""
+    import psycopg2
+    conn = psycopg2.connect(database_url())
+    conn.set_session(readonly=True)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, analysis_metadata->'frame_quality' FROM street_view_images")
+            existing = {int(i): fq for i, fq in cur.fetchall()}
+            cur.execute("SELECT now()::timestamp")
+            now = pd.Timestamp(cur.fetchone()[0])
+    finally:
+        conn.close()
+    skip = unsettled_ids(df, now, settle_min)
+    out = changed_payloads([(i, js) for i, js in payloads if i not in skip], existing)
+    print(f"[write] incremental: {len(out)} rows new/changed, {len(payloads) - len(out) - len(skip)} "
+          f"unchanged, {len(skip)} unsettled (image not on disk yet, < {settle_min} min old)")
+    return out
+
+
 def cmd_write(args):
     df = load_quality()
     payloads = [(int(r["id"]), json.dumps(build_payload(r), allow_nan=False))
@@ -1182,8 +1221,14 @@ def cmd_write(args):
     print("          " + UPDATE_SQL)
     print("        verification: " + VERIFY_SQL)
 
+    payloads = incremental_payloads(payloads, df, settle_min=args.settle_min)
+    n_bad = sum(1 for _, js in payloads if '"usable": false' in js)
     if not args.commit:
-        print("[write] DRY RUN - nothing written. Re-run with --commit --backup <fresh dump> to apply.")
+        print(f"[write] DRY RUN - would write {len(payloads)} changed/new rows "
+              f"({n_bad} unusable). Re-run with --commit --backup <fresh dump> to apply.")
+        return
+    if not payloads:
+        print("[write] nothing changed - no write needed")
         return
     b = args.backup
     if not b or not os.path.isfile(b) or os.path.getsize(b) == 0:
@@ -1197,23 +1242,27 @@ def cmd_write(args):
     conn = psycopg2.connect(database_url())
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT count(*) FROM street_view_images WHERE id = ANY(%s)",
-                        ([i for i, _ in payloads],))
+            ids = [i for i, _ in payloads]
+            cur.execute("SELECT count(*) FROM street_view_images WHERE id = ANY(%s)", (ids,))
             n_match = cur.fetchone()[0]
             execute_values(cur, UPDATE_SQL, payloads, template="(%s, %s)", page_size=1000)
-            cur.execute(VERIFY_SQL)
+            cur.execute(VERIFY_SQL.replace("FROM street_view_images",
+                                           "FROM street_view_images WHERE id = ANY(%s)"), (ids,))
             n_key, n_false = cur.fetchone()
-            cur.execute("SELECT count(*) FROM street_view_images")
-            n_rows = cur.fetchone()[0]
             if n_key != n_match or n_false != n_bad:
                 conn.rollback()
-                sys.exit(f"[write] verification failed (rows with key {n_key}, expected {n_match}; "
-                         f"usable=false {n_false}, expected {n_bad}) - ROLLED BACK")
+                sys.exit(f"[write] verification failed (written rows with key {n_key}, expected "
+                         f"{n_match}; usable=false {n_false}, expected {n_bad}) - ROLLED BACK")
+            cur.execute(VERIFY_SQL)
+            all_key, all_false = cur.fetchone()
+            cur.execute("SELECT count(*) FROM street_view_images")
+            n_rows = cur.fetchone()[0]
         conn.commit()
-        print(f"[write] COMMITTED: {n_key}/{n_rows} rows have frame_quality, usable=false: {n_false}")
-        if n_rows != n_key:
-            print(f"[write] note: {n_rows - n_key} DB rows are newer than frames.csv and have no "
-                  "frame_quality - rerun `all`")
+        print(f"[write] COMMITTED {n_key} rows ({n_false} unusable). Table: {all_key}/{n_rows} rows "
+              f"have frame_quality, usable=false: {all_false}")
+        if n_rows != all_key:
+            print(f"[write] note: {n_rows - all_key} DB rows have no frame_quality yet "
+                  "(newer than the manifest, or still settling) - rerun `all` + `write`")
     except Exception:
         conn.rollback()
         raise
@@ -1257,6 +1306,9 @@ def main():
     w = sub.add_parser("write")
     w.add_argument("--commit", action="store_true")
     w.add_argument("--backup")
+    w.add_argument("--settle-min", type=float, default=15.0,
+                   help="skip frames without an image file created less than this many minutes "
+                        "ago (a collector may still be writing them)")
     w.set_defaults(fn=cmd_write)
     args = ap.parse_args()
     args.fn(args)
