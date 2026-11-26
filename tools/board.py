@@ -138,10 +138,10 @@ def render(data) -> None:
 *{{box-sizing:border-box}}html,body{{height:100%}}
 body{{margin:0;padding:16px 16px 12px;background:var(--bg);color:var(--fg);font:14px/1.4 system-ui,-apple-system,sans-serif;height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:hidden}}
 h1{{flex:none;font-size:18px;margin:0 0 12px}}h1 small{{color:var(--muted);font-weight:400;font-size:13px}}
-main{{flex:1;min-height:0;display:grid;grid-template-columns:repeat(5,minmax(200px,1fr));gap:12px;align-items:stretch}}
-@media (max-width:900px){{main{{grid-template-columns:repeat(5,minmax(78vw,1fr));overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch}}.col{{scroll-snap-align:start}}}}
+main{{flex:1;min-height:0;display:grid;grid-template-columns:repeat(5,minmax(240px,1fr));gap:12px;align-items:stretch;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;touch-action:pan-x pan-y}}
+@media (max-width:900px){{main{{grid-template-columns:repeat(5,minmax(78vw,1fr));scroll-snap-type:x proximity}}.col{{scroll-snap-align:start}}}}
 .col{{display:flex;flex-direction:column;min-height:0;background:var(--colbg);border-top:4px solid var(--line);border-radius:8px;padding:8px 8px 0}}
-.list{{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding-bottom:8px}}
+.list{{flex:1;min-height:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:contain;padding-bottom:8px}}
 .col h2{{flex:none;font-size:13px;text-transform:uppercase;letter-spacing:.04em;margin:0 0 8px;display:flex;gap:6px;align-items:baseline}}
 .col h2 span{{color:var(--muted);text-transform:none;letter-spacing:0;font-weight:400}}.col h2 em{{margin-left:auto;font-style:normal;color:var(--muted)}}
 .todo{{border-color:var(--todo)}}.doing{{border-color:var(--doing)}}.review{{border-color:var(--review)}}.owner{{border-color:var(--owner)}}.done{{border-color:var(--done)}}
