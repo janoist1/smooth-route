@@ -49,8 +49,8 @@ from app.core.migrations import alembic_config  # noqa: E402
 from app.core.secret_scan import find_secrets  # noqa: E402
 from app.models.models import RoadSegment, StreetViewImage  # noqa: E402
 
-# Columns the public site reads. image_url + location are intentionally omitted
-# (published as NULL): the site shows a Street View deep-link, not stored images.
+# Columns the public site reads. image_url is omitted: the site shows a Street
+# View deep-link. The model's location default derives geometry from lat/lon.
 PUBLIC_COLUMNS = [
     "id",
     "latitude",
@@ -215,7 +215,7 @@ def main() -> None:
         for i in range(0, len(segments), BATCH):
             conn.execute(RoadSegment.__table__.insert(), segments[i : i + BATCH])
 
-    print(f"published {len(payload)} rows (image_url + location dropped) "
+    print(f"published {len(payload)} rows (image_url dropped; location derived from lat/lon) "
           f"and {len(segments)} road segments")
 
 

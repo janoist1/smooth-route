@@ -18,7 +18,7 @@ before it is sent (``sv_client``).
 from sqlalchemy import func, text
 
 from app.core.database import SessionLocal
-from app.models.models import StreetViewImage
+from app.models.models import StreetViewImage, street_view_location
 from app.services.google_maps import google_maps_service
 from app.services.job_service import JobStep, update_job
 from app.services.network_sampling import load_sampling, sample_route
@@ -57,11 +57,18 @@ def collect_points(origin: str, destination: str, job_id: str,
         try:
             total_meta = len(metadata_list)
             for i, meta in enumerate(metadata_list):
-                # Skip if an existing point is within 5 meters (dedupe).
+                # Preserve proximity-only dedupe: heading is intentionally ignored,
+                # even for opposite views. Fall back for rows predating the backfill.
                 point_geom = f"POINT({meta['longitude']} {meta['latitude']})"
                 exists = db.query(StreetViewImage).filter(
                     func.ST_DistanceSphere(
-                        StreetViewImage.location, func.ST_GeomFromText(point_geom, 4326)
+                        func.coalesce(
+                            StreetViewImage.location,
+                            func.ST_SetSRID(func.ST_MakePoint(
+                                StreetViewImage.longitude, StreetViewImage.latitude,
+                            ), 4326),
+                        ),
+                        func.ST_GeomFromText(point_geom, 4326),
                     ) < 5.0
                 ).first()
 
@@ -69,6 +76,7 @@ def collect_points(origin: str, destination: str, job_id: str,
                     db.add(StreetViewImage(
                         latitude=meta['latitude'],
                         longitude=meta['longitude'],
+                        location=street_view_location(meta['latitude'], meta['longitude']),
                         heading=meta['heading'],
                         pitch=meta['pitch'],
                         image_url=meta['image_url'],

@@ -184,6 +184,13 @@ report, summary. Idempotent and safe while the collector still runs.
 Collection also skips user-contributed photospheres (`CAoS…` pano ids); stored ones
 are flagged unusable.
 
+Frame writers set the SRID 4326 `location` point from longitude/latitude; the model
+also supplies it for ORM/Core inserts that omit it. Migration `0010` backfills
+legacy NULL geometry in one update. Route collection falls back to lat/lon for
+those rows even before migration. Its existing dedupe rule remains distance < 5 m,
+regardless of heading (including opposite views); network collection also skips
+nearby frames regardless of heading. Heading remains stored for each saved view.
+
 Progress is logged per point in `data/collect/<job>.jsonl`. To have the OSM tiles the
 rebuild needs in the cache beforehand:
 `scripts/build_segments.py --prefetch-bbox minLng,minLat,maxLng,maxLat` (one request at

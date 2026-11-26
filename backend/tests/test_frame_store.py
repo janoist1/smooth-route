@@ -97,6 +97,8 @@ def test_save_writes_one_row_and_one_jpeg_and_remembers_the_frame(tmp_path):
     assert re.fullmatch(r"images/sv_100_[0-9a-f]{8}\.jpg", row.image_url)
     assert (images / row.image_url.split("/")[1]).read_bytes() == JPEG
     assert (row.latitude, row.longitude) == (frame.lat, frame.lon)
+    assert row.location.srid == 4326
+    assert row.location.data == f"POINT({frame.lon} {frame.lat})"
     assert (row.heading, row.pitch, row.pano_id) == (90.0, -10.0, "new-pano")
     assert row.capture_date == dt.date(2024, 3, 1)
     assert row.rqi_score is None and row.analysis_metadata is None      # pending analysis

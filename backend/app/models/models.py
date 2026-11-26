@@ -4,7 +4,7 @@ from typing import Any, Optional
 
 from sqlalchemy import BigInteger, Boolean, CheckConstraint, Date, Integer, String, Float, DateTime, JSON, UniqueConstraint, Uuid, false, func
 from sqlalchemy.orm import Mapped, declarative_base, mapped_column
-from geoalchemy2 import Geometry
+from geoalchemy2 import Geometry, WKTElement
 
 from app.core.timeutil import utcnow
 
@@ -12,6 +12,19 @@ Base = declarative_base()
 
 ROLE_USER = "user"
 ROLE_ADMIN = "admin"
+
+
+def street_view_location(latitude: Optional[float], longitude: Optional[float]) -> Optional[WKTElement]:
+    """Build the SRID 4326 point in longitude/latitude order, if both are known."""
+    if latitude is None or longitude is None:
+        return None
+    return WKTElement(f"POINT({longitude} {latitude})", srid=4326)
+
+
+def _default_street_view_location(context: Any) -> Optional[WKTElement]:
+    # Covers ORM and Core inserts that omit location, including bulk publishing.
+    values = context.get_current_parameters()
+    return street_view_location(values.get("latitude"), values.get("longitude"))
 
 
 class User(Base):
@@ -57,7 +70,9 @@ class StreetViewImage(Base):
     # precision → stored as the 1st of the month). NULL = unknown. The RQI is
     # only as current as this date, not as `created_at` (our download time).
     capture_date: Mapped[Optional[dt.date]] = mapped_column(Date, nullable=True, index=True)
-    location: Mapped[Optional[Any]] = mapped_column(Geometry("POINT", srid=4326), index=True)
+    location: Mapped[Optional[Any]] = mapped_column(
+        Geometry("POINT", srid=4326), index=True, default=_default_street_view_location,
+    )
     created_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime, default=utcnow)
 
     # AI Analysis results
