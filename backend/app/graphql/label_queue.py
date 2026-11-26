@@ -15,6 +15,7 @@ import strawberry
 
 from app.graphql.permissions import IsAdmin
 from app.graphql.resolver_helpers import get_db_session
+from app.services import label_queue as lq
 from app.services.capture_date import format_capture_date
 
 
@@ -24,6 +25,7 @@ class LabelQueueStrategy(Enum):
     DIVERSE = "diverse"
     MIXED = "mixed"
     RECHECK = "recheck"  # already-labelled frames, served blind (old label never sent)
+    SPRINT = "sprint"  # learning-curve sprint: new streets, <= 1 per 75 m, + model-best
 
 
 @strawberry.type
@@ -58,6 +60,9 @@ class LabelQueueStats:
     rechecked: int
     recheck_same: Optional[float]
     recheck_within_one: Optional[float]
+    # Labelling sprint: new labels made in sprint mode, toward sprint_target.
+    sprint_labelled: int
+    sprint_target: int
 
 
 @strawberry.type
@@ -72,6 +77,35 @@ class LabelExample:
     rqi: int
     id: int
     image_url: str
+
+
+@strawberry.enum
+class PairResult(Enum):
+    A = "A"          # frame A shows the worse road
+    B = "B"
+    EQUAL = "EQUAL"
+
+
+@strawberry.type
+class LabelPair:
+    a: LabelQueueItem
+    b: LabelQueueItem
+    score_gap: float  # |model score A - B| (levels); small = informative
+
+
+@strawberry.type
+class PairQueueResult:
+    pairs: List[LabelPair]
+    judged: int  # judgments stored so far
+
+
+@strawberry.input
+class PairJudgmentInput:
+    client_id: str
+    frame_a_id: int
+    frame_b_id: int
+    result: PairResult
+    elapsed_ms: Optional[int] = None
 
 
 @strawberry.input
@@ -101,6 +135,29 @@ def _street_view_url(lat: float, lon: float, heading, pitch, pano_id) -> str:
     return f"{base}&viewpoint={lat},{lon}{view}"
 
 
+def _item(f, meta, cuts, reason, area, uncertainty=None, cell_labels=0,
+          boundary=None) -> "LabelQueueItem":
+    from app.services import label_queue_store as store
+
+    return LabelQueueItem(
+        id=f.id,
+        image_url=f"images/{meta.filename}",
+        latitude=f.lat,
+        longitude=f.lon,
+        heading=meta.heading,
+        capture_date=format_capture_date(meta.capture_date),
+        street_view_url=_street_view_url(f.lat, f.lon, meta.heading, meta.pitch, meta.pano_id),
+        reason=reason,
+        area=area,
+        uncertainty=None if uncertainty is None else round(uncertainty, 3),
+        cell_labels=cell_labels,
+        boundary=store.canonical_boundary(boundary),
+        model_score=None if f.score is None else round(store.canonical_score(f.score), 3),
+        model_rqi=store.model_rqi(f.score, cuts),
+        model_p_bad=None if f.p_bad is None else round(f.p_bad, 3),
+    )
+
+
 def _labeller(info: strawberry.Info) -> Optional[str]:
     identity = info.context.get("identity")
     return getattr(identity, "clerk_id", None)
@@ -125,30 +182,12 @@ class LabelQueueQuery:
             result, info, cuts = store.build(db, strategy.value, limit, exclude_ids or ())
             total, today = store.label_counts(db)
             consistency = store.recheck_consistency(db)
+            sprint_n = store.sprint_count(db)
         finally:
             db.close()
 
-        items = []
-        for it in result.items:
-            f, meta = it.frame, info[it.frame.id]
-            items.append(LabelQueueItem(
-                id=f.id,
-                image_url=f"images/{meta.filename}",
-                latitude=f.lat,
-                longitude=f.lon,
-                heading=meta.heading,
-                capture_date=format_capture_date(meta.capture_date),
-                street_view_url=_street_view_url(f.lat, f.lon, meta.heading,
-                                                 meta.pitch, meta.pano_id),
-                reason=it.reason,
-                area=it.area,
-                uncertainty=None if it.uncertainty is None else round(it.uncertainty, 3),
-                cell_labels=it.cell_labels,
-                boundary=store.canonical_boundary(it.boundary),
-                model_score=None if f.score is None else round(store.canonical_score(f.score), 3),
-                model_rqi=store.model_rqi(f.score, cuts),
-                model_p_bad=None if f.p_bad is None else round(f.p_bad, 3),
-            ))
+        items = [_item(it.frame, info[it.frame.id], cuts, it.reason, it.area,
+                       it.uncertainty, it.cell_labels, it.boundary) for it in result.items]
         return LabelQueueResult(
             strategy=strategy,
             items=items,
@@ -156,7 +195,9 @@ class LabelQueueQuery:
                                   eligible=result.eligible, scored=result.scored,
                                   rechecked=consistency["n"],
                                   recheck_same=consistency["same"],
-                                  recheck_within_one=consistency["within_one"]),
+                                  recheck_within_one=consistency["within_one"],
+                                  sprint_labelled=sprint_n,
+                                  sprint_target=lq.SPRINT_TARGET),
         )
 
     @strawberry.field(permission_classes=[IsAdmin])
@@ -171,6 +212,27 @@ class LabelQueueQuery:
             db.close()
         return [LabelExample(rqi=r, id=pid, image_url=f"images/{name}")
                 for r, pid, name in rows]
+
+
+@strawberry.type
+class PairQueueQuery:
+    @strawberry.field(permission_classes=[IsAdmin])
+    def pair_queue(self, limit: int = 10, exclude_ids: Optional[List[int]] = None) -> PairQueueResult:
+        """Pairs for "which frame shows the worse road?" (model scores close,
+        streets apart). Model guesses are included but the UI hides them."""
+        from app.services import label_queue_store as store
+        from app.services.label_queue import area_of
+
+        db = get_db_session()
+        try:
+            pairs, info, cuts, judged = store.build_pairs(db, limit, exclude_ids or ())
+        finally:
+            db.close()
+        return PairQueueResult(judged=judged, pairs=[
+            LabelPair(a=_item(a, info[a.id], cuts, "pair", area_of(a.lat, a.lon)),
+                      b=_item(b, info[b.id], cuts, "pair", area_of(b.lat, b.lon)),
+                      score_gap=round(gap, 3))
+            for a, b, gap in pairs])
 
 
 @strawberry.type
@@ -199,6 +261,33 @@ class LabelQueueMutation:
             db.close()
         return QuickLabelResult(point_id=input.point_id, image_filename=name,
                                 rqi=input.rqi, total_labelled=total, labelled_today=today)
+
+    @strawberry.mutation(permission_classes=[IsAdmin])
+    def submit_pair_judgment(self, info: strawberry.Info, input: PairJudgmentInput) -> bool:
+        """Store one pairwise judgment (retry-safe by clientId)."""
+        from app.services import label_queue_store as store
+
+        db = get_db_session()
+        try:
+            return store.save_pair(
+                db, input.client_id, input.frame_a_id, input.frame_b_id, input.result.value,
+                labeller=_labeller(info),
+                meta={k: v for k, v in {"elapsed_ms": input.elapsed_ms}.items() if v is not None})
+        except store.QuickLabelError:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+
+    @strawberry.mutation(permission_classes=[IsAdmin])
+    def undo_pair_judgment(self, client_id: str) -> bool:
+        from app.services import label_queue_store as store
+
+        db = get_db_session()
+        try:
+            return store.undo_pair(db, client_id)
+        finally:
+            db.close()
 
     @strawberry.mutation(permission_classes=[IsAdmin])
     def undo_quick_label(self, point_id: int) -> bool:

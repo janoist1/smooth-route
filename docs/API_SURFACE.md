@@ -289,3 +289,22 @@ better. Speed = OSM `maxspeed` (stored as `road_segments.maxspeed_kmh`, Alembic
 `backend/config/route_scoring.json` (editable without a rebuild). Labels stay
 surface-only; speed only enters route comparison. `meanScore` is unchanged.
 
+## Labelling sprint + pairwise mode (T-63, 2026-11-26)
+
+- `labelQueue(strategy: SPRINT)`: the learning-curve sprint (~1000 labels on
+  new streets): emptiest 1 km cells first, Budapest first, at most one frame
+  per 75 m, and every 4th frame from the ones the model rates best (so
+  Kiváló gets covered). `stats.sprintLabelled / sprintTarget` drive the
+  progress bar; the page suggests `make retrain` after every 200 (never
+  promotes anything by itself).
+- `pairQueue(limit, excludeIds)` → pairs of frames the model scores within
+  0.25 levels, ≥ 500 m apart, never judged before (model guess hidden).
+  `submitPairJudgment(input: {clientId, frameAId, frameBId, result: A|B|EQUAL,
+  elapsedMs})` stores one row in `pair_judgments` (Alembic 0009; retry-safe by
+  `clientId`); `undoPairJudgment(clientId)`. All admin-only, not public.
+- `ml/pairwise_scores.py`: Bradley–Terry MAP fit (labels as prior, model
+  score as weak prior) → `ml/cache/pairwise_scores.csv` for experiments.
+- Fix: since the 0006 flip `analysis_metadata.dino_score` is canonical; the
+  label queue now converts it to the model's severity orientation once
+  (`_severity_row`) instead of mixing the two.
+

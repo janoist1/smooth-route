@@ -395,3 +395,15 @@ def test_rubric_examples_need_enough_labels_the_model_agrees_with():
     got = pick_examples(cands, per_class=1, min_agreeing=3)
     assert got == [(1, 1, "f1.jpg"), (4, 30, "f30.jpg")]  # honest OOF tier first
     assert [r[1] for r in pick_examples(cands, per_class=3, min_agreeing=3) if r[0] == 1] == [1, 2, 3]
+
+
+def test_stored_canonical_scores_become_severity_once():
+    """Since the 0006 flip analysis_metadata.dino_score is canonical; the queue
+    works in the model's severity orientation (regression: they were mixed)."""
+    from app.core.rqi_scale import SCALE
+    from app.services.label_queue_store import _severity_row
+
+    best = SCALE.best  # canonical value of Kiváló, whatever the direction
+    row = _severity_row((1, "images/x.jpg", 47.5, 19.0, 0.0, 0.0, None, None, str(best), "0.1"))
+    assert row[8] == pytest.approx(1.0)  # severity 1 = best
+    assert _severity_row((1, "u", 0, 0, 0, 0, None, None, None, None))[8] is None

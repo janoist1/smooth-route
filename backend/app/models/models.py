@@ -109,6 +109,27 @@ class RoadSegment(Base):
     updated_at = Column(DateTime, nullable=False, default=utcnow, server_default=func.now())
 
 
+class PairJudgment(Base):
+    """One "which frame shows the worse road?" judgment (quick-rate pairwise
+    mode). Relative judgments are more consistent than absolute grades; the
+    ml/ pipeline fits a Bradley-Terry score from them (ml/pairwise_scores.py)."""
+
+    __tablename__ = "pair_judgments"
+    __table_args__ = (
+        CheckConstraint("result IN ('A', 'B', 'EQUAL')", name="ck_pair_judgments_result"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    # Client-generated id: undo deletes by it, and a retried save is a no-op.
+    client_id = Column(String, nullable=False, unique=True)
+    frame_a_id = Column(Integer, nullable=False, index=True)  # street_view_images.id
+    frame_b_id = Column(Integer, nullable=False, index=True)
+    result = Column(String(5), nullable=False)  # A / B worse, or EQUAL
+    labeller = Column(String, nullable=True)
+    meta = Column(JSON, nullable=True)  # model scores at the time, elapsed_ms
+    created_at = Column(DateTime, nullable=False, default=utcnow, server_default=func.now())
+
+
 class Job(Base):
     """
     Background job tracking.

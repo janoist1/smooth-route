@@ -24,6 +24,11 @@ export const STRATEGIES: { value: LabelStrategy; label: string; hint: string }[]
   { value: 'DIVERSE', label: 'Új helyek', hint: 'Címkézetlen 1 km-es cellák, Budapest elöl' },
   { value: 'UNCERTAIN', label: 'Bizonytalan', hint: 'Ahol a modell két szint határán áll' },
   {
+    value: 'SPRINT',
+    label: 'Sprint',
+    hint: 'Új utcák, legfeljebb 75 m-enként egy kép, közte a modell szerint legjobbak; cél: 1000 címke',
+  },
+  {
     value: 'RECHECK',
     label: 'Újraellenőrzés',
     hint: 'Régi címkék újra, vakon (a régi érték rejtve): előbb a gyanúsak, aztán véletlen minta',
@@ -51,6 +56,7 @@ export const isRecheckItem = (item: Pick<QueueItem, 'reason'>): boolean => item.
 
 /** Short Hungarian chip: why this frame is in the queue. */
 export const reasonLabel = (item: Pick<QueueItem, 'reason' | 'area' | 'cellLabels' | 'boundary'>): string => {
+  if (item.reason === 'model_best') return `Sprint · legjobbnak becsült · ${areaLabel(item.area)}`
   if (item.reason === 'recheck_suspicious') return 'Újraellenőrzés · gyanús'
   if (item.reason === 'recheck_sample') return 'Újraellenőrzés · minta'
   if (item.reason === 'uncertain') {
@@ -150,6 +156,61 @@ export const consistencyText = (
   if (!stats || !stats.rechecked || stats.recheckSame == null || stats.recheckWithinOne == null) return null
   const pct = (x: number) => `${Math.round(x * 100)}%`
   return `${pct(stats.recheckSame)} azonos · ${pct(stats.recheckWithinOne)} ±1 (n=${stats.rechecked})`
+}
+
+/** A retrain hint is due after every RETRAIN_EVERY sprint labels (never automatic). */
+export const RETRAIN_EVERY = 200
+
+/** The milestone (200, 400, …) to announce, or null when none is new. */
+export const retrainMilestone = (sprintLabelled: number | undefined, acknowledged: number): number | null => {
+  const reached = Math.floor((sprintLabelled ?? 0) / RETRAIN_EVERY) * RETRAIN_EVERY
+  return reached > 0 && reached > acknowledged ? reached : null
+}
+
+export type PairKeyAction = { type: 'judge'; result: 'A' | 'B' | 'EQUAL' } | { type: 'undo' } | null
+
+/** Pairwise keys: ← A worse, ↓ equal, → B worse; Backspace / Z undo. */
+export const pairKeyToAction = (key: string, modifiers: { ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean } = {}): PairKeyAction => {
+  if (modifiers.ctrlKey || modifiers.metaKey || modifiers.altKey) return null
+  if (key === 'ArrowLeft') return { type: 'judge', result: 'A' }
+  if (key === 'ArrowDown') return { type: 'judge', result: 'EQUAL' }
+  if (key === 'ArrowRight') return { type: 'judge', result: 'B' }
+  if (key === 'Backspace' || key === 'z' || key === 'Z') return { type: 'undo' }
+  return null
+}
+
+/** Ids the pair server must not serve again. */
+export const pairExcludeIds = (pairs: { a: { id: number }; b: { id: number } }[], history: { pair: { a: { id: number }; b: { id: number } } }[]): number[] => {
+  const ids = new Set<number>()
+  pairs.forEach(p => ids.add(p.a.id).add(p.b.id))
+  history.forEach(h => ids.add(h.pair.a.id).add(h.pair.b.id))
+  return [...ids]
+}
+
+export const newClientId = (): string => {
+  try {
+    return crypto.randomUUID()
+  } catch {
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+  }
+}
+
+const RETRAIN_ACK_KEY = 'quickLabel.retrainAck'
+
+export const loadRetrainAck = (): number => {
+  try {
+    return Number(window.localStorage.getItem(RETRAIN_ACK_KEY)) || 0
+  } catch {
+    return 0
+  }
+}
+
+export const saveRetrainAck = (milestone: number): void => {
+  try {
+    window.localStorage.setItem(RETRAIN_ACK_KEY, String(milestone))
+  } catch {
+    // ignore
+  }
 }
 
 /** Human-agreement summary after rating: "egyezik" / "±1" / "eltér". */

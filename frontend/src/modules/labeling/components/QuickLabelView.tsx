@@ -12,6 +12,7 @@ import {
   ZoomIn,
 } from 'lucide-react'
 import { useQuickLabel } from '../hooks'
+import PairView from './PairView'
 import {
   agreement,
   areaLabel,
@@ -19,6 +20,7 @@ import {
   imageSrc,
   isOldCapture,
   keyToAction,
+  pairKeyToAction,
   reasonLabel,
   levelOf,
   RATING_KEY_RANGE,
@@ -61,7 +63,12 @@ const pill = (active: boolean): React.CSSProperties => ({
 })
 
 // Control rows stay thumb-sized on a desktop monitor too.
-const rowWidth: React.CSSProperties = { width: '100%', maxWidth: 760, marginInline: 'auto', boxSizing: 'border-box' }
+const rowWidth: React.CSSProperties = {
+  width: '100%',
+  maxWidth: 760,
+  marginInline: 'auto',
+  boxSizing: 'border-box',
+}
 
 const chip: React.CSSProperties = {
   padding: '3px 8px',
@@ -94,12 +101,12 @@ const modelLine = (item: QueueItem): string => {
   return `Modell: ${level?.label_hu ?? item.modelRqi} (${item.modelScore.toFixed(2)})${pBad}`
 }
 
-const Frame: React.FC<{ item: QueueItem; zoom: boolean; reveal: boolean; onToggleZoom: () => void }> = ({
-  item,
-  zoom,
-  reveal,
-  onToggleZoom,
-}) => (
+const Frame: React.FC<{
+  item: QueueItem
+  zoom: boolean
+  reveal: boolean
+  onToggleZoom: () => void
+}> = ({ item, zoom, reveal, onToggleZoom }) => (
   <>
     <img
       key={item.id}
@@ -118,7 +125,16 @@ const Frame: React.FC<{ item: QueueItem; zoom: boolean; reveal: boolean; onToggl
         cursor: zoom ? 'zoom-out' : 'zoom-in',
       }}
     />
-    <div style={{ position: 'absolute', top: 8, left: 8, display: 'flex', gap: 6, flexWrap: 'wrap', right: 48 }}>
+    <div
+      style={{
+        position: 'absolute',
+        top: 8,
+        left: 8,
+        display: 'flex',
+        gap: 6,
+        flexWrap: 'wrap',
+        right: 48,
+      }}>
       <span style={chip}>{reasonLabel(item)}</span>
       {item.reason === 'uncertain' && <span style={chip}>{areaLabel(item.area)}</span>}
       {item.captureDate && (
@@ -136,7 +152,15 @@ const Frame: React.FC<{ item: QueueItem; zoom: boolean; reveal: boolean; onToggl
       <ExternalLink size={16} />
     </a>
     {reveal && (
-      <div style={{ ...chip, position: 'absolute', bottom: 8, left: 8, fontSize: 13, color: '#93c5fd' }}>
+      <div
+        style={{
+          ...chip,
+          position: 'absolute',
+          bottom: 8,
+          left: 8,
+          fontSize: 13,
+          color: '#93c5fd',
+        }}>
         {modelLine(item)}
       </div>
     )}
@@ -154,7 +178,14 @@ const LastResultLine: React.FC<{ last: { item: QueueItem; rqi: number } | null }
   }
   const human = levelOf(last.rqi)
   const verdict = agreement(last.rqi, last.item.modelRqi)
-  const color = verdict === 'same' ? '#4ade80' : verdict === 'near' ? '#fbbf24' : verdict === 'far' ? '#f87171' : '#94a3b8'
+  const color =
+    verdict === 'same'
+      ? '#4ade80'
+      : verdict === 'near'
+        ? '#fbbf24'
+        : verdict === 'far'
+          ? '#f87171'
+          : '#94a3b8'
   return (
     <span>
       Előző: <b style={{ color: human?.color }}>{human?.label_hu ?? last.rqi}</b>
@@ -210,7 +241,13 @@ const RateButton: React.FC<{
         src={imageSrc(example.imageUrl)}
         alt=""
         draggable={false}
-        style={{ width: '100%', height: 'clamp(34px, 7.5dvh, 84px)', objectFit: 'cover', objectPosition: '50% 85%', borderRadius: 8 }}
+        style={{
+          width: '100%',
+          height: 'clamp(34px, 7.5dvh, 84px)',
+          objectFit: 'cover',
+          objectPosition: '50% 85%',
+          borderRadius: 8,
+        }}
       />
     ) : (
       <div style={noExample('clamp(34px, 7.5dvh, 84px)')}>még nincs példa</div>
@@ -231,18 +268,38 @@ const RateButton: React.FC<{
     </span>
     <span
       aria-hidden="true"
-      style={{ position: 'absolute', top: 5, left: 6, fontSize: 11, fontWeight: 600, color: '#fff', opacity: 0.85, textShadow: '0 0 3px #000' }}>
+      style={{
+        position: 'absolute',
+        top: 5,
+        left: 6,
+        fontSize: 11,
+        fontWeight: 600,
+        color: '#fff',
+        opacity: 0.85,
+        textShadow: '0 0 3px #000',
+      }}>
       {level.value}
     </span>
   </button>
 )
 
-const Rubric: React.FC<{ examples: LabelExample[]; onClose: () => void }> = ({ examples, onClose }) => (
+const Rubric: React.FC<{ examples: LabelExample[]; onClose: () => void }> = ({
+  examples,
+  onClose,
+}) => (
   <div
     role="dialog"
     aria-label="Értékelési skála"
     onClick={onClose}
-    style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 20, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+    style={{
+      position: 'fixed',
+      inset: 0,
+      background: 'rgba(0,0,0,0.6)',
+      zIndex: 20,
+      display: 'flex',
+      alignItems: 'flex-end',
+      justifyContent: 'center',
+    }}>
     <div
       onClick={e => e.stopPropagation()}
       style={{
@@ -256,22 +313,47 @@ const Rubric: React.FC<{ examples: LabelExample[]; onClose: () => void }> = ({ e
       }}>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
         <b style={{ fontSize: 15 }}>Skála – a legjobbtól a legrosszabbig</b>
-        <button className="ql-btn" onClick={onClose} aria-label="Bezárás" style={{ marginLeft: 'auto', background: 'none', color: '#cbd5e1', padding: 6 }}>
+        <button
+          className="ql-btn"
+          onClick={onClose}
+          aria-label="Bezárás"
+          style={{ marginLeft: 'auto', background: 'none', color: '#cbd5e1', padding: 6 }}>
           <X size={20} />
         </button>
       </div>
       {RATING_LEVELS.map(level => {
         const ex = examples.find(e => e.rqi === level.value)
         return (
-          <div key={level.value} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '6px 0', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+          <div
+            key={level.value}
+            style={{
+              display: 'flex',
+              gap: 10,
+              alignItems: 'center',
+              padding: '6px 0',
+              borderTop: '1px solid rgba(255,255,255,0.06)',
+            }}>
             {ex ? (
-              <img src={imageSrc(ex.imageUrl)} alt={`Példa: ${level.label_hu}`} style={{ width: 132, height: 88, objectFit: 'cover', borderRadius: 8, flexShrink: 0 }} />
+              <img
+                src={imageSrc(ex.imageUrl)}
+                alt={`Példa: ${level.label_hu}`}
+                style={{
+                  width: 132,
+                  height: 88,
+                  objectFit: 'cover',
+                  borderRadius: 8,
+                  flexShrink: 0,
+                }}
+              />
             ) : (
               <div style={{ ...noExample(88), width: 132, flexShrink: 0 }}>még nincs példa</div>
             )}
             <div>
               <div style={{ fontWeight: 700, color: level.color }}>
-                {level.label_hu} <span style={{ color: '#94a3b8', fontWeight: 400, fontSize: 12 }}>({level.value})</span>
+                {level.label_hu}{' '}
+                <span style={{ color: '#94a3b8', fontWeight: 400, fontSize: 12 }}>
+                  ({level.value})
+                </span>
               </div>
               <div style={{ fontSize: 13, color: '#cbd5e1' }}>{level.rubric_hu}</div>
             </div>
@@ -279,8 +361,9 @@ const Rubric: React.FC<{ examples: LabelExample[]; onClose: () => void }> = ({ e
         )
       })}
       <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 8 }}>
-        {RQI_RUBRIC_NOTE_HU} A kép alsó részét nézd. Nem út, takarja egy autó, vagy nem eldönthető? → Kihagyás.
-        Billentyűk: a gomb sarkában lévő szám ({RATING_KEY_RANGE}) értékel, → kihagy, ← visszavon, M modell, szóköz nagyít.
+        {RQI_RUBRIC_NOTE_HU} A kép alsó részét nézd. Nem út, takarja egy autó, vagy nem eldönthető?
+        → Kihagyás. Billentyűk: a gomb sarkában lévő szám ({RATING_KEY_RANGE}) értékel, → kihagy, ←
+        visszavon, M modell, szóköz nagyít.
       </div>
     </div>
   </div>
@@ -295,11 +378,26 @@ export const QuickLabelView: React.FC<QuickLabelViewProps> = ({ onBack }) => {
   const toggleZoom = () => setZoomFor(zoom || !current ? null : current.id)
 
   // Desktop keyboard shortcuts.
-  const { rate, skip, undo, toggleReveal, canUndo } = q
+  const { rate, skip, undo, toggleReveal, canUndo, mode, judge, undoPair } = q
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null
-      if (el && (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return
+      if (
+        el &&
+        (el.tagName === 'INPUT' ||
+          el.tagName === 'SELECT' ||
+          el.tagName === 'TEXTAREA' ||
+          el.isContentEditable)
+      )
+        return
+      if (mode === 'pair') {
+        const pa = pairKeyToAction(e.key, e)
+        if (!pa) return
+        e.preventDefault()
+        if (pa.type === 'judge') judge(pa.result)
+        else undoPair()
+        return
+      }
       const action = keyToAction(e.key, e)
       if (!action) return
       e.preventDefault()
@@ -308,11 +406,12 @@ export const QuickLabelView: React.FC<QuickLabelViewProps> = ({ onBack }) => {
       else if (action.type === 'undo') {
         if (canUndo) undo()
       } else if (action.type === 'reveal') toggleReveal()
-      else if (action.type === 'zoom') setZoomFor(prev => (current && prev !== current.id ? current.id : null))
+      else if (action.type === 'zoom')
+        setZoomFor(prev => (current && prev !== current.id ? current.id : null))
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [rate, skip, undo, toggleReveal, canUndo, current])
+  }, [rate, skip, undo, toggleReveal, canUndo, current, mode, judge, undoPair])
 
   const stats = q.stats
   return (
@@ -320,7 +419,11 @@ export const QuickLabelView: React.FC<QuickLabelViewProps> = ({ onBack }) => {
       <style>{css}</style>
 
       <header style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px 4px' }}>
-        <button className="ql-btn" onClick={onBack} aria-label="Vissza" style={{ background: 'none', color: '#cbd5e1', padding: 4, display: 'flex' }}>
+        <button
+          className="ql-btn"
+          onClick={onBack}
+          aria-label="Vissza"
+          style={{ background: 'none', color: '#cbd5e1', padding: 4, display: 'flex' }}>
           <ArrowLeft size={22} />
         </button>
         <b style={{ fontSize: 16, whiteSpace: 'nowrap' }}>Gyors címkézés</b>
@@ -332,7 +435,15 @@ export const QuickLabelView: React.FC<QuickLabelViewProps> = ({ onBack }) => {
           style={{ background: 'none', color: '#93c5fd', padding: 4, display: 'flex' }}>
           <BookOpen size={20} />
         </button>
-        <div style={{ marginLeft: 'auto', fontSize: 12, color: '#94a3b8', textAlign: 'right', lineHeight: 1.25 }} aria-live="polite">
+        <div
+          style={{
+            marginLeft: 'auto',
+            fontSize: 12,
+            color: '#94a3b8',
+            textAlign: 'right',
+            lineHeight: 1.25,
+          }}
+          aria-live="polite">
           <div>
             <b style={{ color: '#fff', fontSize: 15 }}>{q.sessionRated}</b> most
             {stats && <> · {stats.labelledToday} ma</>}
@@ -345,97 +456,256 @@ export const QuickLabelView: React.FC<QuickLabelViewProps> = ({ onBack }) => {
         </div>
       </header>
 
-      <div className="ql-scroll" style={{ display: 'flex', gap: 6, padding: '4px 12px 8px', overflowX: 'auto', scrollbarWidth: 'none' }}>
-        {STRATEGIES.map(s => (
-          <button key={s.value} className="ql-btn" title={s.hint} onClick={() => q.setStrategy(s.value)} style={pill(q.strategy === s.value)}>
-            {s.label}
-          </button>
-        ))}
-        <span style={{ width: 1, background: 'rgba(255,255,255,0.12)', margin: '2px 2px' }} />
+      <div
+        className="ql-scroll"
+        style={{
+          display: 'flex',
+          gap: 6,
+          padding: '4px 12px 8px',
+          overflowX: 'auto',
+          scrollbarWidth: 'none',
+        }}>
         <button
           className="ql-btn"
-          onClick={q.toggleReveal}
-          title="A modell tippje értékelés előtt (torzíthat)"
-          aria-pressed={q.reveal}
-          style={pill(q.reveal)}>
-          {q.reveal ? <Eye size={14} /> : <EyeOff size={14} />} Modell
-          <Kbd>M</Kbd>
+          onClick={() => q.setMode(q.mode === 'pair' ? 'rate' : 'pair')}
+          aria-pressed={q.mode === 'pair'}
+          title="Két kép: melyiken rosszabb az út?"
+          style={pill(q.mode === 'pair')}>
+          Páros
         </button>
+        {q.mode === 'rate' &&
+          STRATEGIES.map(s => (
+            <button
+              key={s.value}
+              className="ql-btn"
+              title={s.hint}
+              onClick={() => q.setStrategy(s.value)}
+              style={pill(q.strategy === s.value)}>
+              {s.label}
+            </button>
+          ))}
+        <span style={{ width: 1, background: 'rgba(255,255,255,0.12)', margin: '2px 2px' }} />
+        {q.mode === 'rate' && (
+          <button
+            className="ql-btn"
+            onClick={q.toggleReveal}
+            title="A modell tippje értékelés előtt (torzíthat)"
+            aria-pressed={q.reveal}
+            style={pill(q.reveal)}>
+            {q.reveal ? <Eye size={14} /> : <EyeOff size={14} />} Modell
+            <Kbd>M</Kbd>
+          </button>
+        )}
       </div>
 
-      {q.strategy === 'RECHECK' && (
-        <div style={{ padding: '0 12px 6px', fontSize: 12, color: '#94a3b8' }}>
-          Önkonzisztencia a véletlen kontrollmintán (régi vs. új): {consistencyText(stats) ?? 'a gyanús képek után indul'}
+      {q.retrainMilestone !== null && (
+        <div
+          role="status"
+          style={{
+            margin: '0 12px 6px',
+            padding: '8px 10px',
+            borderRadius: 8,
+            background: 'rgba(37,99,235,0.2)',
+            border: '1px solid rgba(96,165,250,0.5)',
+            fontSize: 13,
+            display: 'flex',
+            gap: 8,
+            alignItems: 'center',
+          }}>
+          <span style={{ flex: 1 }}>
+            {q.retrainMilestone} új címke a sprintben. Érdemes újratanítani:{' '}
+            <code>make retrain</code> (csak kísérlet, nem élesít automatikusan).
+          </span>
+          <button
+            className="ql-btn"
+            onClick={() => q.ackRetrain(q.retrainMilestone!)}
+            style={pill(false)}>
+            Rendben
+          </button>
         </div>
       )}
 
-      <main style={{ flex: 1, minHeight: 0, position: 'relative', background: '#000', overflow: 'hidden' }}>
-        {current ? (
-          <Frame item={current} zoom={zoom} reveal={q.reveal} onToggleZoom={toggleZoom} />
-        ) : (
-          <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24, textAlign: 'center', color: '#94a3b8' }}>
-            {q.loading ? (
-              <>
-                <Loader2 className="ql-spin" size={32} />
-                <span>Képek keresése…</span>
-              </>
-            ) : q.exhausted ? (
-              <span>Ebben a módban most nincs több címkézetlen kép. Válts módot fent.</span>
-            ) : (
-              <button className="ql-btn" onClick={q.retry} style={pill(true)}>
-                Újrapróbálás
-              </button>
-            )}
+      {q.mode === 'rate' && q.strategy === 'SPRINT' && stats?.sprintTarget ? (
+        <div style={{ padding: '0 12px 6px', fontSize: 12, color: '#94a3b8' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span>Sprint: új utcák</span>
+            <span>
+              {stats.sprintLabelled ?? 0} / {stats.sprintTarget} címke
+            </span>
           </div>
-        )}
-      </main>
+          <div
+            style={{
+              height: 6,
+              borderRadius: 3,
+              background: 'rgba(255,255,255,0.12)',
+              overflow: 'hidden',
+              marginTop: 3,
+            }}>
+            <div
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={stats.sprintTarget}
+              aria-valuenow={stats.sprintLabelled ?? 0}
+              style={{
+                width: `${Math.min(100, ((stats.sprintLabelled ?? 0) / stats.sprintTarget) * 100)}%`,
+                height: '100%',
+                background: '#3b82f6',
+              }}
+            />
+          </div>
+        </div>
+      ) : null}
 
-      <div style={{ padding: '6px 12px 0', fontSize: 13, minHeight: 24, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
-        <LastResultLine last={q.lastResult} />
-      </div>
+      {q.mode === 'rate' && q.strategy === 'RECHECK' && (
+        <div style={{ padding: '0 12px 6px', fontSize: 12, color: '#94a3b8' }}>
+          Önkonzisztencia a véletlen kontrollmintán (régi vs. új):{' '}
+          {consistencyText(stats) ?? 'a gyanús képek után indul'}
+        </div>
+      )}
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: `repeat(${RATING_LEVELS.length}, minmax(0, 1fr))`,
-          gap: 4,
-          padding: '6px 10px',
-          ...rowWidth,
-        }}>
-        {RATING_LEVELS.map(level => (
-          <RateButton
-            key={level.value}
-            level={level}
-            example={q.examples.find(e => e.rqi === level.value)}
-            disabled={!current}
-            onRate={q.rate}
-          />
-        ))}
-      </div>
+      {q.mode === 'pair' ? (
+        <PairView
+          pair={q.currentPair}
+          loading={q.pairsLoading}
+          exhausted={q.pairsExhausted}
+          judged={q.pairsJudged}
+          canUndo={q.canUndoPair}
+          onJudge={q.judge}
+          onUndo={q.undoPair}
+        />
+      ) : (
+        <>
+          <main
+            style={{
+              flex: 1,
+              minHeight: 0,
+              position: 'relative',
+              background: '#000',
+              overflow: 'hidden',
+            }}>
+            {current ? (
+              <Frame item={current} zoom={zoom} reveal={q.reveal} onToggleZoom={toggleZoom} />
+            ) : (
+              <div
+                style={{
+                  height: '100%',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 12,
+                  padding: 24,
+                  textAlign: 'center',
+                  color: '#94a3b8',
+                }}>
+                {q.loading ? (
+                  <>
+                    <Loader2 className="ql-spin" size={32} />
+                    <span>Képek keresése…</span>
+                  </>
+                ) : q.exhausted ? (
+                  <span>Ebben a módban most nincs több címkézetlen kép. Válts módot fent.</span>
+                ) : (
+                  <button className="ql-btn" onClick={q.retry} style={pill(true)}>
+                    Újrapróbálás
+                  </button>
+                )}
+              </div>
+            )}
+          </main>
 
-      <div style={{ display: 'flex', gap: 6, padding: '0 12px calc(10px + env(safe-area-inset-bottom))', ...rowWidth }}>
-        <button
-          className="ql-btn"
-          onClick={q.undo}
-          disabled={!q.canUndo}
-          style={{ ...pill(false), flex: 1, justifyContent: 'center', padding: '10px 12px', fontSize: 14 }}>
-          <RotateCcw size={16} /> Visszavonás <Kbd>←</Kbd>
-        </button>
-        <button
-          className="ql-btn"
-          onClick={q.skip}
-          disabled={!current}
-          style={{ ...pill(false), flex: 1, justifyContent: 'center', padding: '10px 12px', fontSize: 14 }}>
-          Kihagyás <SkipForward size={16} /> <Kbd>→</Kbd>
-        </button>
-      </div>
+          <div
+            style={{
+              padding: '6px 12px 0',
+              fontSize: 13,
+              minHeight: 24,
+              overflow: 'hidden',
+              whiteSpace: 'nowrap',
+              textOverflow: 'ellipsis',
+            }}>
+            <LastResultLine last={q.lastResult} />
+          </div>
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: `repeat(${RATING_LEVELS.length}, minmax(0, 1fr))`,
+              gap: 4,
+              padding: '6px 10px',
+              ...rowWidth,
+            }}>
+            {RATING_LEVELS.map(level => (
+              <RateButton
+                key={level.value}
+                level={level}
+                example={q.examples.find(e => e.rqi === level.value)}
+                disabled={!current}
+                onRate={q.rate}
+              />
+            ))}
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              gap: 6,
+              padding: '0 12px calc(10px + env(safe-area-inset-bottom))',
+              ...rowWidth,
+            }}>
+            <button
+              className="ql-btn"
+              onClick={q.undo}
+              disabled={!q.canUndo}
+              style={{
+                ...pill(false),
+                flex: 1,
+                justifyContent: 'center',
+                padding: '10px 12px',
+                fontSize: 14,
+              }}>
+              <RotateCcw size={16} /> Visszavonás <Kbd>←</Kbd>
+            </button>
+            <button
+              className="ql-btn"
+              onClick={q.skip}
+              disabled={!current}
+              style={{
+                ...pill(false),
+                flex: 1,
+                justifyContent: 'center',
+                padding: '10px 12px',
+                fontSize: 14,
+              }}>
+              Kihagyás <SkipForward size={16} /> <Kbd>→</Kbd>
+            </button>
+          </div>
+        </>
+      )}
 
       {q.error && (
         <div
           role="alert"
-          style={{ position: 'fixed', left: 12, right: 12, top: 12, zIndex: 30, background: '#7f1d1d', color: '#fff', borderRadius: 10, padding: '10px 12px', display: 'flex', gap: 8, alignItems: 'center', fontSize: 14 }}>
+          style={{
+            position: 'fixed',
+            left: 12,
+            right: 12,
+            top: 12,
+            zIndex: 30,
+            background: '#7f1d1d',
+            color: '#fff',
+            borderRadius: 10,
+            padding: '10px 12px',
+            display: 'flex',
+            gap: 8,
+            alignItems: 'center',
+            fontSize: 14,
+          }}>
           <span style={{ flex: 1 }}>{q.error}</span>
-          <button className="ql-btn" onClick={q.clearError} aria-label="Bezárás" style={{ background: 'none', color: '#fff', display: 'flex' }}>
+          <button
+            className="ql-btn"
+            onClick={q.clearError}
+            aria-label="Bezárás"
+            style={{ background: 'none', color: '#fff', display: 'flex' }}>
             <X size={18} />
           </button>
         </div>

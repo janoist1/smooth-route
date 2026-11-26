@@ -49,6 +49,10 @@ THIN_RADIUS_M = 150.0   # diverse picks are at least this far apart
 UNCERTAINTY_BAND = 0.5  # score distance to a cut-point that still counts as uncertain
 UNCERTAINTY_BANDS = 10  # uncertain picks: ties within 1/10 are broken by area
 
+SPRINT_THIN_M = 75.0       # sprint: at most one frame per ~75 m
+SPRINT_PATTERN = "DDDB"    # sprint mix: 3 diverse, 1 model-best (repeating)
+SPRINT_TARGET = 1000       # labels the learning curve asks for
+
 DEFAULT_CUT_POINTS: tuple[float, ...] = (1.5, 2.5, 3.5)
 MAX_LIMIT = 200
 
@@ -71,6 +75,10 @@ class Strategy(str, Enum):
     # Already-labelled frames, served again blind (pick_recheck): the owner's
     # early labels were made while learning the task.
     RECHECK = "recheck"
+    # Labelling sprint (learning curve: ~1000 labels on new streets): diverse
+    # with <= 1 frame per SPRINT_THIN_M, plus every 4th frame from the ones the
+    # model rates best, so the top level (Kiváló) is covered too.
+    SPRINT = "sprint"
 
 
 @dataclass(frozen=True)
@@ -386,6 +394,106 @@ def interleave(first: Sequence[QueueItem], second: Sequence[QueueItem], limit: i
     return out
 
 
+def pick_model_best(frames: Sequence[Frame], limit: int,
+                    dup_radius_m: float = THIN_RADIUS_M,
+                    occupied: Iterable[tuple[float, float]] = (),
+                    seed: int = 0) -> list[QueueItem]:
+    """Frames the model rates best (lowest severity score) first, Budapest
+    first within 0.1-level bands, spread out; covers the top level."""
+    scored = [f for f in frames if f.score is not None]
+    scored.sort(key=lambda f: (round(f.score, 1), area_of(f.lat, f.lon) != PRIORITY_AREA,
+                               stable_rank(f.id, seed)))
+    taken = PointIndex(max(dup_radius_m, 1.0))
+    for lat, lon in occupied:
+        taken.add(lat, lon)
+    out: list[QueueItem] = []
+    for f in scored:
+        if len(out) >= limit:
+            break
+        if taken.near(f.lat, f.lon, dup_radius_m):
+            continue
+        taken.add(f.lat, f.lon)
+        out.append(QueueItem(frame=f, reason="model_best", area=area_of(f.lat, f.lon),
+                             uncertainty=None, cell_labels=0))
+    return out
+
+
+def merge_by_pattern(lists: dict[str, Sequence[QueueItem]], pattern: str, limit: int,
+                     dup_radius_m: float = DUP_RADIUS_M,
+                     occupied: Iterable[tuple[float, float]] = ()) -> list[QueueItem]:
+    """Take from ``lists`` in the repeating ``pattern`` order (e.g. "DDDB"),
+    skipping repeats and near-duplicates; a dry list yields to the others."""
+    taken = PointIndex(max(dup_radius_m, 1.0))
+    for lat, lon in occupied:
+        taken.add(lat, lon)
+    pos = {k: 0 for k in lists}
+    ids: set[int] = set()
+    out: list[QueueItem] = []
+    step = 0
+    while len(out) < limit and any(pos[k] < len(v) for k, v in lists.items()):
+        key = pattern[step % len(pattern)]
+        step += 1
+        if pos[key] >= len(lists[key]):
+            key = next(k for k in pattern if pos[k] < len(lists[k]))
+        item = lists[key][pos[key]]
+        pos[key] += 1
+        f = item.frame
+        if f.id in ids or taken.near(f.lat, f.lon, dup_radius_m):
+            continue
+        ids.add(f.id)
+        taken.add(f.lat, f.lon)
+        out.append(item)
+    return out
+
+
+PAIR_MAX_GAP = 0.25        # model scores this close -> an informative pair
+PAIR_MIN_APART_M = 500.0   # two different streets, not two views of one spot
+PAIR_LOOKAHEAD = 25
+
+
+def pick_pairs(frames: Sequence[Frame], limit: int,
+               judged: Iterable[tuple[int, int]] = (),
+               exclude_ids: Iterable[int] = (),
+               max_gap: float = PAIR_MAX_GAP,
+               min_apart_m: float = PAIR_MIN_APART_M,
+               seed: int = 0) -> list[tuple[Frame, Frame, float]]:
+    """Pairs (a, b, |score gap|) for "which is worse?": the model scores both
+    within ``max_gap`` (it cannot tell them apart, so the human answer
+    teaches most), at least ``min_apart_m`` apart, each frame once per batch,
+    never a pair judged before. Starting points are spread over the whole
+    score range in a seeded random order."""
+    done = {frozenset(p) for p in judged}
+    excluded = set(exclude_ids)
+    scored = sorted((f for f in frames if f.score is not None and f.id not in excluded),
+                    key=lambda f: (f.score, f.id))
+    order = sorted(range(len(scored)), key=lambda i: stable_rank(scored[i].id, seed))
+    used: set[int] = set()
+    out: list[tuple[Frame, Frame, float]] = []
+    for i in order:
+        if len(out) >= limit:
+            break
+        a = scored[i]
+        if a.id in used:
+            continue
+        for j in range(i + 1, min(i + 1 + PAIR_LOOKAHEAD, len(scored))):
+            b = scored[j]
+            gap = b.score - a.score
+            if gap > max_gap:
+                break
+            if b.id in used or frozenset((a.id, b.id)) in done:
+                continue
+            ax, ay = to_xy(a.lat, a.lon)
+            bx, by = to_xy(b.lat, b.lon)
+            if math.hypot(ax - bx, ay - by) < min_apart_m:
+                continue
+            # Random side, so position is never a cue.
+            pair = (a, b) if stable_rank((a.id, b.id), seed) < 0.5 else (b, a)
+            out.append((pair[0], pair[1], gap))
+            used.update((a.id, b.id))
+            break
+    return out
+
+
 def pick_recheck(frames: Sequence[Frame], level_of: dict[int, int],
                  suspicious_ids: Sequence[int], limit: int,
                  levels: Sequence[int], exclude_ids: Iterable[int] = (),
@@ -507,7 +615,13 @@ def build_queue(candidates: Iterable[Frame],
         return pick_diverse(frames, labelled, n, cut_points, thin_radius_m, cell_m,
                             occupied, seed)
 
-    if strategy is Strategy.UNCERTAIN:
+    if strategy is Strategy.SPRINT:
+        diverse_75 = pick_diverse(frames, labelled, limit, cut_points, SPRINT_THIN_M, cell_m,
+                                  occupied, seed)
+        best = pick_model_best(frames, limit, SPRINT_THIN_M, occupied, seed)
+        items = merge_by_pattern({"D": diverse_75, "B": best}, SPRINT_PATTERN, limit,
+                                 dup_radius_m, occupied)
+    elif strategy is Strategy.UNCERTAIN:
         items = uncertain(limit)
     elif strategy is Strategy.DIVERSE:
         items = diverse(limit)

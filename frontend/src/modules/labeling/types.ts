@@ -1,5 +1,21 @@
 /** GraphQL enum LabelQueueStrategy (codegen: enumsAsTypes). */
-export type LabelStrategy = 'MIXED' | 'UNCERTAIN' | 'DIVERSE' | 'RECHECK'
+export type LabelStrategy = 'MIXED' | 'UNCERTAIN' | 'DIVERSE' | 'RECHECK' | 'SPRINT'
+
+/** 'rate' = one frame, absolute grade; 'pair' = which of two is worse. */
+export type LabelMode = 'rate' | 'pair'
+export type PairResult = 'A' | 'B' | 'EQUAL'
+
+export interface PairItem {
+  a: QueueItem
+  b: QueueItem
+  scoreGap: number
+}
+
+export interface PairHistoryEntry {
+  pair: PairItem
+  result: PairResult
+  clientId: string
+}
 
 /** One frame served by the backend label queue (`labelQueue`). */
 export interface QueueItem {
@@ -33,6 +49,9 @@ export interface QueueStats {
   rechecked: number
   recheckSame?: number | null
   recheckWithinOne?: number | null
+  /** New labels made in sprint mode, toward sprintTarget. */
+  sprintLabelled?: number
+  sprintTarget?: number
 }
 
 export interface LabelQueuePage {
@@ -75,6 +94,8 @@ export type OutboxWrite =
       elapsedMs?: number
     }
   | { seq: number; kind: 'undo'; id: number }
+  | { seq: number; kind: 'pair'; clientId: string; aId: number; bId: number; result: PairResult; elapsedMs?: number }
+  | { seq: number; kind: 'pairUndo'; clientId: string }
 
 export interface LastResult {
   item: QueueItem
@@ -103,6 +124,15 @@ export interface LabelingState {
   /** Label writes (saves + undos) not yet acknowledged by the server, oldest first. */
   outbox: OutboxWrite[]
   nextSeq: number
+  mode: LabelMode
+  /** pairs[0] is on screen. */
+  pairs: PairItem[]
+  pairHistory: PairHistoryEntry[]
+  pairsLoading: boolean
+  pairsExhausted: boolean
+  pairsJudged: number
+  /** Highest retrain milestone (every RETRAIN_EVERY sprint labels) already acknowledged. */
+  retrainAck: number
 }
 
 export type RateArgs = { id: number; rqi: number; elapsedMs?: number }

@@ -2,12 +2,20 @@ import type { SagaIterator } from 'redux-saga'
 import { call, fork, put, select, take, takeEvery, takeLatest } from 'redux-saga/effects'
 import { takeLatestAsync } from 'saga-toolkit'
 import { gql, gqlMutate, gqlQuery } from '../graphql'
-import { excludeIds, needsRefill, QUEUE_BATCH, saveSkipped, saveStrategy } from './logic'
+import { excludeIds, needsRefill, pairExcludeIds, QUEUE_BATCH, saveRetrainAck, saveSkipped, saveStrategy } from './logic'
+
+const PAIR_BATCH = 10
+const PAIR_REFILL_AT = 3
 import { selectRoot } from './selectors'
 import {
+  ackRetrain,
   enter,
   fetchExamples,
+  fetchPairs,
   fetchQueue,
+  judgePair,
+  setMode,
+  undoPair,
   rate,
   setStrategy,
   skip,
@@ -15,7 +23,7 @@ import {
   writeDone,
   writeFailed,
 } from './slice'
-import type { LabelExample, LabelingState, LabelQueuePage, OutboxWrite } from './types'
+import type { LabelExample, LabelingState, LabelQueuePage, OutboxWrite, PairItem } from './types'
 
 const LABEL_QUEUE = gql(`
   query LabelQueue($strategy: LabelQueueStrategy!, $limit: Int!, $excludeIds: [Int!]) {
@@ -46,8 +54,67 @@ const LABEL_QUEUE = gql(`
         rechecked
         recheckSame
         recheckWithinOne
+        sprintLabelled
+        sprintTarget
       }
     }
+  }
+`)
+
+const PAIR_QUEUE = gql(`
+  query PairQueue($limit: Int!, $excludeIds: [Int!]) {
+    pairQueue(limit: $limit, excludeIds: $excludeIds) {
+      judged
+      pairs {
+        scoreGap
+        a {
+        id
+        imageUrl
+        latitude
+        longitude
+        heading
+        captureDate
+        streetViewUrl
+        reason
+        area
+        uncertainty
+        cellLabels
+        boundary
+        modelScore
+        modelRqi
+        modelPBad
+        }
+        b {
+        id
+        imageUrl
+        latitude
+        longitude
+        heading
+        captureDate
+        streetViewUrl
+        reason
+        area
+        uncertainty
+        cellLabels
+        boundary
+        modelScore
+        modelRqi
+        modelPBad
+        }
+      }
+    }
+  }
+`)
+
+const SUBMIT_PAIR = gql(`
+  mutation SubmitPairJudgment($input: PairJudgmentInput!) {
+    submitPairJudgment(input: $input)
+  }
+`)
+
+const UNDO_PAIR = gql(`
+  mutation UndoPairJudgment($clientId: String!) {
+    undoPairJudgment(clientId: $clientId)
   }
 `)
 
@@ -84,6 +151,31 @@ function* enterWorker() {
   const state: LabelingState = yield select(selectRoot)
   if (state.examples.length === 0) yield put(fetchExamples())
   if (state.queue.length === 0 && !state.loading) yield put(fetchQueue())
+  if (state.mode === 'pair' && state.pairs.length === 0 && !state.pairsLoading) yield put(fetchPairs())
+}
+
+function* fetchPairsWorker() {
+  const state: LabelingState = yield select(selectRoot)
+  const data = yield* gqlQuery({
+    query: PAIR_QUEUE,
+    variables: { limit: PAIR_BATCH, excludeIds: pairExcludeIds(state.pairs, state.pairHistory) },
+    fetchPolicy: 'network-only',
+  })
+  return {
+    pairs: data.pairQueue.pairs.map(p => ({ a: p.a, b: p.b, scoreGap: p.scoreGap })) as PairItem[],
+    judged: data.pairQueue.judged,
+  }
+}
+
+function* pairRefillWorker(): SagaIterator<void> {
+  const state: LabelingState = yield select(selectRoot)
+  if (state.mode === 'pair' && !state.pairsLoading && !state.pairsExhausted && state.pairs.length < PAIR_REFILL_AT) {
+    yield put(fetchPairs())
+  }
+}
+
+function* persistRetrainAck(action: ReturnType<typeof ackRetrain>): SagaIterator<void> {
+  yield call(saveRetrainAck, action.payload)
 }
 
 function* fetchQueueWorker() {
@@ -121,8 +213,23 @@ function* sendWrite(write: OutboxWrite): SagaIterator<void> {
           },
         },
       })
-    } else {
+    } else if (write.kind === 'undo') {
       yield* gqlMutate({ mutation: UNDO_QUICK_LABEL, variables: { pointId: write.id } })
+    } else if (write.kind === 'pair') {
+      yield* gqlMutate({
+        mutation: SUBMIT_PAIR,
+        variables: {
+          input: {
+            clientId: write.clientId,
+            frameAId: write.aId,
+            frameBId: write.bId,
+            result: write.result,
+            elapsedMs: write.elapsedMs == null ? null : Math.round(write.elapsedMs),
+          },
+        },
+      })
+    } else {
+      yield* gqlMutate({ mutation: UNDO_PAIR, variables: { clientId: write.clientId } })
     }
     yield put(writeDone({ seq: write.seq }))
   } catch (e) {
@@ -141,7 +248,7 @@ function* labelWriter(): SagaIterator<void> {
     const state: LabelingState = yield select(selectRoot)
     const next = state.outbox[0]
     if (next) yield call(sendWrite, next)
-    else yield take([rate.type, undoLast.type])
+    else yield take([rate.type, undoLast.type, judgePair.type, undoPair.type])
   }
 }
 
@@ -170,4 +277,7 @@ export default [
   ),
   takeEvery([skip.type, undoLast.type], persistSkipped),
   takeEvery(setStrategy.type, persistStrategy),
+  takeLatestAsync(fetchPairs, fetchPairsWorker),
+  takeLatest([setMode.type, judgePair.type, undoPair.type, fetchPairs.fulfilled.type], pairRefillWorker),
+  takeEvery(ackRetrain.type, persistRetrainAck),
 ]

@@ -180,8 +180,19 @@ def _frame_rows(db: Session) -> list:
             "FROM street_view_images "
             "WHERE latitude IS NOT NULL AND longitude IS NOT NULL"
         )).all()
-        _rows_cache.update(at=now, rows=rows)
+        _rows_cache.update(at=now, rows=[_severity_row(r) for r in rows])
     return _rows_cache["rows"]
+
+
+def _severity_row(row) -> tuple:
+    """analysis_metadata.dino_score is stored on the CANONICAL scale (since the
+    0006 direction flip); the queue logic, cut-points and the frame_scores.csv
+    cache are in the model's severity orientation (1 = best). Convert here,
+    once, so nothing downstream mixes the two."""
+    (fid, url, lat, lon, heading, pitch, pano, cdate, score, p_bad) = row
+    score = _float(score)
+    return (fid, url, lat, lon, heading, pitch, pano, cdate,
+            None if score is None else float(SCALE.to_severity(score)), p_bad)
 
 
 def load_inputs(db: Session):
@@ -279,6 +290,62 @@ def build(db: Session, strategy: str, limit: int, exclude_ids: Iterable[int] = (
     return result, info, cuts
 
 
+def build_pairs(db: Session, limit: int, exclude_ids: Iterable[int] = ()):
+    """Pairs over every frame with an image and a model score (labelled or
+    not), skipping pairs judged before and frames marked unusable."""
+    from app.models.models import PairJudgment
+
+    judged = [(a, b) for a, b in db.query(PairJudgment.frame_a_id, PairJudgment.frame_b_id)]
+    files = image_files()
+    cache = load_score_cache()
+    unusable = {i for (i,) in db.execute(text(
+        "SELECT id FROM street_view_images "
+        "WHERE (analysis_metadata::jsonb)->'frame_quality'->>'usable' = 'false'"))}
+    frames, info = [], {}
+    for (fid, url, lat, lon, heading, pitch, pano, cdate, score, p_bad) in _frame_rows(db):
+        name = _filename(url)
+        if not name or name not in files or fid in unusable:
+            continue
+        score, p_bad = _float(score), _float(p_bad)
+        if score is None and name in cache:
+            score, p_bad = cache[name]
+        if score is None:
+            continue
+        frames.append(lq.Frame(id=fid, lat=lat, lon=lon, pano_id=pano, score=score, p_bad=p_bad))
+        info[fid] = FrameInfo(filename=name, heading=heading, pitch=pitch,
+                              pano_id=pano, capture_date=cdate)
+    pairs = lq.pick_pairs(frames, max(0, min(int(limit), 50)), judged, exclude_ids)
+    return pairs, info, cut_points(), len(judged)
+
+
+PAIR_RESULTS = ("A", "B", "EQUAL")
+
+
+def save_pair(db: Session, client_id: str, a_id: int, b_id: int, result: str, *,
+              labeller: Optional[str] = None, meta: Optional[dict] = None) -> bool:
+    """Store one judgment; a repeated client_id is a no-op (retry-safe)."""
+    from app.models.models import PairJudgment
+
+    if result not in PAIR_RESULTS:
+        raise QuickLabelError(f"result must be one of {PAIR_RESULTS}")
+    if a_id == b_id:
+        raise QuickLabelError("a pair needs two different frames")
+    if db.query(PairJudgment.id).filter(PairJudgment.client_id == client_id).first():
+        return False
+    db.add(PairJudgment(client_id=client_id, frame_a_id=a_id, frame_b_id=b_id,
+                        result=result, labeller=labeller, meta=meta or {}))
+    db.commit()
+    return True
+
+
+def undo_pair(db: Session, client_id: str) -> bool:
+    from app.models.models import PairJudgment
+
+    n = db.query(PairJudgment).filter(PairJudgment.client_id == client_id).delete()
+    db.commit()
+    return bool(n)
+
+
 # --- stats ----------------------------------------------------------------------
 
 def _local_midnight_utc() -> datetime:
@@ -287,6 +354,14 @@ def _local_midnight_utc() -> datetime:
     local_now = datetime.now().astimezone()
     midnight = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
     return midnight.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def sprint_count(db: Session) -> int:
+    """New labels written in sprint mode (an undo removes its quick_label)."""
+    return int(db.execute(text(
+        "SELECT count(*) FROM training_data WHERE manual_rqi IS NOT NULL "
+        "AND (meta_data::jsonb)->'quick_label'->>'strategy' = 'sprint' "
+        "AND ((meta_data::jsonb)->'quick_label'->>'created_row')::boolean")).scalar() or 0)
 
 
 def label_counts(db: Session) -> tuple[int, int]:
@@ -492,9 +567,9 @@ def label_examples(db: Session, per_class: int = 1) -> list[tuple[int, int, str]
             continue
         gap, tier = errors.get(name), 0  # |severity difference|: direction-free
         if gap is None:
-            s = _float(score)
+            s = _float(score)  # stored canonical (see _severity_row)
             if s is None and name in cache:
-                s = cache[name][0]
-            gap, tier = (abs(canonical_score(s) - rqi) if s is not None else None), 1
+                s = canonical_score(cache[name][0])  # cache is severity
+            gap, tier = (abs(s - rqi) if s is not None else None), 1
         cands[int(rqi)].append((tier, gap, order, pid, name, lat, lon))
     return pick_examples(cands, per_class)

@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import { bindActionCreators } from '@reduxjs/toolkit'
-import { canUndo, prefetchUrls } from './logic'
+import { canUndo, newClientId, prefetchUrls, retrainMilestone } from './logic'
 import { selectRoot } from './selectors'
 import { actions } from './slice'
-import type { LabelStrategy } from './types'
+import type { LabelMode, LabelStrategy, PairResult } from './types'
 
 /** Warm the browser cache with the next frames so each rating is instant. */
 const usePrefetch = (urls: string[]) => {
@@ -39,6 +39,28 @@ export const useQuickLabel = () => {
 
   usePrefetch(useMemo(() => prefetchUrls(state.queue), [state.queue]))
 
+  // Pairwise mode: same timing + double-tap guard (aId) as rating.
+  const currentPair = state.pairs[0] ?? null
+  const pairShownAt = useRef<{ id: number | null; t0: number }>({ id: null, t0: 0 })
+  useEffect(() => {
+    pairShownAt.current = { id: currentPair?.a.id ?? null, t0: performance.now() }
+  }, [currentPair?.a.id])
+  usePrefetch(
+    useMemo(
+      () => state.pairs.slice(1, 3).flatMap(p => [p.a, p.b]).map(it => (it.imageUrl.startsWith('/') ? it.imageUrl : `/${it.imageUrl}`)),
+      [state.pairs],
+    ),
+  )
+  const judge = useCallback(
+    (result: PairResult) => {
+      if (!currentPair) return
+      const elapsedMs =
+        pairShownAt.current.id === currentPair.a.id ? performance.now() - pairShownAt.current.t0 : undefined
+      dispatch(actions.judgePair({ aId: currentPair.a.id, result, clientId: newClientId(), elapsedMs }))
+    },
+    [currentPair, dispatch],
+  )
+
   const rate = useCallback(
     (rqi: number) => {
       if (!current) return
@@ -70,6 +92,17 @@ export const useQuickLabel = () => {
     reveal: state.reveal,
     lastResult: state.lastResult,
     canUndo: undoable,
+    mode: state.mode,
+    setMode: (m: LabelMode) => dispatch(actions.setMode(m)),
+    currentPair,
+    pairsJudged: state.pairsJudged,
+    pairsLoading: state.pairsLoading,
+    pairsExhausted: state.pairsExhausted,
+    judge,
+    undoPair: () => dispatch(actions.undoPair()),
+    canUndoPair: state.pairHistory.length > 0,
+    retrainMilestone: retrainMilestone(state.stats?.sprintLabelled, state.retrainAck),
+    ackRetrain: (m: number) => dispatch(actions.ackRetrain(m)),
     pendingWrites: state.outbox.length,
     rate,
     skip,

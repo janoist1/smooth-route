@@ -1,8 +1,18 @@
 import type { PayloadAction } from '@reduxjs/toolkit'
 import { createSlice } from '@reduxjs/toolkit'
 import { createSagaAction } from 'saga-toolkit'
-import { isRecheckItem, loadSkipped, loadStrategy, mergeQueue, pushHistory, SKIP_MEMORY } from './logic'
-import type { LabelExample, LabelingState, LabelQueuePage, LabelStrategy, QueueStats, RateArgs } from './types'
+import { isRecheckItem, loadRetrainAck, loadSkipped, loadStrategy, mergeQueue, pushHistory, SKIP_MEMORY } from './logic'
+import type {
+  LabelExample,
+  LabelingState,
+  LabelMode,
+  LabelQueuePage,
+  LabelStrategy,
+  PairItem,
+  PairResult,
+  QueueStats,
+  RateArgs,
+} from './types'
 
 export const initialState: LabelingState = {
   strategy: 'MIXED',
@@ -19,6 +29,13 @@ export const initialState: LabelingState = {
   lastResult: null,
   outbox: [],
   nextSeq: 1,
+  mode: 'rate',
+  pairs: [],
+  pairHistory: [],
+  pairsLoading: false,
+  pairsExhausted: false,
+  pairsJudged: 0,
+  retrainAck: 0,
 }
 
 // Per-browser memory (strategy, skipped frames) is read once at start-up.
@@ -26,12 +43,14 @@ const startState = (): LabelingState => ({
   ...initialState,
   strategy: loadStrategy(),
   skipped: loadSkipped(),
+  retrainAck: loadRetrainAck(),
 })
 
 /** Route entry: load the rubric and the first batch (sagas.ts). */
 export const enter = createSagaAction<void>('labeling/enter')
 export const fetchQueue = createSagaAction<LabelQueuePage>('labeling/fetchQueue')
 export const fetchExamples = createSagaAction<LabelExample[]>('labeling/fetchExamples')
+export const fetchPairs = createSagaAction<{ pairs: PairItem[]; judged: number }>('labeling/fetchPairs')
 
 const bumpStats = (state: LabelingState, delta: number) => {
   if (!state.stats) return
@@ -114,6 +133,10 @@ const slice = createSlice({
     writeFailed(state, action: PayloadAction<{ seq: number; message: string }>) {
       const write = state.outbox.find(w => w.seq === action.payload.seq)
       state.outbox = state.outbox.filter(w => w.seq !== action.payload.seq)
+      if (write?.kind === 'pair' || write?.kind === 'pairUndo') {
+        state.error = `A páros döntés mentése nem sikerült: ${action.payload.message}`
+        return
+      }
       if (write?.kind === 'undo') {
         state.error = `A visszavonás nem sikerült, a címke megmaradt: ${action.payload.message}`
         return
@@ -137,6 +160,30 @@ const slice = createSlice({
       // switching into/out of re-check: new and old labels never mix.
       state.queue = crossesRecheck ? [] : state.queue.slice(0, 1)
       state.exhausted = false
+    },
+    setMode(state, action: PayloadAction<LabelMode>) {
+      state.mode = action.payload
+      state.pairsExhausted = false
+    },
+    /** Judge the pair on screen. `aId` guards against a double tap judging the next one. */
+    judgePair(state, action: PayloadAction<{ aId: number; result: PairResult; clientId: string; elapsedMs?: number }>) {
+      const pair = state.pairs[0]
+      if (!pair || pair.a.id !== action.payload.aId) return
+      state.pairs.shift()
+      const { result, clientId, elapsedMs } = action.payload
+      state.pairHistory = [...state.pairHistory, { pair, result, clientId }].slice(-50)
+      state.outbox.push({ seq: state.nextSeq++, kind: 'pair', clientId, aId: pair.a.id, bId: pair.b.id, result, elapsedMs })
+      state.pairsJudged += 1
+    },
+    undoPair(state) {
+      const last = state.pairHistory.pop()
+      if (!last) return
+      state.pairs.unshift(last.pair)
+      state.outbox.push({ seq: state.nextSeq++, kind: 'pairUndo', clientId: last.clientId })
+      state.pairsJudged = Math.max(0, state.pairsJudged - 1)
+    },
+    ackRetrain(state, action: PayloadAction<number>) {
+      state.retrainAck = Math.max(state.retrainAck, action.payload)
     },
     toggleReveal(state) {
       state.reveal = !state.reveal
@@ -164,20 +211,49 @@ const slice = createSlice({
       state.loading = false
       state.error = errorMessage(action, 'A sor betöltése sikertelen')
     })
+    builder.addCase(fetchPairs.pending, state => {
+      state.pairsLoading = true
+    })
+    builder.addCase(fetchPairs.fulfilled, (state, action: PayloadAction<{ pairs: PairItem[]; judged: number }>) => {
+      state.pairsLoading = false
+      const held = new Set<number>()
+      state.pairs.forEach(p => held.add(p.a.id).add(p.b.id))
+      const fresh = action.payload.pairs.filter(p => !held.has(p.a.id) && !held.has(p.b.id))
+      state.pairs = [...state.pairs, ...fresh]
+      state.pairsExhausted = fresh.length === 0
+      if (state.outbox.every(w => w.kind !== 'pair' && w.kind !== 'pairUndo')) state.pairsJudged = action.payload.judged
+    })
+    builder.addCase(fetchPairs.rejected, (state, action) => {
+      state.pairsLoading = false
+      state.error = errorMessage(action, 'A párok betöltése sikertelen')
+    })
     builder.addCase(fetchExamples.fulfilled, (state, action: PayloadAction<LabelExample[]>) => {
       state.examples = action.payload || []
     })
   },
 })
 
-export const { rate, skip, undoLast, writeDone, writeFailed, setStrategy, toggleReveal, clearError } =
-  slice.actions
+export const {
+  rate,
+  skip,
+  undoLast,
+  writeDone,
+  writeFailed,
+  setStrategy,
+  toggleReveal,
+  clearError,
+  setMode,
+  judgePair,
+  undoPair,
+  ackRetrain,
+} = slice.actions
 
 export const actions = {
   ...slice.actions,
   enter,
   fetchQueue,
   fetchExamples,
+  fetchPairs,
 }
 
 export default slice.reducer
