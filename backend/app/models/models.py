@@ -1,7 +1,9 @@
+import datetime as dt
 import uuid
+from typing import Any, Optional
 
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, Column, Date, Integer, String, Float, DateTime, JSON, UniqueConstraint, Uuid, false, func
-from sqlalchemy.orm import declarative_base
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, Date, Integer, String, Float, DateTime, JSON, UniqueConstraint, Uuid, false, func
+from sqlalchemy.orm import Mapped, declarative_base, mapped_column
 from geoalchemy2 import Geometry
 
 from app.core.timeutil import utcnow
@@ -24,11 +26,11 @@ class User(Base):
         CheckConstraint("role IN ('user', 'admin')", name="ck_users_role"),
     )
 
-    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
-    clerk_id = Column(String, unique=True, nullable=False, index=True)
-    email = Column(String, nullable=True)
-    role = Column(String, nullable=False, default=ROLE_USER, server_default=ROLE_USER)
-    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    clerk_id: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
+    email: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    role: Mapped[str] = mapped_column(String, nullable=False, default=ROLE_USER, server_default=ROLE_USER)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
 class StreetViewImage(Base):
@@ -42,31 +44,31 @@ class StreetViewImage(Base):
 
     __tablename__ = "street_view_images"
 
-    id = Column(Integer, primary_key=True, index=True)
-    latitude = Column(Float, index=True)
-    longitude = Column(Float, index=True)
-    heading = Column(Float, index=True)
-    pitch = Column(Float)
-    image_url = Column(String)  # Can be URL or local path
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    latitude: Mapped[Optional[float]] = mapped_column(Float, index=True)
+    longitude: Mapped[Optional[float]] = mapped_column(Float, index=True)
+    heading: Mapped[Optional[float]] = mapped_column(Float, index=True)
+    pitch: Mapped[Optional[float]] = mapped_column(Float)
+    image_url: Mapped[Optional[str]] = mapped_column(String)  # Can be URL or local path
     # Street View panorama id (from the free metadata API). Lets the public
     # site deep-link to the exact panorama without storing/serving the image.
-    pano_id = Column(String, nullable=True, index=True)
+    pano_id: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
     # When Google captured that panorama (Metadata API `date`, month
     # precision → stored as the 1st of the month). NULL = unknown. The RQI is
     # only as current as this date, not as `created_at` (our download time).
-    capture_date = Column(Date, nullable=True, index=True)
-    location = Column(Geometry("POINT", srid=4326), index=True)
-    created_at = Column(DateTime, default=utcnow)
+    capture_date: Mapped[Optional[dt.date]] = mapped_column(Date, nullable=True, index=True)
+    location: Mapped[Optional[Any]] = mapped_column(Geometry("POINT", srid=4326), index=True)
+    created_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime, default=utcnow)
 
     # AI Analysis results
-    rqi_score = Column(Float, nullable=True, index=True)
-    damage_count = Column(Integer, default=0)
-    damage_types = Column(JSON, nullable=True)
-    analysis_metadata = Column(
+    rqi_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True, index=True)
+    damage_count: Mapped[Optional[int]] = mapped_column(Integer, default=0)
+    damage_types: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    analysis_metadata: Mapped[Optional[Any]] = mapped_column(
         JSON, nullable=True
     )  # Detailed analysis info (edge_density, variance, damage_score, etc.)
     # DINO Analysis
-    dino_rqi_score = Column(Float, nullable=True, index=True)
+    dino_rqi_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True, index=True)
 
 class RoadSegment(Base):
     """
@@ -85,28 +87,28 @@ class RoadSegment(Base):
 
     # "<osm_way_id>:<piece_index>" — stable across rebuilds, so client caches
     # keyed by id stay valid.
-    id = Column(String, primary_key=True)
-    osm_way_id = Column(BigInteger, nullable=False, index=True)
-    piece_index = Column(Integer, nullable=False)
-    geom = Column(Geometry("LINESTRING", srid=4326), nullable=False)
-    length_m = Column(Float, nullable=False)
-    road_name = Column(String, nullable=True)
-    highway = Column(String, nullable=True)  # OSM highway class
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    osm_way_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    piece_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    geom: Mapped[Any] = mapped_column(Geometry("LINESTRING", srid=4326), nullable=False)
+    length_m: Mapped[float] = mapped_column(Float, nullable=False)
+    road_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    highway: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # OSM highway class
     # OSM maxspeed (km/h) when tagged; NULL = use the class default
     # (config/route_scoring.json). Only route comparison uses it (T-47).
-    maxspeed_kmh = Column(Integer, nullable=True)
+    maxspeed_kmh: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     # Aggregates; score/rqi/p_bad are NULL for a piece without frames.
-    n_images = Column(Integer, nullable=False, default=0, server_default="0")
-    score = Column(Float, nullable=True)  # aggregated continuous score, canonical RQI scale
-    rqi = Column(Integer, nullable=True)  # canonical RQI level (shared/rqi_scale.json)
-    p_bad = Column(Float, nullable=True)
-    confidence = Column(Float, nullable=False, default=0.0, server_default="0")
+    n_images: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # aggregated continuous score, canonical RQI scale
+    rqi: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # canonical RQI level (shared/rqi_scale.json)
+    p_bad: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.0, server_default="0")
     # True when the unlabelled-area rule capped `confidence` (no human label
     # within segment_aggregation.json unlabelled_area.radius_km).
-    unlabelled_area = Column(Boolean, nullable=False, default=False, server_default=false())
-    capture_date_min = Column(Date, nullable=True)
-    capture_date_max = Column(Date, nullable=True)
-    updated_at = Column(DateTime, nullable=False, default=utcnow, server_default=func.now())
+    unlabelled_area: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    capture_date_min: Mapped[Optional[dt.date]] = mapped_column(Date, nullable=True)
+    capture_date_max: Mapped[Optional[dt.date]] = mapped_column(Date, nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, nullable=False, default=utcnow, server_default=func.now())
 
 
 class PairJudgment(Base):
@@ -119,15 +121,15 @@ class PairJudgment(Base):
         CheckConstraint("result IN ('A', 'B', 'EQUAL')", name="ck_pair_judgments_result"),
     )
 
-    id = Column(Integer, primary_key=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     # Client-generated id: undo deletes by it, and a retried save is a no-op.
-    client_id = Column(String, nullable=False, unique=True)
-    frame_a_id = Column(Integer, nullable=False, index=True)  # street_view_images.id
-    frame_b_id = Column(Integer, nullable=False, index=True)
-    result = Column(String(5), nullable=False)  # A / B worse, or EQUAL
-    labeller = Column(String, nullable=True)
-    meta = Column(JSON, nullable=True)  # model scores at the time, elapsed_ms
-    created_at = Column(DateTime, nullable=False, default=utcnow, server_default=func.now())
+    client_id: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    frame_a_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)  # street_view_images.id
+    frame_b_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    result: Mapped[str] = mapped_column(String(5), nullable=False)  # A / B worse, or EQUAL
+    labeller: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    meta: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)  # model scores at the time, elapsed_ms
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, nullable=False, default=utcnow, server_default=func.now())
 
 
 class Job(Base):
@@ -136,16 +138,16 @@ class Job(Base):
     """
     __tablename__ = "jobs"
 
-    job_id = Column(String, primary_key=True, index=True)
-    status = Column(String, default="pending")
-    current_step = Column(String, nullable=True)
-    progress = Column(Integer, default=0)
-    total = Column(Integer, default=0)
-    message = Column(String, default="")
-    error = Column(String, nullable=True)
-    created_at = Column(DateTime, default=utcnow)
-    completed_at = Column(DateTime, nullable=True)
-    result = Column(JSON, nullable=True)
+    job_id: Mapped[str] = mapped_column(String, primary_key=True, index=True)
+    status: Mapped[Optional[str]] = mapped_column(String, default="pending")
+    current_step: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    progress: Mapped[Optional[int]] = mapped_column(Integer, default=0)
+    total: Mapped[Optional[int]] = mapped_column(Integer, default=0)
+    message: Mapped[Optional[str]] = mapped_column(String, default="")
+    error: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    created_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime, default=utcnow)
+    completed_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime, nullable=True)
+    result: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
 
 
 
@@ -157,24 +159,24 @@ class TrainingData(Base):
 
     __tablename__ = "training_data"
 
-    id = Column(Integer, primary_key=True, index=True)
-    image_filename = Column(String, unique=True, index=True)  # Link to file on disk
-    manual_rqi = Column(Float, nullable=True)  # Human ground truth on the canonical RQI scale (shared/rqi_scale.json)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    image_filename: Mapped[Optional[str]] = mapped_column(String, unique=True, index=True)  # Link to file on disk
+    manual_rqi: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # Human ground truth on the canonical RQI scale (shared/rqi_scale.json)
     
     # Annotations: List of {id, label, x, y, w, h} OR {id, label, points: [[x,y], ...]} for polygons
-    annotations = Column(JSON, default=[]) 
+    annotations: Mapped[Optional[Any]] = mapped_column(JSON, default=[]) 
     
     # Internal metrics (calculated from area %)
-    rqi_area_percent = Column(Float, default=0.0)
+    rqi_area_percent: Mapped[Optional[float]] = mapped_column(Float, default=0.0)
     
     # Tags: List of strings e.g. ["shadow", "wet", "occlusion"]
-    tags = Column(JSON, default=[])
+    tags: Mapped[Optional[Any]] = mapped_column(JSON, default=[])
 
     # Optional user comment
-    comment = Column(String, nullable=True)
+    comment: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     
     # Flexible metadata bucket
-    meta_data = Column(JSON, default={})
+    meta_data: Mapped[Optional[Any]] = mapped_column(JSON, default={})
     
-    created_at = Column(DateTime, default=utcnow)
-    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+    created_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)

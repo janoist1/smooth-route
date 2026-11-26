@@ -1,5 +1,5 @@
 import strawberry
-from typing import List, Optional
+from typing import List, Optional, cast
 from app.core.timeutil import utcnow
 
 from app.models.models import StreetViewImage, TrainingData as TrainingDataModel
@@ -32,7 +32,7 @@ class Mutation:
     @strawberry.mutation(permission_classes=[IsAdmin])
     def apply_preset(self, values: strawberry.scalars.JSON) -> List[Setting]:
         updated_settings = []
-        for key, value in values.items():
+        for key, value in cast(dict, values).items():
             updated = settings_manager.update_setting(key, value)
             if updated:
                 updated_settings.append(Setting(
