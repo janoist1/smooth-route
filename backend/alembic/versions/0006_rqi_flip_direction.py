@@ -1,12 +1,11 @@
 """Flip the stored RQI numbering: x -> 6 - x (1 = best  <->  5 = best).
 
-PENDING, NOT ACTIVE. The file sits outside alembic/versions/, so neither app
-startup nor publish.py (both run `upgrade head`) can pick it up. Activation is
-phase 2 of the RQI scale work; runbook: shared/README.md ("Flipping the
-direction"). Dry-run on a DB (read-only): backend/scripts/rqi_flip_dry_run.py.
+ACTIVE since 2026-11-26 (owner: "5 kiváló mehet"). Runbook and history:
+shared/README.md. Dry-run on a DB (read-only, describes what upgrade() would
+do): backend/scripts/rqi_flip_dry_run.py.
 
 Revision ID: 0006
-Revises: 0005   <- ACTIVATE: re-check it is still the head of alembic/versions
+Revises: 0005
 
 Mirrored (every stored value on the 1-5 RQI scale, continuous ones too):
   training_data.manual_rqi                         human labels (1.5 -> 4.5 ...)

@@ -1,4 +1,4 @@
-"""Rehearse the pending RQI flip migration on a THROWAWAY copy of the data.
+"""Rehearse the RQI flip migration (0006) on a THROWAWAY copy of the data.
 
 Never writes to the source database. Steps:
   1. start an ephemeral PostGIS container (docker run --rm, no volume);
@@ -37,7 +37,7 @@ from app.core.migrations import alembic_config  # noqa: E402
 warnings.filterwarnings("ignore", message="Did not recognize type")
 
 BACKEND = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PENDING = os.path.join(BACKEND, "alembic", "pending", "rqi_flip_direction.py")
+PENDING = os.path.join(BACKEND, "alembic", "versions", "0006_rqi_flip_direction.py")
 IMAGE = "postgis/postgis:16-3.4"
 NAME = "rqi-flip-rehearsal"
 PORT = 55433
@@ -86,7 +86,8 @@ def script_dir_with_pending(tmp, M):
     dst = os.path.join(tmp, "alembic")
     shutil.copytree(os.path.join(BACKEND, "alembic"), dst,
                     ignore=shutil.ignore_patterns("__pycache__", "pending"))
-    shutil.copy(PENDING, os.path.join(dst, "versions", "rqi_flip_direction.py"))
+    if not os.path.exists(os.path.join(dst, "versions", os.path.basename(PENDING))):
+        shutil.copy(PENDING, os.path.join(dst, "versions", os.path.basename(PENDING)))
     return dst
 
 

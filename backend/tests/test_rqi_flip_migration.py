@@ -1,4 +1,4 @@
-"""The pending RQI direction-flip migration (phase 2): shape and guard, no DB.
+"""The RQI direction-flip migration 0006: shape and guard, no DB.
 
 The real data path is exercised by scripts/rqi_flip_dry_run.py (read-only)
 and scripts/rqi_flip_rehearsal.py (throwaway container).
@@ -11,7 +11,7 @@ import pytest
 from app.core.rqi_scale import SCALE
 
 BACKEND = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PENDING = os.path.join(BACKEND, "alembic", "pending", "rqi_flip_direction.py")
+PENDING = os.path.join(BACKEND, "alembic", "versions", "0006_rqi_flip_direction.py")
 
 
 @pytest.fixture()
@@ -56,9 +56,5 @@ def test_upgrade_refuses_until_the_json_is_flipped(M):
         M.upgrade()
 
 
-def test_is_not_active_yet():
-    # Phase 1: the file must stay out of alembic/versions (startup and
-    # publish.py run `upgrade head`). Moving it is step 3 of the flip runbook.
-    versions = os.path.join(BACKEND, "alembic", "versions")
-    assert "rqi_flip_direction.py" not in os.listdir(versions)
-    assert os.path.exists(PENDING)
+def test_is_the_head_revision_after_0005(M):
+    assert (M.revision, M.down_revision) == ("0006", "0005")

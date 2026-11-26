@@ -1,7 +1,7 @@
-"""Dry-run of the pending RQI direction flip (x -> 6 - x). READ-ONLY.
+"""Dry-run of the RQI direction flip (x -> 6 - x). READ-ONLY.
 
 Prints, per stored RQI value, the distribution before and after the flip
-using the exact SQL expressions of backend/alembic/pending/rqi_flip_direction.py,
+using the exact SQL expressions of backend/alembic/versions/0006_rqi_flip_direction.py,
 checks the invariants (row/NULL counts, bad-road counts, probabilities
 untouched) and validates every UPDATE with EXPLAIN (planned, never executed).
 The whole session runs in a READ ONLY transaction and is rolled back.
@@ -24,7 +24,7 @@ import sqlalchemy as sa  # noqa: E402
 warnings.filterwarnings("ignore", message="Did not recognize type")  # PostGIS columns
 
 BACKEND = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MIGRATION = os.path.join(BACKEND, "alembic", "pending", "rqi_flip_direction.py")
+MIGRATION = os.path.join(BACKEND, "alembic", "versions", "0006_rqi_flip_direction.py")
 BAD_FROM_OLD = 3  # bad road today: value >= 3; after the flip: value <= 6 - 3
 TOLERANCE = 1e-9  # accepted round-trip deviation for continuous double columns
 
