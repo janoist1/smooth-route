@@ -91,6 +91,16 @@ def tiles_for_points(points: Iterable[tuple[float, float]], size: float = TILE_D
     return {tile_of(lat, lon, size) for lat, lon in points}
 
 
+def tiles_in_bounds(bounds: tuple[float, float, float, float], size: float = TILE_DEG) -> list[Tile]:
+    """Every grid tile that overlaps (south, west, north, east), sorted. A
+    tile that only touches the box's north / east edge is not included."""
+    south, west, north, east = bounds
+    y0, x0 = tile_of(south, west, size)
+    y1 = max(y0, math.ceil(north / size - 1e-9) - 1)
+    x1 = max(x0, math.ceil(east / size - 1e-9) - 1)
+    return [(y, x) for y in range(y0, y1 + 1) for x in range(x0, x1 + 1)]
+
+
 def pad_bounds(bounds: tuple[float, float, float, float], pad_m: float = PAD_M
                ) -> tuple[float, float, float, float]:
     """Grow (south, west, north, east) by ``pad_m`` metres on every side."""

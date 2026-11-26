@@ -38,8 +38,11 @@ class RoadQualityService:
     def collect_points(self, origin: str, destination: str, job_id: str):
         return route_collector.collect_points(origin, destination, job_id)
 
-    def download_images(self, job_id: str):
-        return image_downloader.download_images(job_id)
+    def download_images(self, job_id: str, budget=None):
+        return image_downloader.download_images(job_id, budget)
+
+    def densify_low_confidence(self, job_id: str, since, budget=None) -> int:
+        return route_collector.densify_low_confidence(job_id, since, budget)
 
     # --- Orchestration ----------------------------------------------------
     def analyze_points(

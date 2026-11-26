@@ -2,7 +2,7 @@
 
 Usage (from backend/):
     ../.venv/bin/python scripts/build_segments.py [--bbox W,S,E,N] [--dry-run]
-        [--offline] [--cached-only] [--no-merge] [--config PATH]
+        [--offline] [--cached-only] [--prefetch-bbox W,S,E,N] [--no-merge] [--config PATH]
         [--segment-length M] [--aggregator NAME]
 
 - Full rebuild by default: consecutive OSM ways of the same road are stitched
@@ -13,6 +13,10 @@ Usage (from backend/):
 - ``--bbox minLng,minLat,maxLng,maxLat`` (same order as the GraphQL bbox)
   rewrites only the lines touching that box. It turns into a full rebuild by
   itself when the OSM tiles / config changed since the last full rebuild.
+- ``--prefetch-bbox minLng,minLat,maxLng,maxLat`` only downloads the OSM
+  tiles covering that box into the cache (one request at a time) and exits:
+  no database access, nothing is built. Use it ahead of a collection job so
+  the rebuild afterwards needs no network.
 - ``--cached-only`` builds a PARTIAL layer from the tiles already cached and
   leaves out the frames of the others (for when Overpass is slow/unreachable).
 - ``--no-merge`` cuts every OSM way on its own (no stitching) — for
@@ -53,10 +57,38 @@ def parse_bbox(value: str) -> tuple[float, float, float, float]:
     return (min_lat, min_lng, max_lat, max_lng)
 
 
+def prefetch_tiles(bounds: tuple[float, float, float, float]) -> int:
+    """Cache every OSM tile overlapping ``bounds``; returns the exit code."""
+    import time
+
+    from app.core.paths import data_path
+    from app.services.osm_overpass import OverpassClient, OverpassError, tiles_in_bounds
+
+    client = OverpassClient(data_path("osm"))
+    tiles = tiles_in_bounds(bounds, client.tile_deg)
+    missing = [t for t in tiles if not client.is_cached(t)]
+    print(f"{len(tiles)} tiles cover the box, {len(tiles) - len(missing)} already cached, "
+          f"{len(missing)} to fetch (one at a time)", flush=True)
+    failed = []
+    for i, tile in enumerate(missing, 1):
+        started = time.monotonic()
+        try:
+            client.fetch_tile(tile)
+            print(f"  {i}/{len(missing)} {tile} cached ({time.monotonic() - started:.0f}s)", flush=True)
+        except OverpassError as exc:
+            failed.append(tile)
+            print(f"  {i}/{len(missing)} {tile} FAILED: {exc}", flush=True)
+    print(f"done: {len(missing) - len(failed)} fetched, {len(failed)} failed {failed or ''}",
+          flush=True)
+    return 1 if failed else 0
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--bbox", type=parse_bbox, default=None,
                     help="minLng,minLat,maxLng,maxLat — rebuild only this area")
+    ap.add_argument("--prefetch-bbox", type=parse_bbox, default=None,
+                    help="only cache the OSM tiles covering this box, then exit (no DB)")
     ap.add_argument("--dry-run", action="store_true", help="compute stats, write nothing")
     ap.add_argument("--offline", action="store_true",
                     help="use only cached OSM tiles (no Overpass requests)")
@@ -71,6 +103,9 @@ def main() -> None:
     ap.add_argument("--aggregator", choices=AGGREGATORS, default=None,
                     help="override aggregator")
     args = ap.parse_args()
+
+    if args.prefetch_bbox is not None:
+        sys.exit(prefetch_tiles(args.prefetch_bbox))
 
     try:
         cfg = load_config(args.config)

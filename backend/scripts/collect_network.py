@@ -42,13 +42,10 @@ and only then --densify (it needs the segments' confidence) and --report.
 from __future__ import annotations
 
 import argparse
-import math
 import subprocess
 import sys
-import uuid
-from collections import Counter, defaultdict
+from collections import Counter
 from pathlib import Path
-from types import SimpleNamespace
 
 # Make the `app` package importable when run from backend/.
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -56,13 +53,11 @@ sys.path.insert(0, str(BACKEND_DIR))
 
 from app.services.network_collector import (  # noqa: E402
     STOP_TROUBLE,
-    NewFrame,
     ResumeLog,
     RunResult,
     run_plan,
 )
 from app.services.network_sampling import (  # noqa: E402
-    DENSIFY_LOW_CONFIDENCE,
     load_sampling,
     plan_collection,
     take_budget,
@@ -74,7 +69,6 @@ PASS1_JOB_CAP = 4000
 PASS2_JOB_CAP = 1000
 DEFAULT_MAX_MB = 250
 IMAGE_KB_ESTIMATE = 45          # a 600×400 Street View JPEG
-_M_PER_DEG_LAT = 111_320.0
 
 
 def parse_bbox(value: str) -> tuple[float, float, float, float]:
@@ -93,68 +87,6 @@ def default_job_name(bounds: tuple[float, float, float, float]) -> str:
     return f"network_{s:.2f}_{w:.2f}_{n:.2f}_{e:.2f}".replace(".", "p")
 
 
-class DbFrameStore:
-    """Stored frames: duplicate checks in memory, new frames to DB + disk."""
-
-    def __init__(self, db, images_dir: Path):
-        from sqlalchemy import text
-
-        self.db = db
-        self.images_dir = images_dir
-        rows = db.execute(text(
-            "SELECT id, latitude, longitude, heading, pano_id FROM street_view_images "
-            "WHERE latitude IS NOT NULL AND longitude IS NOT NULL"
-        )).fetchall()
-        self.frames = [SimpleNamespace(id=r.id, lat=r.latitude, lon=r.longitude, heading=r.heading)
-                       for r in rows]
-        self.panos = {r.pano_id for r in rows if r.pano_id}
-        self._grid: dict = defaultdict(list)
-        for f in self.frames:
-            self._grid[self._cell(f.lat, f.lon)].append((f.lat, f.lon))
-
-    @staticmethod
-    def _cell(lat: float, lon: float) -> tuple[int, int]:
-        return (math.floor(lat / 0.0002), math.floor(lon / 0.0003))   # ~22 m cells
-
-    def has_pano(self, pano_id: str) -> bool:
-        return pano_id in self.panos
-
-    def near_existing(self, lat: float, lon: float, radius_m: float) -> bool:
-        from app.services.segment_geometry import haversine_m
-
-        cy, cx = self._cell(lat, lon)
-        for y in (cy - 1, cy, cy + 1):
-            for x in (cx - 1, cx, cx + 1):
-                for other in self._grid.get((y, x), ()):
-                    if haversine_m((lat, lon), other) <= radius_m:
-                        return True
-        return False
-
-    def save(self, frame: NewFrame, jpeg: bytes) -> int:
-        from app.models.models import StreetViewImage
-
-        row = StreetViewImage(
-            latitude=frame.lat, longitude=frame.lon, heading=frame.heading, pitch=frame.pitch,
-            pano_id=frame.pano_id, capture_date=frame.capture_date,
-            image_url=None, rqi_score=None,       # pending analysis
-        )
-        self.db.add(row)
-        self.db.flush()                            # assigns the id the file name needs
-        filename = f"sv_{row.id}_{uuid.uuid4().hex[:8]}.jpg"
-        path = self.images_dir / filename
-        try:
-            path.write_bytes(jpeg)
-            row.image_url = f"images/{filename}"
-            self.db.commit()
-        except Exception:
-            self.db.rollback()
-            path.unlink(missing_ok=True)
-            raise
-        self.panos.add(frame.pano_id)
-        self._grid[self._cell(frame.lat, frame.lon)].append((frame.lat, frame.lon))
-        return row.id
-
-
 def board_note(ticket: str, message: str) -> None:
     """Best-effort progress note on the team board (never fails the job)."""
     tool = BACKEND_DIR.parent / "tools" / "board.py"
@@ -163,37 +95,6 @@ def board_note(ticket: str, message: str) -> None:
                        check=False, capture_output=True, timeout=20)
     except Exception:
         pass
-
-
-def low_confidence_lines(db, bounds, job_frame_ids: list[int], sampling) -> dict:
-    """Pass 2 targets: stored segments with low confidence that carry frames
-    of THIS job, as line objects keyed by segment id."""
-    from sqlalchemy import text
-
-    from app.services.map_matching import LineIndex
-    from app.services.route_quality import SegmentRef
-    from app.services.segment_aggregation import LEVEL_LOW
-    from app.services.segment_read import fetch_segments_in_boxes
-
-    if DENSIFY_LOW_CONFIDENCE not in sampling.densify_if or not job_frame_ids:
-        return {}
-    south, west, north, east = bounds
-    segments = fetch_segments_in_boxes(db, [(west, south, east, north)])
-    index = LineIndex([SegmentRef(s.id, s.path, s.rqi, s.score) for s in segments])
-    rows = db.execute(
-        text("SELECT latitude, longitude, heading FROM street_view_images WHERE id = ANY(:ids)"),
-        {"ids": job_frame_ids},
-    ).fetchall()
-    touched = set()
-    for r in rows:
-        match = index.snap((r.latitude, r.longitude), r.heading)
-        if match is not None:
-            touched.add(match.line_id)
-    return {
-        s.id: SimpleNamespace(id=s.id, coords=s.path)
-        for s in segments
-        if s.id in touched and s.confidence_level == LEVEL_LOW
-    }
 
 
 def report(db, bounds, resume: ResumeLog, images_dir: Path) -> None:
@@ -268,6 +169,7 @@ def main() -> None:
     from app.core.config import settings
     from app.core.database import SessionLocal
     from app.core.paths import data_path
+    from app.services.frame_store import DbFrameStore, low_confidence_lines
     from app.services.osm_chains import merge_ways
     from app.services.osm_overpass import MAIN_ROAD_CLASSES, OverpassError, fetch_network
     from app.services.sv_client import StreetViewClient, rate_from_env

@@ -62,11 +62,83 @@ the root `.env` — copy `.env.example`. The important ones:
 | `RUN_MIGRATIONS_ON_STARTUP` | `true` | `false` on Vercel (Neon schema is managed by `publish.py`) |
 | `PUBLIC_READ_ONLY` | `false` | `1` on the public API: query schema only, no mutations, no local-only routes |
 | `ALLOWED_ORIGINS` | `https://simaut.hu` | CORS origins in read-only mode |
-| `DAILY_IMAGE_QUOTA` | `1000` | Street View download cap |
+| `GOOGLE_SV_MONTHLY_CAP`, `GOOGLE_SV_JOB_CAP`, `GOOGLE_SV_RATE_PER_S` | `5000`, `1500`, `1` | Street View image budget and pacing — see *Collecting Street View frames safely* (`DAILY_IMAGE_QUOTA` in `config.py` is not enforced anywhere) |
 | `DATA_DIR` | `data` | Resolved relative to the **repository root** (never `backend/data/`) |
 
 Runtime-tunable analysis settings live in `backend/config/analysis_settings.json`
 and are edited from the Settings page.
+
+## Collecting Street View frames safely
+
+Street View Static images are billed against a **monthly quota that must never be
+exceeded**, and the owner's line may run through a VPN that reacts badly to bursts.
+Three rules are enforced in code, not left to discipline:
+
+1. **One counter.** Every image request — route jobs (`services/image_downloader.py`,
+   `services/route_collector.py`), `scripts/collect_network.py`,
+   `scripts/redownload_images.py`, `ml/recover_missing_images.py` — goes through
+   `services/sv_client.py`, which books it in `services/sv_quota.py` *before* sending.
+   The counter is `data/quota/street_view.json` (file-locked, shared by all processes
+   and worktrees; months follow Google's Pacific-time billing clock). Over the cap
+   nothing is sent. Retries are booked too, so the counter can only over-count.
+2. **Gentle traffic.** One request at a time, images and (free) metadata together at
+   a steady rate, exponential back-off on transient errors. No parallelism.
+3. **Stop on trouble.** HTTP 403/429 or an `OVER_QUERY_LIMIT` / `OVER_DAILY_LIMIT` /
+   `REQUEST_DENIED` status ends the job at once. What was not fetched stays queued
+   or planned, so the same command resumes later. The API key is never written to
+   the DB or a log.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `GOOGLE_SV_MONTHLY_CAP` | `5000` | Images per calendar month, hard stop (`0` = fetch nothing) |
+| `GOOGLE_SV_JOB_CAP` | `1500` | Images per route job / script run (`collect_network.py` has its own `--job-cap`) |
+| `GOOGLE_SV_RATE_PER_S` | `1` | Requests per second, images and metadata together |
+
+If images were fetched before the counter existed, set the month's real number once:
+`StreetViewQuota.set_used(n)` (the Google Cloud console is the reference).
+
+**Sampling** (`"sampling"` in `backend/config/segment_aggregation.json`, mirrors
+`ml/segment_recipe.json`): a first pass takes a frame every `base_spacing_m` (50 m);
+after scoring and the segment rebuild, a second pass adds frames every
+`dense_spacing_m` (30 m) only on segments whose confidence came out low. Route jobs
+do both passes under one per-job budget. Images go where they change the answer.
+
+**What will it cost?** Dry runs make no Street View request:
+
+```bash
+cd backend
+../.venv/bin/python scripts/route_cost.py "Budapest, Deák tér" "Szentendre"   # 1 Directions call
+../.venv/bin/python scripts/collect_network.py --dry-run                      # no Google call at all
+```
+
+**Collect by road network** (no route needed) — `scripts/collect_network.py`: one
+cached Overpass request for trunk / primary / secondary roads and their links (no
+motorways) in a bbox (default Budapest and surroundings), a point every 50 m on
+stretches without frames, ~1 km cells visited round-robin across ~5 km districts so a
+limited budget is spread out. Free metadata first (no panorama, a panorama already
+stored or not on the planned road, a frame within 5 m → skipped), then the image like
+the training frames (600×400, pitch −20, heading = road bearing).
+
+```bash
+# 0. backup
+docker exec smooth-route-db-1 pg_dump -U postgres -Fc smooth_route > data/backups/pre_collect_$(date +%Y%m%d%H%M).dump
+# 1. pass 1 (resumable: run the same command again; Ctrl-C stops cleanly)
+../.venv/bin/python scripts/collect_network.py --job-cap 4000 --max-mb 250
+# 2. flag unusable frames, score the new ones, rebuild the segments
+../.venv/bin/python ../ml/frame_quality.py write --commit --backup <fresh dump>
+HF_HUB_OFFLINE=1 ../.venv/bin/python scripts/rescore_dino.py
+../.venv/bin/python scripts/build_segments.py
+# 3. pass 2 on this job's low-confidence segments, then step 2 again
+../.venv/bin/python scripts/collect_network.py --densify --job-cap 1000
+# 4. what the job added (images, MB, km, segment classes and confidence)
+../.venv/bin/python scripts/collect_network.py --report
+```
+
+Progress is logged per point in `data/collect/<job>.jsonl`. To have the OSM tiles the
+rebuild needs in the cache beforehand:
+`scripts/build_segments.py --prefetch-bbox minLng,minLat,maxLng,maxLat` (one request at
+a time, no DB access). `scripts/rescore_dino.py` only touches frames that do not carry
+the current artifact's marker, i.e. the new ones.
 
 ## Local development, tests, CI
 

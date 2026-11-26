@@ -131,6 +131,15 @@ def sample_line(line: Line, spacing_m: float) -> list[Candidate]:
     return out
 
 
+def sample_route(route: Sequence[LatLon], spacing_m: float) -> list[LatLon]:
+    """Points every ``spacing_m`` along a route polyline. Their number is the
+    route's first-pass image ceiling: one image per point at most."""
+    from types import SimpleNamespace
+
+    return [(c.lat, c.lon)
+            for c in sample_line(SimpleNamespace(id="route", coords=list(route)), spacing_m)]
+
+
 # --------------------------------------------------------------------------
 # 2. Which stretches are still empty
 # --------------------------------------------------------------------------

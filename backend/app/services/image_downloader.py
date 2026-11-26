@@ -4,6 +4,7 @@ rewrite their image_url to the local path.
 """
 import os
 import uuid
+from typing import Optional
 
 from app.core.config import settings
 from app.core.database import SessionLocal
@@ -42,8 +43,11 @@ def fill_capture_metadata(img: StreetViewImage, lookup=None) -> None:
         img.pano_id = meta["pano_id"]
 
 
-def download_images(job_id: str):
-    """Step 2: download images for points whose image_url is still an http(s) URL."""
+def download_images(job_id: str, budget: Optional[JobBudget] = None):
+    """Step 2: download images for points whose image_url is still an http(s) URL.
+
+    ``budget`` is the job's image allowance; pass the same object to every
+    step of a job so the per-job cap covers the job as a whole."""
     update_job(job_id, current_step=JobStep.DOWNLOADING, progress=30, total=100,
                message="Képek letöltése...")
 
@@ -67,7 +71,8 @@ def download_images(job_id: str):
         # quota counter and this job's own cap BEFORE it is requested, paced
         # at the steady rate, and a quota / billing signal ends the job.
         client = default_client()
-        budget = JobBudget(cap_from_env("GOOGLE_SV_JOB_CAP", DEFAULT_JOB_CAP))
+        if budget is None:
+            budget = JobBudget(cap_from_env("GOOGLE_SV_JOB_CAP", DEFAULT_JOB_CAP))
         stop_reason = None
 
         for i, img in enumerate(pending_images):

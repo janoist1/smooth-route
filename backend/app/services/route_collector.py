@@ -1,13 +1,27 @@
 """
-Route collection: turn an origin/destination into interpolated Street View
-measurement points and persist the new ones (deduped by proximity).
+Route collection: turn an origin/destination into Street View measurement
+points and persist the new ones (deduped by proximity).
+
+Two passes, both spaced by the ``sampling`` block of
+``backend/config/segment_aggregation.json`` (the ML recipe):
+
+1. ``collect_points`` — one point every ``base_spacing_m`` (50 m) along the
+   route. Enough to place every ~200 m segment in a class.
+2. ``densify_low_confidence`` — after scoring and the segment rebuild, extra
+   points every ``dense_spacing_m`` (30 m), but only on the segments of this
+   job whose confidence came out low. Images are spent where they change
+   the answer, not everywhere.
+
+Every image request is booked on the monthly quota and the job's budget
+before it is sent (``sv_client``).
 """
-from sqlalchemy import func
+from sqlalchemy import func, text
 
 from app.core.database import SessionLocal
 from app.models.models import StreetViewImage
 from app.services.google_maps import google_maps_service
 from app.services.job_service import JobStep, update_job
+from app.services.network_sampling import load_sampling, sample_route
 
 
 def collect_points(origin: str, destination: str, job_id: str):
@@ -26,8 +40,8 @@ def collect_points(origin: str, destination: str, job_id: str):
         update_job(job_id, progress=10,
                    message=f"Útvonalpontok feldolgozása ({len(route_tuples)})...")
 
-        # Interpolate every ~10 meters.
-        interpolated = google_maps_service.interpolate_points(route_tuples, interval_meters=10.0)
+        # First pass: one point every base_spacing_m (50 m) along the route.
+        interpolated = sample_route(route_tuples, load_sampling().base_spacing_m)
         update_job(job_id, progress=20,
                    message=f"Street View metaadatok generálása ({len(interpolated)} pont)...")
 
@@ -72,3 +86,49 @@ def collect_points(origin: str, destination: str, job_id: str):
     except Exception as e:
         print(f"Error collecting points: {e}")
         raise
+
+
+def densify_low_confidence(job_id: str, since, budget=None) -> int:
+    """Second pass of a route job: dense points on the low-confidence
+    segments that carry frames created since ``since``. Returns the number of
+    frames added (already downloaded; they still need scoring).
+
+    Stops quietly at the budget; raises on a quota / billing / key signal so
+    the job is reported as failed rather than silently incomplete.
+    """
+    from app.core.paths import data_path
+    from app.services.frame_store import DbFrameStore, low_confidence_lines
+    from app.services.network_collector import STOP_TROUBLE, ResumeLog, run_plan
+    from app.services.network_sampling import plan_collection
+    from app.services.sv_client import StreetViewFatal, default_client
+
+    sampling = load_sampling()
+    db = SessionLocal()
+    try:
+        rows = db.execute(
+            text("SELECT id, latitude, longitude FROM street_view_images "
+                 "WHERE created_at >= :since AND latitude IS NOT NULL AND longitude IS NOT NULL"),
+            {"since": since},
+        ).fetchall()
+        if not rows:
+            return 0
+        pad = 0.001  # ~100 m around the job's frames
+        bounds = (min(r.latitude for r in rows) - pad, min(r.longitude for r in rows) - pad,
+                  max(r.latitude for r in rows) + pad, max(r.longitude for r in rows) + pad)
+        lines = low_confidence_lines(db, bounds, [r.id for r in rows], sampling)
+        if not lines:
+            return 0
+        update_job(job_id, message=f"Sűrítés: {len(lines)} bizonytalan szakasz...")
+        store = DbFrameStore(db, data_path("images"))
+        plan = plan_collection(lines, store.frames, sampling.dense_spacing_m)
+        resume = ResumeLog(data_path("collect", f"job_{job_id}_dense.jsonl"))
+        result = run_plan(
+            plan, client=default_client(), store=store, lines=lines, resume=resume,
+            job=budget, radius_m=sampling.dense_spacing_m / 2.0,
+        )
+        print(f"DEBUG: densify pass: {result.stop} {result.detail} {dict(result.counts)}")
+        if result.stop == STOP_TROUBLE:
+            raise StreetViewFatal(f"Street View second pass stopped: {result.detail}")
+        return result.counts.get("saved", 0)
+    finally:
+        db.close()

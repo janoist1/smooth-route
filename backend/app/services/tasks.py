@@ -64,13 +64,18 @@ def run_route_processing(job_id: str, origin: str, destination: str):
             else:
                 print(f"WARNING: Could not geocode destination '{destination}', hoping it works as is.")
 
-        # Step 1: Collect points
+        # One image allowance for the whole job (both passes); the monthly
+        # quota is checked on top of it for every single image.
+        from app.services.sv_quota import DEFAULT_JOB_CAP, JobBudget, cap_from_env
+        budget = JobBudget(cap_from_env("GOOGLE_SV_JOB_CAP", DEFAULT_JOB_CAP))
+
+        # Step 1: Collect points (first pass: one every 50 m)
         print(f"DEBUG: Calling collect_points for job {job_id}")
         road_quality_service.collect_points(final_origin, final_dest, job_id)
         
         # Step 2: Download images
         print(f"DEBUG: Calling download_images for job {job_id}")
-        road_quality_service.download_images(job_id=job_id)
+        road_quality_service.download_images(job_id=job_id, budget=budget)
         
         # Step 3: Analyze points.
         # YOLO gives damage polygons/types for the detail card; CLASSIFICATION
@@ -83,6 +88,23 @@ def run_route_processing(job_id: str, origin: str, destination: str):
 
         # Step 4: refresh the road-segment layer for the new area (best effort).
         refresh_road_segments(job_id, started_at)
+
+        # Step 5: second pass — denser frames only where the segments came out
+        # with low confidence, then score those and refresh once more.
+        from app.services.sv_client import StreetViewFatal
+        try:
+            added = road_quality_service.densify_low_confidence(job_id, started_at, budget)
+        except StreetViewFatal:
+            raise  # quota / billing / key signal: the job must say so
+        except Exception:
+            # The second pass is an improvement, not a requirement.
+            print(f"Second pass skipped: {traceback.format_exc()}")
+            added = 0
+        if added:
+            print(f"DEBUG: second pass added {added} frames for job {job_id}")
+            road_quality_service.analyze_points(job_id=job_id, strategy="YOLO")
+            road_quality_service.analyze_points(job_id=job_id, strategy="CLASSIFICATION")
+            refresh_road_segments(job_id, started_at)
 
         # Complete
         update_job(
