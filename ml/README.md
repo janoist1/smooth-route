@@ -1,358 +1,130 @@
-# Kátyúőr – RQI modell (tiszta újrakezdés)
+# `ml/` — the RQI model pipeline
 
-Cél: egy Street View képről megbecsülni az út minőségét az RQI-skálán
-(5 szint, definíció: [../shared/rqi_scale.json](../shared/rqi_scale.json); a modell
-a Kiváló … Rossz szinteket becsli). **Az ebben a fájlban szereplő RQI-számok
-severity-számozásúak (1 = Kiváló … 4 = Rossz)** — lásd lent.
-Ez a `ml/` mappa a régi kísérletektől független, tiszta pipeline. Az itt
-tanított artifactot a backend `dino_service.py`-ja tölti be; a régi webes
-`train_dino_head.py` törölve, a v1 szkriptek az `ml/legacy/`-ban.
+Trains, gates and ships the RQI model (`ml/cache/rqi_model.joblib`) that the backend's
+`dino_service.py` loads. Recipe: frozen DINOv2-small (CLS + mean patch token) →
+StandardScaler → SVR-RBF → tuned ordinal cut-points + isotonic P(bad) calibrator, on
+the **raw** frame. Why this recipe and every experiment behind it:
+[docs/MODEL_EXPERIMENTS.md](../docs/MODEL_EXPERIMENTS.md). Everything runs on the
+Mac (MPS) with `.venv/bin/python` (in a worktree: the main checkout's interpreter).
 
-## A választott irány (és miért)
+## Scale: ML works in severity numbering
 
-**Fagyasztott, előtanított látás-backbone → kicsi ordinális regressziós fej.**
+The product scale is defined in [shared/rqi_scale.json](../shared/rqi_scale.json)
+(5 = Kiváló … 1 = Nagyon rossz). **Everything in `ml/` uses the severity numbering
+1 = Kiváló … 4 = Rossz**: `labels.csv`, caches, targets, cut-points, the calibrator,
+the gate. Constants come from `ml/rqi_scale.py` (`spatial_cv.RQI_LABELS / BAD_FROM /
+DROPPED_LEVELS`). Values change numbering only at two boundaries: the label export
+(`export_labels.sh` selects `6 - manual_rqi`) and the backend (`dino_service` uses the
+artifact's `scale_direction`). Nagyon rossz labels (14, mostly junk) are dropped from
+training. Details: [shared/README.md](../shared/README.md).
 
-- A régi próbálkozás iránya (DINOv2 jellemzők + fej) valójában jó a kevés
-  adathoz. Nem a backbone volt a hiba, hanem a **tanító recept**:
-  - ordinális 1–5 skálát 5-osztályos klasszifikációként kezelt
-    (`CrossEntropyLoss`) → az 1↔5 tévesztést ugyanúgy bünteti, mint az 1↔2-t;
-  - nem volt augmentáció, osztálysúlyozás, rétegzett split és fix seed;
-  - a „legjobb modell" mentése a pici, zajos validációs halmazon lényegében
-    véletlen checkpointot tartott meg.
-- Ezért **regresszióként** tanuljuk (folytonos becslés, majd vágópontok),
-  augmentációval, osztálybalanszálással, és **kereszt-validációval** értékelünk,
-  nem egyetlen split-tel. Empirikusan összevetünk 2 backbone-t (DINOv2 vs CLIP),
-  és a CV szerint jobbat tartjuk meg.
-- Előbb **auditáljuk a 221 címkét** (lásd lent): ha a jelzés túl zajos, a becsületes
-  válasz az, hogy előbb tisztább/nagyobb címkézés kell — ezt is megmondjuk, bizonyítékkal.
+## Pipeline
 
-## Hol fut mi
-
-- **Tanítás a te Mac-eden** fut (MPS gyorsítással), mert a súlyletöltés + torch
-  ott elérhető. A teljes kódot és receptet Claude írja; te egy parancsot futtatsz.
-- **Adat-audit, dataset-építés, kiértékelés** a sandboxban fut (numpy/pandas/PIL).
-
-## Lépések
-
-```bash
-# 1) Címkék kiexportálása a Postgresből (EGYSZER, a te géped + Docker kell hozzá)
-bash ml/export_labels.sh          # -> ml/labels.csv
-
-# 2) Címke-audit (Claude futtatja; te is megnézheted)
-python ml/audit_labels.py
-
-# 3) Tanítás – a Mac-eden (a scriptet Claude írja meg a 2) után, az adathoz szabva)
-#    -> a v2 pipeline, ld. lent („Pipeline")
-```
-
-## RQI skála
-
-Egyetlen definíció: [../shared/rqi_scale.json](../shared/rqi_scale.json) (szabályok:
-[../shared/README.md](../shared/README.md)). A termékben 2026-11-26 óta **5 = Kiváló,
-4 = Jó, 3 = Közepes, 2 = Rossz, 1 = Nagyon rossz** (nagyobb = jobb); rossz út =
-Közepes vagy rosszabb (`bad_from`). A Nagyon rossz szintnek 14, többnyire szemét
-címkéje van (előcsarnok, járda) — tanításnál eldobjuk (`R.DROPPED_LEVELS`), a
-modell a Kiváló … Rossz szinteket (`model_levels`) adja.
-
-**Az ML mindig „severity” számozásban dolgozik** (1 = Kiváló, nagyobb = rosszabb —
-a 2026-11-26 előtti számozás): `labels.csv`, a cache-ek, a célváltozó, a vágópontok,
-a P(bad) kalibrátor, a kapu és ennek a fájlnak minden száma. A szkriptek a
-konstansokat az `ml/rqi_scale.py`-ból veszik (`spatial_cv.RQI_LABELS / BAD_FROM /
-DROPPED_LEVELS`); a kanonikus skálára csak az export (`export_labels.sh`:
-`6 - manual_rqi`) és a backend (`dino_service` az artifact `scale_direction` kulcsa
-alapján, `segment_aggregation` a recept `scale_direction` kulcsa alapján) vált át.
-A megfordítás egyetlen ML-számot sem változtatott: a kapu kimenete bájtra azonos.
-
-## Eredmények
-
-### Őszinte mérés: térbeli CV (2026-11-18), ez a hivatalos szám
-
-A korábbi véletlen 5-fold CV **szivárgott**: a ~10 m-re lévő szomszéd
-képkockák (ugyanaz az utca) a tanító- és a tesztoldalra is kerültek. Egy csak
-GPS-t látó k-NN (kép nélkül) is QWK 0.884-et ért el rajta. A hivatalos
-protokoll mostantól **térben csoportosított** (`ml/spatial_cv.py`): 1 km-es
-rácscellák, StratifiedGroupKFold (5 fold, seed=42), beágyazott, térbeli
-vágópont-hangolás. Minden kép koordinátája az `ml/image_coords.csv` fájlban van
-(`ml/build_coords.py`).
-
-| metrika (v2 bajnok, ugyanaz a modell) | régi, véletlen CV | **térbeli CV, 1 km** | új régió (régió kihagyva) |
-|---|---|---|---|
-| QWK | 0.889 | **0.774** (95% CI 0.69–0.83) | 0.663 |
-| MAE | 0.195 | **0.405** | 0.491 |
-| pontos találat | 80.9% | **61.0%** | 52.3% |
-| ±1 pontosság | 99.8% | **98.5%** | – |
-| rossz út (RQI≥3) AUC | 0.970 | **0.934** | 0.872 |
-
-- **Cellaméret:** a variogram szerint a jegyek hasonlósága ~1 km-ig fogy, 1–5
-  km között lapos. A görbe (QWK): 200 m 0.83 → 500 m 0.79 → **1 km 0.79**
-  (a hivatalos rácson 0.774) → 2 km 0.77 → 3 km 0.75.
-- **Régiók:** az adat 4 gyűjtési területről jön. **Budapesten gyenge** (régión
-  belül AUC 0.78, új kerületben QWK 0.23). Vidéken és az agglomerációban a
-  jó/rossz döntés jó (AUC 0.95).
-- **Osztályok:** a 2-es recallja csak 0.43 (az 1-es 0.83, a 3-as 0.67, a 4-es
-  0.60). A tévesztés szinte mindig szomszédos szint.
-- **Kísérleti rács térbeli CV-n** (Ridge/SVR/ordinális logisztikus × 7
-  jellemző × dinov2-small/base/v3-small + utolsó 2 blokk finomhangolása):
-  minden értelmes recept 0.77–0.80 QWK között van, és egyik sem **mérhetően**
-  jobb a bajnoknál (páros cella-bootstrap, több rácseltolással ellenőrizve).
-  **A v2 recept marad.**
-- **Ajánlás:** rögzített független holdout régió; sok helyről kevés kép
-  (különösen Budapest); a 2-es osztály élesítése; szakaszszintű aggregálás a
-  termékben. Részletek:
-  [../docs/MODEL_EXPERIMENTS.md](../docs/MODEL_EXPERIMENTS.md) (6. korszak).
-- **Segment-level aggregation (2026-11-26):** `ml/segment_eval.py` measures how
-  per-frame predictions turn into road-segment quality under the same spatial
-  protocol; the recipe the backend applies is `ml/segment_recipe.json`. See
-  [../docs/MODEL_EXPERIMENTS.md](../docs/MODEL_EXPERIMENTS.md) (Era 7).
-
-### v2 (2026-07-03, DINOv2-small CLS+patch + hangolt SVR-RBF, 5-fold CV)
-
-> ⚠️ Az alábbi számok a régi, **véletlen** fold-okon készültek, és térbeli
-> szivárgás miatt optimisták. A hivatalos szám a fenti térbeli mérés.
-
-**1903 kép** — a 676 hiányzó címkézett kép visszaszerzése után
-(`ml/recover_missing_images.py`: a Street View API-ból, pano-dátum őrfeltétellel,
-hogy csak a címkézéskor is látott panorámákat töltsük vissza).
-
-| metrika | v2 | v1 (Ridge, 1238 kép) |
+| Step | Command | Output |
 |---|---|---|
-| MAE | **0.195** | 0.30 |
-| pontos találat | **80.9%** | 70.5% |
-| ±1 pontosság | **99.8%** | 99.6% |
-| QWK | **0.889** | 0.83 |
-| rossz út (RQI≥3) találat | **91.9%** | – |
-| rossz út AUC | **0.970** | – |
+| Export labels (Docker DB) | `bash ml/export_labels.sh` | `ml/labels.csv` (+ `svi_id`, lat/lon, `source` = quick/review) |
+| Label audit | `ml/audit_labels.py` | distribution, images on disk |
+| Recover missing images | `ml/recover_missing_images.py` | Street View re-download with capture-date guard (quota-safe client) |
+| Features | `ml/extract_features_v2.py [--backbone small]` | `ml/cache/feats_v2_*.npz`, `clip_v2.npz`, `dataset_v2.csv` |
+| Coordinates | `ml/build_coords.py` | `ml/image_coords.csv` (committed; needed by the spatial CV) |
+| Train the artifact | `ml/save_model_v2.py` | `ml/cache/rqi_model.joblib` (`--out` for a side candidate) |
+| **Gate** | `ml/evaluate_artifact.py [artifact]` | PASS / FAIL (below) |
+| One-shot predict | `ml/predict.py <image>…` | level, score, P(bad), road check |
 
-Recept: fagyasztott DINOv2-small **CLS + patch-token átlag** (768 dim, egyetlen
-forward pass), StandardScaler + **SVR-RBF** (C=1, eps=0.05), plusz a kerekítés
-helyett **hangolt ordinális vágópontok** (a 3|4 határ 3.18-ra csúszott → jobb
-rossz-út recall). A számok beágyazott (nested) CV-ből jönnek, szivárgásmentesek.
-A dinov2-base ugyanennyit tud (QWK 0.8886) 2× költségért → marad a small.
-A DINOv3 ViT-S/16 backbone-t is kipróbáltuk (2026-07-03): a fix 5-fold CV-n
-QWK 0.8825 / MAE 0.215 / AUC 0.967 — minden fejmetrikán kicsit gyengébb, a
-kapun FAIL, tehát **marad a DINOv2-small v2 recept** (részletek: [../docs/MODEL_EXPERIMENTS.md](../docs/MODEL_EXPERIMENTS.md)).
-Az artifact **izotonikus P(rossz út) kalibrátort** és megbízhatósági táblát is
-tartalmaz: ha a modell 4-est mond, 80%-ban tényleg 4-es és <1%-ban jó út (1–2).
-
-A tévesztések kivétel nélkül szomszédos szintek (nincs 1↔4 keveredés).
-A legrosszabb OOF-hibák kézi átnézés alapján tényleg határeset-utak (foltozott
-falusi út, árnyékos kereszteződés), nem címkehibák — a QWK 0.89 közel van az
-egy-annotátoros plafonhoz.
-
-### v1 (2026-07-01, fagyasztott DINOv2-small + Ridge, 5-fold CV)
-
-1238 kép (RQI 1–4, nem-út szemét kiszűrve). A jel **valós és tanulható,
-újraannotálás nélkül**: MAE 0.30, pontos 70.5%, ±1 99.6%, QWK 0.83.
-
-## Pipeline (minden a Mac-en fut, MPS)
-
-> **New labels (2026-11-26):** the quick-rate screen (`/training/quick`) writes
-> into `training_data.manual_rqi` like the review page, so `export_labels.sh`
-> exports both. `labels.csv` now also carries `svi_id, latitude, longitude`
-> (joined from `street_view_images`) and `source` (`quick` | `review`);
-> `build_coords.py` takes sv_* coordinates from there first, then the old
-> `missing_labelled_mapped.csv`, then Postgres automatically. The export pins
-> `COMPOSE_PROJECT_NAME=smooth-route`, so it also works from a git worktree.
->
-> **Label noise ceiling:** frames re-rated blind on the quick-rate screen
-> (strategy *Újraellenőrzés*) keep their history in `meta_data.relabel_history`;
-> `.venv/bin/python ml/label_consistency.py` reports the owner's self-agreement
-> (same / ±1 per level, QWK) on the random control sample — the practical
-> ceiling for the spatial-CV QWK.
-
-```bash
-bash ml/export_labels.sh                       # -> ml/labels.csv (Docker kell)
-.venv/bin/python ml/recover_missing_images.py  # hiányzó címkézett képek vissza (Street View API)
-.venv/bin/python ml/extract_features_v2.py     # -> ml/cache/{feats_v2_small.npz,clip_v2.npz,dataset_v2.csv}
-.venv/bin/python ml/build_coords.py            # -> ml/image_coords.csv (lat/lon + régió minden képhez; commitolva)
-.venv/bin/python ml/spatial_analysis.py        # variogram, cellaméret-görbe, GPS-baseline, régió-/osztályhibák
-.venv/bin/python ml/experiments.py             # jellemzők x fejek rács, TÉRBELI 5-fold CV (--cv random = régi)
-.venv/bin/python ml/tune_svr.py                # SVR hiperparaméter + vágópont hangolás (térbeli fold-ok)
-.venv/bin/python ml/finetune_lastblocks.py     # opcionális: utolsó 2 blokk finomhangolása (MPS, ~1 óra)
-.venv/bin/python ml/compare_candidates.py      # kihívók páros összevetése a bajnokkal
-.venv/bin/python ml/save_model_v2.py           # végső artifact -> ml/cache/rqi_model.joblib
-.venv/bin/python ml/evaluate_artifact.py       # ÉLESÍTÉSI KAPU: PASS kell a shiphez
-.venv/bin/python ml/segment_eval.py            # segment-level evaluation (--write-recipe -> ml/segment_recipe.json)
-```
-
-Régi (v1) szkriptek: `ml/legacy/` (`extract_features.py`, `train.py`, `save_model.py`) —
-referenciának maradnak, az éles artifact a v2 receptből jön.
+Research tools (not needed to retrain): `experiments.py` (feature × head grid),
+`tune_svr.py`, `finetune_lastblocks.py`, `compare_candidates.py` (paired challenger
+test), `spatial_analysis.py` (variogram, cell-size curve, region errors),
+`experiments_hires.py` / `extract_features_hires.py` / `extract_yolo_features.py`
+(Era 8), `vlm_attributes.py` / `vlm_feature_eval.py` (Era 9),
+`check_backend_parity.py` (backend rebuilds the training features exactly),
+`label_consistency.py` (the owner's blind re-check agreement — the practical QWK
+ceiling). `ml/legacy/` is v1, reference only.
 
 ## One-command retrain
 
-Run `make retrain` (or `.venv/bin/python ml/retrain.py`) once enough new owner
-labels exist. It produces a gated candidate and never touches the live model.
+`make retrain` (= `ml/retrain.py`) once enough new labels exist. It exports labels
+(aborts if they anti-correlate with the cache, i.e. a scale mix-up), reuses cached
+features (DINOv2 + CLIP only for new frames), rebuilds coordinates, fits the champion
+recipe as `ml/cache/rqi_model_candidate.joblib`, runs the gate plus three reports
+(old vs all labels on the same folds; champion vs candidate on the new labels only —
+a true holdout; Budapest) into `ml/cache/retrain/<run>/summary.md`. **PROMOTABLE** =
+gate PASS, ≥ 50 new labels (`--min-new`), paired ΔQWK ≥ 0 with CI above −0.02.
+Promotion is a manual `cp` (printed); it never writes the live model or shared
+caches. Flags: `--force`, `--no-extract`, `--labels CSV`; `RQI_ML_CACHE` /
+`RQI_ML_COORDS` re-gate a run by hand.
 
-1. Exports the labels (`ml/export_labels.sh`, in ML severity orientation).
-   It aborts if they correlate negatively with the cached labels, which
-   means the scale orientation does not match.
-2. Reuses features in this order: the existing cache by filename, then
-   `ml/cache/frame_feats_v2.npz` (cls+patch from the backend re-score) with
-   the `frame_quality` road probability. DINOv2 + CLIP runs only for the
-   rest.
-3. Rebuilds coordinates, then fits the champion recipe as
-   `ml/cache/rqi_model_candidate.joblib`.
-4. Runs the spatial gate (`evaluate_artifact.py`) and three reports:
-   - **Paired test:** the same spatial folds, trained on old labels only vs
-     on all labels. This replaces `compare_candidates.py`, which compares
-     recipes rather than data.
-   - **Champion vs candidate on the new labels only.** The champion never
-     saw them, so this is a true holdout.
-   - **Budapest:** Budapest-only and leave-Budapest-out numbers.
+## Promotion gate (mandatory)
 
-Everything is written to `ml/cache/retrain/<run>/`, including `summary.md`.
-The shared caches and `ml/cache/rqi_model.joblib` are never written.
+A new or changed `rqi_model.joblib` ships **only** on PASS from
+`ml/evaluate_artifact.py`. It re-fits the artifact's recipe and head on the official
+**spatial CV** (`ml/spatial_cv.py`: 1 km grid cells, StratifiedGroupKFold 5,
+seed 42) with cut-points tuned in a nested inner spatial CV; it ignores the numbers
+stored in the artifact.
 
-The summary ends with a verdict. **PROMOTABLE** requires three things:
-- a gate PASS;
-- at least `--min-new` (50) new labels;
-- paired ΔQWK ≥ 0, with its 95% CI above −0.02.
+| Metric | Threshold | Tolerance |
+|---|---|---|
+| QWK | ≥ 0.774 | 0.005 |
+| MAE | ≤ 0.405 | 0.005 |
+| bad-road AUC | ≥ 0.934 | 0.003 |
 
-Promotion stays a human step: the summary prints the `cp` commands. After
-promoting, refresh the shared caches and update `GATE`.
+PASS only means "not worse". To replace the champion the gate's paired cell bootstrap
+must say **"measurably better: YES"** (ΔQWK 95% CI > 0), ideally confirmed on shifted
+grids. Exit code 0 = PASS, 1 = FAIL, 2 = error. After promoting, raise `GATE` in
+`evaluate_artifact.py` to the new champion. Never cite the old random-CV numbers
+(0.889 / 0.195 / 0.970).
 
-Flags: `--force` (run with fewer new labels), `--no-extract` (fail rather
-than use the GPU), `--labels CSV` (skip the DB export). The gate scripts
-honour `RQI_ML_CACHE` and `RQI_ML_COORDS`, so a run can be re-gated by hand:
-`RQI_ML_CACHE=ml/cache/retrain/<run> RQI_ML_COORDS=ml/cache/retrain/<run>/image_coords.csv .venv/bin/python ml/evaluate_artifact.py ml/cache/retrain/<run>/rqi_model_candidate.joblib`.
+## Artifact contract
+
+`dino_service.validate_artifact` checks on load. **Required:** `pipeline` (sklearn
+StandardScaler + head) and, if present, `feature_recipe.keys`. **Expected** (warning
+if missing): `version`, `backbone`, `feature_recipe` (`name`, `keys`, `needs_clip`,
+`crop_top`, optional `hires_views`), `thresholds` (3 cut-points), `p_bad_calibrator`,
+`cv_metrics`, `n_train`, `reliability`, `scale_direction` (severity; default when
+absent). `save_model_v2.py` writes all of them — add new fields in both places.
+
+## Segment evaluation
+
+`ml/segment_eval.py` measures ~200 m segments under the same spatial protocol and
+writes the recipe `ml/segment_recipe.json` (`--write-recipe`; severity numbering,
+tagged `scale_direction`). The backend applies it through
+`backend/config/segment_aggregation.json` with the thresholds mirrored to the product
+numbering — `scripts/sync_rqi_scale.py` (`flip_segment_config`) does that, and a
+backend test checks the two agree. Results: Era 7 of the experiments doc.
 
 ## Frame quality flags
 
-`ml/frame_quality.py` marks every frame that should **not** count toward road
-quality. The result is written per frame to
-`street_view_images.analysis_metadata.frame_quality`:
-`{"usable", "reasons", "road_prob", "blur", "brightness", "dup_of", "version": 1}`.
-Consumers (the road-segment builder) skip a frame only when `usable` is
-explicitly `false`. Frames without the key (new since the last run) count as
-usable.
-
-Reasons:
-- **Image problems:** `missing_image`, `no_imagery` (the "Sorry, we have no
-  imagery here" placeholder), `dark`, `blur`.
-- **Scene problems:** `not_road` (the v2 CLIP road filter below 0.5, or below
-  0.9 for `CAoS…` user photospheres), `indoor`, `tunnel_garage`, and `hood`
-  (the own vehicle covers the bottom of the frame).
-- **Duplicates:** `duplicate` (`dup_of` points at the kept frame). A duplicate
-  is a near-identical picture (CLIP cosine ≥ 0.995) within 25 m and 30° of
-  heading, or the same spot within 1 m.
-
-The `wall` and `obstructed` reasons exist but are disabled. Their zero-shot
-prompts flagged valid roads, for example motorways with a truck ahead.
-
-Thresholds live in `THRESHOLDS` and were calibrated so that the 1903
-labelled RQI 1–4 frames are almost never flagged (0.16% outside duplicates).
-They were also checked against a blind visual review of 40 frames. A broken,
-shaded or patched road is a valid frame.
-
-Rerun after new frames are added, or after the pano_id backfill. The stages
-cache under `ml/cache/frame_quality/` and resume, so only new frames are
-recomputed:
+`ml/frame_quality.py` marks frames that must not count toward road quality in
+`street_view_images.analysis_metadata.frame_quality` =
+`{usable, reasons, road_prob, blur, brightness, dup_of, version}`. Reasons:
+`missing_image`, `no_imagery`, `dark`, `blur`, `not_road`, `indoor`,
+`tunnel_garage`, `hood`, `duplicate`. Consumers skip a frame only when `usable` is
+explicitly `false`. Thresholds (`THRESHOLDS`) are calibrated so labelled road frames
+are almost never flagged (0.16%). Stages cache in `ml/cache/frame_quality/` and
+resume:
 
 ```bash
-.venv/bin/python ml/frame_quality.py all          # manifest -> clip -> pixels -> dups -> decide
-.venv/bin/python ml/frame_quality.py write        # dry run: summary + example payloads
-docker exec smooth-route-db-1 pg_dump -U postgres -Fc smooth_route > data/backups/pre_frame_quality_$(date +%Y%m%d%H%M).dump
-.venv/bin/python ml/frame_quality.py write --commit --backup data/backups/<that dump>
-.venv/bin/python -m pytest -q ml/tests/test_frame_quality.py
+.venv/bin/python ml/frame_quality.py all                       # compute
+.venv/bin/python ml/frame_quality.py write                     # dry run
+.venv/bin/python ml/frame_quality.py write --commit --backup data/backups/<fresh dump>
 ```
 
-`calibrate` prints feature quantiles on labelled frames against all frames.
-`sheet --ids … --blind` renders small contact sheets for a visual check.
+New frames are handled incrementally by `make postprocess`
+([DEVELOPMENT.md](../DEVELOPMENT.md#collecting-street-view-frames-safely)).
 
-## Élesítési kapu (KÖTELEZŐ, ne lépd át)
+## Reliability checks (not used in production)
 
-Új vagy módosított `ml/cache/rqi_model.joblib` **csak akkor élesíthető**, ha az
-`ml/evaluate_artifact.py` **PASS**-t ad. A szkript a mentett artifact receptjét
-és fejét (a pipeline utolsó lépését klónozva) a hivatalos **térbeli** CV-n
-méri újra (1 km-es cellák, StratifiedGroupKFold, seed=42, ugyanazok a fold-ok,
-mint az `experiments.py`-ban). A vágópontokat beágyazottan, belső térbeli
-CV-n hangolja; az artifactba mentett vágópontokat és számokat nem hiszi el.
+- `ml/novelty.py validate` — feature-space novelty does not predict error (AUC
+  0.56–0.60).
+- `ml/geo_reliability.py` — distance to labelled areas does not predict error;
+  the product uses a fixed 3 km "unlabelled area" confidence cap instead.
 
-A jelenlegi bajnok (v2) küszöbei térbeli CV-n (2026-11-18):
+Both: [MODEL_EXPERIMENTS.md](../docs/MODEL_EXPERIMENTS.md#where-the-model-is-unsure-novelty-and-geography-2026-11-26).
 
-| metrika | küszöb | tűrés | irány |
-|---|---|---|---|
-| QWK | ≥ 0.774 | 0.005 | nagyobb jobb |
-| MAE | ≤ 0.405 | 0.005 | kisebb jobb |
-| rossz-út AUC | ≥ 0.934 | 0.003 | nagyobb jobb |
+## Open
 
-A PASS csak azt jelenti, hogy a jelölt nem rosszabb. Jelölt artifactnál a kapu
-**páros cella-bootstrapot** is futtat a bajnok ellen. Csak akkor élesíts új
-modellt, ha ott „measurably better: YES" jön ki (a ΔQWK 95%-os CI-je 0
-fölött van), lehetőleg eltolt rácson is ellenőrizve (`compare_candidates.py`).
-
-```bash
-.venv/bin/python ml/evaluate_artifact.py                 # az éles artifactot méri
-.venv/bin/python ml/evaluate_artifact.py egy/masik.joblib  # jelöltet mér
-# exit 0 = PASS (élesíthető), 1 = FAIL (ne shipeld), 2 = hiba (pl. hiányzó cache)
-```
-
-Ha egy új modell veri ezeket, frissítsd a küszöböket az új bajnokra
-(`GATE` az `evaluate_artifact.py`-ban) — így a léc mindig a legjobbhoz igazodik.
-
-## Artifact szerződés (`ml/cache/rqi_model.joblib`)
-
-A backend (`backend/app/services/dino_service.py`) betöltéskor validálja az
-artifactot (`validate_artifact`), hogy egy hiányos modell ne kriptikus hibával
-dőljön el inference közben. A szerződés:
-
-**Strukturálisan kötelező** (hiánya → `ValueError` betöltéskor):
-- `pipeline` — a betanított sklearn `Pipeline` (StandardScaler + fej).
-- `feature_recipe.keys` — ha van `feature_recipe`, kell benne a `keys` lista
-  (mely DINOv2 nézetek/tokenek fűződnek össze). Enélkül a szerviz nem tudja,
-  milyen jellemzőt építsen.
-
-**Elvárt v2 metaadat** (hiánya → figyelmeztetés, fallbackkal fut tovább):
-- `version` — az artifact sémaverziója (jelenleg 2).
-- `backbone` — pl. `facebook/dinov2-small`.
-- `feature_recipe` — `{name, keys, needs_clip, crop_top}`.
-- `thresholds` — a 3 hangolt ordinális vágópont (hiányában `.5`-kerekítés).
-- `p_bad_calibrator` — izotonikus P(rossz út) kalibrátor.
-- `cv_metrics` — a beágyazott CV-számok (a modellkártya ezt mutatja).
-- `n_train`, `reliability` — tanítóméret és per-osztály megbízhatósági tábla.
-
-A `save_model_v2.py` mindezt beleírja; új mezőt oda és ide (a szerződéshez) is
-vezess be, hogy a validáció és a modellkártya konzisztens maradjon.
-
-## Állapot
-
-- [x] Régi projekt átnézve, hibák dokumentálva
-- [x] Tiszta `ml/` pipeline váza + audit
-- [x] Címkék exportálva (1917 sor; 1241 képpel a lemezen)
-- [x] Címke-audit + **képek vizuális átnézése** → skálairány tisztázva, adat viabilis
-- [x] Frozen DINOv2 + Ridge baseline, 5-fold CV → **QWK 0.83, MAE 0.30**
-- [x] Deployolható modell mentve (`ml/cache/rqi_model.joblib`) + `ml/predict.py`
-- [x] Backbone-összevetés: **dinov2-small nyert** (v1: QWK 0.83 > base 0.82; v2-ben döntetlen QWK 0.889 a base 2× költsége mellett)
-- [x] Generalizáció ellenőrizve 6 nem-látott képen (mind értelmes)
-- [x] **Backend-integráció:** `backend/app/services/dino_service.py` ezt a modellt tölti;
-      a route-feldolgozás (`tasks.run_route_processing`) YOLO + DINO CLASSIFICATION passt futtat,
-      a térkép a `dino_rqi_score`-t mutatja (`rqi_display_source="dino"`).
-- [x] A 676 hiányzó címkézett kép visszaszerzése (`recover_missing_images.py`) → 1903 kép
-- [x] Fej-összevetés (Ridge/Huber/SVR/HistGB/MLP × 7 jellemző-variáns): **SVR-RBF nyert**
-- [x] Ordinális vágópont-hangolás + izotonikus P(rossz) kalibráció az artifactban
-- [x] v2 recept élesítve: `dino_service` a `feature_recipe`-et értelmezi (recept-váltás kódmódosítás nélkül)
-- [x] Friss (nem látott) budapesti útvonalakon ellenőrizve: Keleti→Örs vezér tere
-      (457 pont) és Csepel (442 pont) — a pontszámok szemre is stimmelnek, a
-      `dino_score` + `dino_p_bad` az `analysis_metadata`-ba kerül
-- [x] DINOv3 backbone kipróbálva (`--backbone v3small`, HF licenc elfogadva):
-      QWK 0.8825 / MAE 0.215 / AUC 0.967 a fix 5-fold CV-n → **nem veri a v2-t**,
-      a kapun (`evaluate_artifact.py`) FAIL, ezért maradt a v2 (ld. MODEL_EXPERIMENTS.md)
-- [x] **Térbeli CV (2026-11-18):** koordináta mind az 1903 képhez, 1 km-es
-      cellás StratifiedGroupKFold kapu, rács újrafuttatva (+ ordinális
-      logisztikus fej, utolsó 2 blokk finomhangolása): a bajnok marad, őszinte
-      számok QWK 0.774 / MAE 0.405 / AUC 0.934
-- [ ] Rögzített, független holdout régió (új kerület + új város), sosem tanítva
-- [ ] Több és szórtabb címke (sok helyről kevés kép, főleg Budapest), és a
-      2-es osztály élesítése (a hibák zöme 1|2 és 2|3)
-- [ ] Szakaszszintű (~100–200 m) aggregálás a termékben, és mérés is ezen a szinten
-- [ ] A live artifact `cv_metrics`-e még a régi (0.895) számot mutatja a
-      modellkártyán. Újramentéskor (`save_model_v2.py`) már térbeli számok kerülnek bele
-- [ ] Opcionális: P(rossz út) megjelenítése a frontend részletkártyán
-
-### Inferencia egy képre
-```bash
-.venv/bin/python ml/predict.py data/images/<valami>.jpg
-# -> RQI=1..4 (excellent/good/fair/poor) + score + P(road) figyelmeztetés
-```
-A modell a teljes recepttel (`ml/save_model_v2.py`) van betanítva 100% adaton;
-a minőség-becslés a fenti CV-szám, nem ezeken a képeken mérve.
+- A fixed, independent holdout region (new district + new town), never trained on.
+- More, more varied labels (Budapest incl. Kiváló roads); a sharper Jó definition.
+- Promotion decisions on the two gated candidates (Era 8 dinov2-base two-view,
+  Era 9 VLM stack) after the holdout exists.
+- The live artifact's `cv_metrics` still shows the old leaky numbers until it is
+  re-saved (re-saving also refits cut-points and calibrator — a deliberate decision).

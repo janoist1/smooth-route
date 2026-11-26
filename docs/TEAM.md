@@ -15,22 +15,23 @@ member starts or finishes.
 ## Roster
 
 Sessions are reached with `SendMessage` to the session id. Subagents have no
-address of their own: reach them only through the lead.
+address of their own: reach them only through the lead. Statuses as of 2026-11-26
+evening; the live state is the ticket board (`python3 tools/board.py list`).
 
 | Role | Who | Scope | Status | How to reach |
 |---|---|---|---|---|
 | Lead | session `local_41d0e121-313f-44cd-aa60-914d84df2820` "Útvonalak minőségi jelölése térképen" | coordinates, writes briefs, merges into `claude/analysis-layer`, talks to the owner | active | owner directly; agents: `SendMessage` |
-| QA | session `local_1abdbc43-3382-4c7e-8c1b-a17dc66c9648` (`qa`) "QA: integrációs ág ellenőrzése" | runtime smoke tests + review of the integration branch | active | `SendMessage` |
-| ML high-res features | session `local_d7ff59b2-1888-4337-a822-3cd0f9770565` (`ml-hires`) "ML: high-res road-crop features" | higher-resolution road-region DINOv2 features + YOLO damage features, under the spatial gate | active | `SendMessage` |
-| Labelling queue | session `local_a23ad50a-216c-412f-a858-146cfad23089` (`label-queue`) "Labelling: active-learning queue + mobile quick-rate" | smart unlabelled-frame queue + mobile quick-rate page for the owner | active | `SendMessage` |
-| Frame quality | session `local_03836c8c-9acc-4c99-aacf-13f6d4bfce53` (`frame-quality`) "Data: frame quality audit" | flags unusable frames (non-road, dark, blurred, duplicates) in `analysis_metadata.frame_quality` so segments skip them | active | `SendMessage` |
-| VLM attributes | session `local_cceb44fa-3d54-4217-86df-83d46d2458f1` (`ml-vlm-attrs`) "ML: VLM image-analysis features" | Fable subagents describe each labelled frame with a fixed attribute schema; tested as model features (+ distillation) under the spatial gate; also a label-audit list | active | `SendMessage` |
-| RQI scale | session `local_233868f2-f73d-4ce7-96c7-f91cc96a4bf1` (`rqi-scale`) "RQI scale: one canonical 1–5 scale everywhere" | single source of truth for the 5-level scale (`shared/rqi_scale.json`), phase 2 = numeric direction flip if the owner decides so | active | `SendMessage` |
-| Security review | session `local_ff4aa73d-c156-4010-82d4-8ae7499fe822` (`security-review`) "Security & cost review: public read-only API" | GraphQL limits, input caps, secrets scan, dependency audit, owner dashboard checklist | active | `SendMessage` |
-| ML segment aggregation | lead's subagent, Fable 5.2 | `ml/segment_eval.py`, `ml/segment_recipe.json` | in progress | via lead |
-| Backend road segments | lead's subagent, Fable 5.2 | `road_segments`, `roadSegments`/`routeQuality` GraphQL | in progress | via lead |
-| Frontend segment layer | lead's subagent, Fable 5.2 | map segment layer | in progress | via lead |
-| Docs | lead's subagent, Opus 5.5 | all `*.md`, router, this file | in progress | via lead |
+| QA | session `local_1abdbc43-3382-4c7e-8c1b-a17dc66c9648` (`qa`) "QA: integrációs ág ellenőrzése" | runtime smoke tests + review of the integration branch; Playwright E2E | active (T-46 pre-release regression) | `SendMessage` |
+| ML high-res features | session `local_d7ff59b2-1888-4337-a822-3cd0f9770565` (`ml-hires`) "ML: high-res road-crop features" | high-res / YOLO features (T-14), geographic reliability (T-41), unlabelled-area cap (T-44) | done | `SendMessage` |
+| Labelling queue | session `local_a23ad50a-216c-412f-a858-146cfad23089` (`label-queue`) "Labelling: active-learning queue + mobile quick-rate" | label queue + quick-rate (T-13), re-check mode (T-35), route alternatives (T-23), photosphere skip (T-42) | done | `SendMessage` |
+| Frame quality | session `local_03836c8c-9acc-4c99-aacf-13f6d4bfce53` (`frame-quality`) "Data: frame quality audit" | frame-quality flags (T-12), novelty check (T-33), `make retrain` (T-37), incremental post-processing (T-38) | active (T-38) | `SendMessage` |
+| VLM attributes | session `local_cceb44fa-3d54-4217-86df-83d46d2458f1` (`ml-vlm-attrs`) "ML: VLM image-analysis features" | VLM attributes as features + distillation + label audit (T-15) | done | `SendMessage` |
+| RQI scale | session `local_233868f2-f73d-4ce7-96c7-f91cc96a4bf1` (`rqi-scale`) "RQI scale: one canonical 1–5 scale everywhere" | canonical 5-level scale + flip to 5 = Kiváló, dev DB migrated (T-11); docs final pass (T-26) | active (T-26) | `SendMessage` |
+| Security review | session `local_ff4aa73d-c156-4010-82d4-8ae7499fe822` (`security-review`) "Security & cost review: public read-only API" | public API limits, secrets, dependency audit (T-16, T-29), release runbook (T-39) | active (T-45 pre-release delta) | `SendMessage` |
+| ML segment aggregation | lead's subagent, Fable 5.2 | `ml/segment_eval.py`, `ml/segment_recipe.json` (T-9) | done | – |
+| Backend road segments | lead's subagent, Fable 5.2 | `road_segments`, `roadSegments`/`routeQuality` (T-7), re-score (T-8), Budapest collection (T-34) | T-34 in review | via lead |
+| Frontend segment layer | lead's subagent, Fable 5.2 | map segment layer, segment + route cards (T-5) | done | – |
+| Cloud sessions | `cloud-ci`, `cloud-perf`, `cloud-docs` | CI hardening (T-18), bundle size (T-19); docs (T-17) never delivered → T-26 | T-18/T-19 doing | via lead |
 | Frontend type debt | lead's subagent, Sonnet | `tsc` errors | done, merged | – |
 | Pilot labellers ×4 | lead's subagents, 2× Fable 5.2, 2× Opus 5.5 | AI-labelling pilot | done | – |
 
@@ -128,9 +129,18 @@ starts from [AGENTS.md](../AGENTS.md), not from earlier conversations.
 - Every model or labelling change is measured against the **honest baseline** —
   the spatial-CV gate in [ml/README.md](../ml/README.md) — never against the old
   leaky numbers.
-- **Pilot before scale-up.** AI-labelling pilot (2026-11): vision-LLM labellers agreed
-  with the expert at QWK 0.63 / 0.72, worse than the model itself (0.84) → dropped.
-  Tooling (reproducible scripts + prompt template) is in `data/vlm/` (git-ignored).
+- **Pilot before scale-up.** Decisions from 2026-11-26 (numbers and reasons:
+  [MODEL_EXPERIMENTS.md](MODEL_EXPERIMENTS.md)):
+  - AI labelling pilot: VLM labellers QWK 0.63 / 0.72 vs the model's 0.84 → no VLM
+    labelling at scale.
+  - High-res road features: refuted; one gated two-view candidate (+0.021 QWK, 11×
+    cost) → not promoted until a holdout region exists.
+  - VLM attributes as features: first measurably better challenger (+0.031 QWK) but
+    needs a VLM call per frame → not promoted.
+  - Novelty and geographic distance: do not predict error → not used; a fixed 3 km
+    "unlabelled area" confidence cap instead.
+  - Scale: one 5-level scale, 5 = Kiváló (owner); flip is lossless (gate unchanged).
+- Record such decisions on the ticket (`board.py decide`).
 
 ## Doc rules
 

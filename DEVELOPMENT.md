@@ -43,6 +43,14 @@ linked below are the source of truth for their area.
 - `training_data` — manual labels (`manual_rqi`, annotations, tags) keyed by image file.
 - `jobs` — background job state (progress, message, result) shown live in the UI.
 - `users` — Clerk-linked users with a `user`/`admin` role.
+- `road_segments` — derived ~200 m road pieces with aggregated quality (Alembic
+  `0005`, `0007`); rebuilt by `backend/scripts/build_segments.py`. Contract:
+  [docs/API_SURFACE.md](docs/API_SURFACE.md).
+
+`street_view_images.analysis_metadata` carries the DINO outputs (`dino_score`,
+`dino_p_bad`, `dino_artifact`, `dino_rqi_score_prev`) and the frame-quality flag
+(`frame_quality`, written by `ml/frame_quality.py` — [ml/README.md](ml/README.md#frame-quality-flags)).
+RQI values are on the canonical scale since Alembic `0006` (2026-11-26).
 
 Schema changes go through **Alembic** (`backend/alembic/versions/`); the app
 migrates on startup unless `RUN_MIGRATIONS_ON_STARTUP=false`. `init-db` /
@@ -67,6 +75,24 @@ the root `.env` — copy `.env.example`. The important ones:
 
 Runtime-tunable analysis settings live in `backend/config/analysis_settings.json`
 and are edited from the Settings page.
+
+### Segment aggregation config
+
+`backend/config/segment_aggregation.json` drives the road-segment layer (code:
+`backend/app/services/segment_aggregation.py`; no defaults in code — a missing key
+is an error). **Re-run `scripts/build_segments.py` after any change.**
+
+| Key | Meaning |
+|---|---|
+| `segment_length_m`, `aggregator`, `trim_fraction` | piece length (200 m) and how frame scores combine (`median_score`) |
+| `thresholds`, `scale` | cut-points + `{classes, higher_is_worse, bad_class}` on the canonical scale; the ML recipe (`ml/segment_recipe.json`, severity numbering) mirrored. A backend test keeps both equal to [shared/rqi_scale.json](shared/rqi_scale.json); `scripts/sync_rqi_scale.py` converts a new recipe |
+| `p_bad_threshold`, `min_images` | good/bad flag from mean P(bad); fewer frames → always "low" |
+| `confidence` | `n_ref`, `spread_ref`, `margin_ref` and the `high` / `medium` level cuts |
+| `unlabelled_area` | `radius_km` 3, `cap_level` medium: no human label within the radius → confidence capped (reason `unlabelled_area`) |
+| `age` | `grace_years` 3, `half_life_years` 5: confidence decay for old imagery |
+| `sampling` | collection spacing (`base_spacing_m` 50, `dense_spacing_m` 30, `densify_if`) — see below |
+
+Where the numbers come from: [docs/MODEL_EXPERIMENTS.md](docs/MODEL_EXPERIMENTS.md) (Era 7).
 
 ## Collecting Street View frames safely
 
@@ -138,6 +164,14 @@ HF_HUB_OFFLINE=1 ../.venv/bin/python scripts/rescore_dino.py
 ../.venv/bin/python scripts/collect_network.py --report
 ```
 
+**After collecting: `make postprocess`** (`backend/scripts/postprocess_new_frames.sh`)
+does steps 0 and 2 in one go, incrementally: fresh dump (keeps the last 3), frame
+quality, DINO re-score of new frames, `build_segments.py --cached-only`, collector
+report, summary. Idempotent and safe while the collector still runs.
+
+Collection also skips user-contributed photospheres (`CAoS…` pano ids); stored ones
+are flagged unusable.
+
 Progress is logged per point in `data/collect/<job>.jsonl`. To have the OSM tiles the
 rebuild needs in the cache beforehand:
 `scripts/build_segments.py --prefetch-bbox minLng,minLat,maxLng,maxLat` (one request at
@@ -147,7 +181,8 @@ the current artifact's marker, i.e. the new ones.
 ## Local development, tests, CI
 
 Setup commands: [README.md](README.md#quickstart); test gates: [AGENTS.md](AGENTS.md).
-Other `make` targets: `backend`, `frontend`, `lint`, `download-models`,
+Other `make` targets: `retrain` ([ml/README.md](ml/README.md#one-command-retrain)),
+`postprocess` (above), `backend`, `frontend`, `lint`, `download-models`,
 `reimport-images`, `purge-data`, `clean-orphans`, `clear-jobs`, `list-jobs`, `clean`.
 
 `.github/workflows/ci.yml` runs the backend tests on Python 3.12 with a minimal,

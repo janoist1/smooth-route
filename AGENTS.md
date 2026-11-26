@@ -20,13 +20,14 @@ public site is read-only (Vercel + Neon); analysis runs locally.
 | If you work on… | Open | Don't read |
 |---|---|---|
 | **RQI model / `ml/`** | [ml/README.md](ml/README.md), [docs/GLOSSARY.md](docs/GLOSSARY.md) | `frontend/**` |
-| **Road segments** *(in progress, 2026-11-26 — branches not merged yet)* | backend `road_segments` table, `roadSegments` / `routeQuality` GraphQL, `backend/config/segment_aggregation.json`; ML side `ml/segment_eval.py` + `ml/segment_recipe.json`. Docs land in [docs/API_SURFACE.md](docs/API_SURFACE.md) / [ml/README.md](ml/README.md) with the merge | — |
+| **Road segments / route quality** | [docs/API_SURFACE.md](docs/API_SURFACE.md) (road-segment layer); config `backend/config/segment_aggregation.json` ([DEVELOPMENT.md](DEVELOPMENT.md#segment-aggregation-config)); ML recipe: [ml/README.md](ml/README.md#segment-evaluation) | `frontend/**` unless UI |
+| **Collecting frames** (Street View quota, network collection, post-processing) | [DEVELOPMENT.md — Collecting Street View frames safely](DEVELOPMENT.md#collecting-street-view-frames-safely) | `ml/**` |
 | **Frontend UI** | [frontend/ARCHITECTURE.md](frontend/ARCHITECTURE.md) | `ml/**` |
 | **Backend API / GraphQL** | [docs/API_SURFACE.md](docs/API_SURFACE.md); config, tables, deps: [DEVELOPMENT.md](DEVELOPMENT.md) | `ml/**`, `frontend/**` |
 | **Publishing / deploy / auth / queue / quotas** | [docs/PUBLISH_PLAN.md](docs/PUBLISH_PLAN.md) — strategy + your phase only | other phases |
 | **Releasing** (Neon publish + `master` deploy, rollback, smoke) | [docs/RELEASE.md](docs/RELEASE.md); `backend/scripts/publish.py`, `smoke_public_api.py`, `release_rehearsal.sh` | `ml/**`, `frontend/**` |
 | **Public API limits / security / cost abuse** | [docs/SECURITY.md](docs/SECURITY.md); code: `backend/app/graphql/limits.py` | `ml/**` |
-| **Labelling** | [docs/TrainingGuide.md](docs/TrainingGuide.md) | — |
+| **Labelling** (review page, quick-rate queue) | [docs/TrainingGuide.md](docs/TrainingGuide.md); queue API: [docs/API_SURFACE.md](docs/API_SURFACE.md#label-queue--quick-rate-screen-admin-only-2026-11-26) | — |
 | **"Why is it like this?" / model history** | [docs/MODEL_EXPERIMENTS.md](docs/MODEL_EXPERIMENTS.md) | — |
 | **Unclear term** (QWK, MAE, spatial CV…) | [docs/GLOSSARY.md](docs/GLOSSARY.md) | — |
 | **RQI scale** (levels, labels, colours, bad road, direction flip) | [shared/README.md](shared/README.md), [shared/rqi_scale.json](shared/rqi_scale.json) | — |
@@ -95,13 +96,15 @@ runs the build on push, so run it locally too. **Not green = not done.**
 ## Status (2026-11-26)
 
 - **Public site:** round 1 (read-only) live on the Vercel default domains, data on
-  Neon. Open: **R1.4** (DNS `simaut.hu` / `api.simaut.hu`, key restriction, budget
-  alert). Round 2 (auth/queue/quotas) waits for user submissions —
-  [docs/PUBLISH_PLAN.md](docs/PUBLISH_PLAN.md).
-- **RQI:** honest spatial-CV numbers QWK 0.774 / MAE 0.405 / AUC 0.934; weak in
-  Budapest; the v2 champion stays. Next steps: [docs/MODEL_EXPERIMENTS.md](docs/MODEL_EXPERIMENTS.md).
-- **In progress** (integration branch `claude/analysis-layer`): road-segment
-  aggregation (ML + backend + frontend), high-res road-crop features, VLM attribute
-  features, frame-quality audit (`analysis_metadata.frame_quality`), labelling
-  queue + mobile quick-rate. Who is on what: [docs/TEAM.md](docs/TEAM.md).
+  Neon — still the pre-segment, old-numbering data until the next release
+  ([docs/RELEASE.md](docs/RELEASE.md), owner approval). Open: **R1.4** (DNS
+  `simaut.hu` / `api.simaut.hu`, key restriction + rotation, budget alert).
+- **Integration branch `claude/analysis-layer`** holds today's work: road segments +
+  route quality + smoothest-route alternatives, the canonical 5-level scale (flipped
+  to 5 = Kiváló; dev DB migrated, Alembic `0006`), frame-quality flags, label queue +
+  quick-rate, security limits, collection quota guard.
+- **RQI:** honest spatial-CV QWK 0.774 / MAE 0.405 / AUC 0.934; weak in Budapest; the
+  v2 champion stays (two gated challengers not promoted —
+  [docs/MODEL_EXPERIMENTS.md](docs/MODEL_EXPERIMENTS.md)). The lever now is labels.
+- **Who is on what:** `python3 tools/board.py list`.
 - **Open, no owner:** YOLO retrain + FastSAM decision ([DEVELOPMENT.md](DEVELOPMENT.md)).

@@ -90,65 +90,28 @@ the identical `labels.csv` (proved by the rehearsal below).
 - **Direction:** `scripts/sync_rqi_scale.py --flip` plus the data migration
   below. Never edit `direction` by hand.
 
-## The direction flip (phase 2): status and runbook
+## The direction flip (done 2026-11-26)
 
-**Status (2026-11-26 13:15 CST):** code flipped on branch
-`claude/rqi-canonical-scale-e22444`; migration `0006` **applied to the dev DB**
-(backup `data/backups/pre_rqi_flip_202611261309.dump`), `road_segments`
-rebuilt (identical class split to the migrated rows: Rossz 34 / Közepes 297 /
-Jó 601 / Kiváló 198 segments), label re-export identical in ML numbering for
-all 1 917 previously exported labels, gate output unchanged. **Neon / the public
-site are still on the old numbering:** publish + `master` push together (step 6).
-Any server running code without `0006` must not be restarted against the dev DB.
+Owner's decision: 5 = Kiváló. Code, segment config and copies were flipped with
+`scripts/sync_rqi_scale.py --flip`; stored data with Alembic
+`backend/alembic/versions/0006_rqi_flip_direction.py` (new = 6 − old for
+`manual_rqi`, `rqi_score`, `dino_rqi_score`, `analysis_metadata.dino_score` /
+`dino_rqi_score_prev`, `road_segments.score` / `rqi`, legacy `manual_dino_rqi`;
+probabilities untouched; its own inverse). Applied to the dev DB (backup
+`data/backups/pre_rqi_flip_202611261309.dump`); verified: `road_segments` rebuilt to
+the identical class split, label re-export identical in ML numbering, gate output
+unchanged. **Neon gets it with the next release** ([docs/RELEASE.md](../docs/RELEASE.md):
+`publish.py` upgrades the schema, then reloads the data).
 
-Tooling, all tested:
+Tools kept for any future change of numbering: `backend/scripts/rqi_flip_dry_run.py`
+(read-only before/after report on a DB) and `backend/scripts/rqi_flip_rehearsal.py`
+(upgrade + downgrade on a throwaway PostGIS container). A further flip would be a new
+migration with the same SQL.
 
-- `scripts/sync_rqi_scale.py --flip` mirrors the JSON (values, `bad_from`,
-  `model_levels`, direction) and the segment config's `scale` block + thresholds,
-  then syncs the copies. Flipping twice restores both files byte-for-byte.
-- `backend/alembic/versions/0006_rqi_flip_direction.py` (revises `0005`) is the
-  data migration. It mirrors
-  `training_data.manual_rqi`, `street_view_images.rqi_score` /
-  `dino_rqi_score`, `analysis_metadata.dino_score`,
-  `analysis_metadata.dino_rqi_score_prev` (written by `rescore_dino.py`),
-  `road_segments.score` / `rqi` and the legacy `training_data.manual_dino_rqi`
-  (if present).
-  Probabilities stay untouched. Its own inverse, so downgrade runs the same
-  SQL. Upgrade refuses unless the deployed JSON says `higher_is_better`.
-- `backend/scripts/rqi_flip_dry_run.py` gives a READ-ONLY before/after report
-  plus invariants on any DB.
-- `backend/scripts/rqi_flip_rehearsal.py` runs upgrade + downgrade on a
-  throwaway PostGIS container loaded with a pg_dump of the dev data.
-
-Steps at the go (the branch already contains `claude/analysis-layer` @ d2513f0
-with every other session's work merged, and all call sites in it flipped):
-
-1. Merge anything newer from `claude/analysis-layer` into this branch. On
-   conflicts in `rqi_scale.*` keep this branch's version, and
-   `backend/config/segment_aggregation.json` must stay in the flipped numbering
-   (`scripts/sync_rqi_scale.py` has `flip_segment_config` for a fresh recipe).
-   `backend/tests/test_rqi_scale.py` catches both. Gates green.
-2. `git mv backend/alembic/pending/rqi_flip_direction.py backend/alembic/versions/`,
-   re-check `down_revision` is the head, and update
-   `backend/tests/test_rqi_flip_migration.py` (`test_is_not_active_yet`, `PENDING`).
-3. Run `backend/scripts/rqi_flip_dry_run.py` and `backend/scripts/rqi_flip_rehearsal.py`;
-   both must PASS.
-4. Local DB: stop the dev server and anything that writes RQI values (rescore,
-   label queue), then run `alembic upgrade head` (from `backend/`). The migration
-   also mirrors `road_segments`; a fresh `build_segments.py` gives the same result.
-   Delete `data/cache/frame_scores.csv` so the label queue rescoring rebuilds it.
-5. ML check: `bash ml/export_labels.sh`; `git diff --stat ml/labels.csv` must be
-   empty. Optionally re-run `ml/evaluate_artifact.py`.
-6. Public site, with owner approval: `backend/scripts/publish.py` (upgrades Neon,
-   then reloads `street_view_images`) and the `master` push in the same window.
-
-Rollback: `alembic downgrade 0005` with the flipped code, then revert the flip
-commit. Keep the app stopped in between.
-
-### Checklist for code merged after this branch
+### Rules for new code
 
 | Area | What to check |
 |---|---|
-| any new code | no literal levels; per-level lists best first; tests via `sv()`; anything that stores an RQI value must be added to the migration's targets |
-| segment recipe changes | a new `ml/segment_recipe.json` (severity) must reach `backend/config/segment_aggregation.json` mirrored (`flip_segment_config`) |
-| owner decisions | trainingStats cuts fair/poor at the Közepes/Rossz midpoint, adminStats at Közepes: pick one. Whether to collect Nagyon rossz labels (train them as Rossz, or keep dropping them). Whether to drop the unused `manual_dino_rqi` column |
+| any new code | no literal levels; per-level lists best first; tests via `sv()`; anything that stores an RQI value must be converted if the numbering ever changes |
+| segment recipe changes | a new `ml/segment_recipe.json` (severity) must reach `backend/config/segment_aggregation.json` mirrored (`flip_segment_config`); `test_rqi_scale.py` checks it |
+| open owner decisions | trainingStats cuts fair/poor at the Közepes/Rossz midpoint, adminStats at Közepes: pick one. Collect Nagyon rossz labels (train them as Rossz) or keep dropping them. Drop the unused `manual_dino_rqi` column |

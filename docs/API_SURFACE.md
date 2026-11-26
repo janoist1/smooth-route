@@ -1,6 +1,6 @@
 # API surface inventory
 
-*Updated: 2026-11-26 (road-segment layer: `roadSegments` / `routeQuality`; `/api/v1/config` removed).*
+*Updated 2026-11-26.* GraphQL is the product API; REST is down to the job stream.
 
 ## Primary product API: GraphQL
 
@@ -54,7 +54,7 @@ type RoadSegment {
   highway: String           # OSM highway class
   captureDateMin: String    # "YYYY-MM", oldest / newest frame on the segment
   captureDateMax: String
-  confidenceReason: String  # "few_images" | "disagreement" | "near_threshold" | "old_images"; null when high
+  confidenceReason: String  # "few_images" | "disagreement" | "near_threshold" | "old_images" | "unlabelled_area"; null when high
   streetViewUrl: String     # Street View deep link at the piece midpoint
 }
 type RouteQuality {
@@ -82,7 +82,8 @@ are in practice never null; the types stay nullable as the contract says.
 
 - `confidenceReason` — the factor of the confidence formula that limits it
   most (the smallest of the four factors); `few_images` whenever the segment
-  has fewer than `min_images` frames; `null` for `confidenceLevel = "high"`.
+  has fewer than `min_images` frames; `unlabelled_area` when the
+  unlabelled-area cap (below) lowered it; `null` for `confidenceLevel = "high"`.
 - `streetViewUrl` — same scheme as `Point.streetViewUrl`
   (`…/maps/@?api=1&map_action=pano&viewpoint=<lat>,<lng>&heading=<h>&pitch=-20`),
   at the middle of the unsimplified piece, heading along the road. Free link,
@@ -144,6 +145,11 @@ one small query per point — request it on a single `point`, not on a long
 - `confidenceLevel`: `high` ≥ `confidence.high`, `medium` ≥
   `confidence.medium`, else `low`; fewer than `min_images` frames is always
   `low` (the class is still reported).
+- `unlabelled_area` (`radius_km` 3, `cap_level` medium): a segment with no
+  human-labelled frame within the radius is capped at the top of that level —
+  a product honesty rule, not a fitted factor (measured: distance to labels does
+  not predict error, see [MODEL_EXPERIMENTS.md](MODEL_EXPERIMENTS.md)). Stored
+  as `road_segments.unlabelled_area` (Alembic `0007`).
 
 **The RQI scale.** The canonical definition is
 [shared/rqi_scale.json](../shared/rqi_scale.json) (rules: [shared/README.md](../shared/README.md)):
@@ -162,16 +168,15 @@ thresholds equal to the ML recipe (`ml/segment_recipe.json`, severity numbering)
 mirrored; `scripts/sync_rqi_scale.py --flip` mirrors both files together.
 `lengthByRqi` is always best first and `worstSegments` worst first, whichever
 way the numbers run. Both keys are required: a missing or invalid config file
-is an error, not a silent default. Until the data migration runs (pending,
-`backend/alembic/pending/`), stored segments are on the old numbering: rebuild
-them (`build_segments.py`) or migrate before serving this code.
+is an error, not a silent default. Stored values were converted by Alembic
+`0006` (new = 6 − old) on 2026-11-26.
 
 **Data flow.**
 
 - Table `road_segments` (Alembic `0005`, additive): `id`, `osm_way_id`,
   `piece_index`, `geom` (LineString 4326, GiST), `length_m`, `road_name`,
   `highway`, `n_images`, `score`, `rqi`, `p_bad`, `confidence`,
-  `capture_date_min/max`, `updated_at`. Derived data — safe to rebuild. Only
+  `unlabelled_area` (`0007`), `capture_date_min/max`, `updated_at`. Derived data — safe to rebuild. Only
   pieces with frames are stored. `osm_way_id` is the smallest OSM way id of
   the stitched road.
 - Builder: `cd backend && ../.venv/bin/python scripts/build_segments.py`
@@ -203,8 +208,6 @@ ODbL. Any map that draws `RoadSegment.path` must show
 "© OpenStreetMap contributors" (link: `https://www.openstreetmap.org/copyright`),
 whichever base map is selected.
 
-## Retained REST endpoints
-
 ## Label queue / quick-rate screen (admin-only, 2026-11-26)
 
 Labelling at scale: `labelQueue` picks the unlabelled frames (image on disk,
@@ -218,7 +221,7 @@ is **not** on the public read schema.
 | `labelQueue(strategy: MIXED\|UNCERTAIN\|DIVERSE, limit, excludeIds)` | next frames + why (`reason`, `area`, `boundary`, `uncertainty`, `cellLabels`) + the model guess (`modelScore/modelRqi/modelPBad`, hidden in the UI until rated) + `stats` |
 | `labelQueue(strategy: RECHECK, …)` | re-check: already-labelled frames, never re-checked, served blind (the old label is not sent): first `data/vlm/label_audit.csv` (human disagrees with model OOF and VLM, by priority), then a random sample stratified by the old level. `stats.rechecked/recheckSame/recheckWithinOne` = owner's self-consistency on that random sample only |
 | `labelExamples(perClass)` | rubric thumbnails for every scale level: integer-labelled frames whose out-of-fold prediction agrees best with the label (`ml/cache/oof_table.csv`); levels without OOF rows (Nagyon rossz) fall back to the live model score |
-| `quickLabel(input: {pointId, rqi, strategy, reason, revealedModel, elapsedMs})` — `rqi` is any level of `shared/rqi_scale.json` (1 = Kiváló … 5 = Nagyon rossz today) | upserts `training_data.manual_rqi` (same row shape as `saveTrainingData`; annotations/tags/comment kept); context in `meta_data.quick_label` |
+| `quickLabel(input: {pointId, rqi, strategy, reason, revealedModel, elapsedMs})` — `rqi` is any level of `shared/rqi_scale.json` (5 = Kiváló … 1 = Nagyon rossz) | upserts `training_data.manual_rqi` (same row shape as `saveTrainingData`; annotations/tags/comment kept); context in `meta_data.quick_label` |
 | (re-check save) | overwriting an existing `manual_rqi` appends `{timestamp, old, new, strategy, reason, direction}` to `meta_data.relabel_history` (`direction` = the scale direction the values were written in, so a flip cannot misread them); `manual_rqi` becomes the new value |
 | `undoQuickLabel(pointId)` | reverts a quick label: deletes a row it created (if nobody annotated it), else restores the previous `manual_rqi`; never touches review-page labels |
 
@@ -226,38 +229,32 @@ Selection (pure logic, `app/services/label_queue.py`, tested in
 `tests/test_label_queue.py`): frames < 50 m from a labelled frame and repeat
 panoramas are excluded; no two served frames are < 50 m apart (incl. the
 `excludeIds` the client holds). **uncertain** = model score closest to an
-ordinal cut-point, round-robin over the 1|2, 2|3, 3|4 boundaries, near-ties
+ordinal cut-point, round-robin over the Kiváló|Jó, Jó|Közepes, Közepes|Rossz boundaries, near-ties
 Budapest first. **diverse** = ≥ 150 m thinning, one frame per 1 km cell per
 round (the spatial-CV grid of `ml/spatial_cv.py`), emptiest cell first,
 Budapest first, then areas with the fewest labels. **mixed** (default)
 interleaves the two. Model outputs (`modelScore`, `modelRqi`, `boundary`) are
 converted from the model's severity orientation to the canonical scale direction
-(`app.core.rqi_scale`); the model only predicts the scale's `model_levels` (1–4),
+(`app.core.rqi_scale`); the model only predicts the scale's `model_levels` (Kiváló … Rossz),
 which is why the queue is also how Nagyon rossz labels get collected. Scores: `analysis_metadata.dino_score` when present,
 else `data/cache/frame_scores.csv` (`backend/scripts/score_frames.py`, same
 v2 artifact, DB untouched).
 
-| Endpoint | Reason |
+## REST endpoints (local API only)
+
+None of these is on the public read-only deploy. The frontend uses only the job
+stream; the rest have **no caller** in the repo (GraphQL covers them: `points`,
+`processRoute`, `job`, `stopJob`) and are kept only for ad-hoc scripting —
+candidates for removal.
+
+| Endpoint | Status |
 |---|---|
-| `GET /api/v1/points`, `GET /api/v1/points/{id}` | Simple API documented in the README (the static map that also used it is gone) |
-| `POST /api/v1/process-route` | Route processing (formerly for the static map) |
-| `GET /api/v1/job/{id}` | Job status lookup (formerly for the static map) |
-| `GET /api/v1/job/{id}/stream` | SSE status channel of the React frontend |
-| `POST /api/v1/job/{id}/stop`, `GET /api/v1/jobs/active` | Job lifecycle and reconnect |
+| `GET /api/v1/job/{id}/stream` | **used** — SSE job progress for the React frontend (EventSource cannot do GraphQL) |
+| `GET /api/v1/points`, `GET /api/v1/points/{id}` | unused (GraphQL `points` / `point`) |
+| `POST /api/v1/process-route` | unused (GraphQL `processRoute`) |
+| `GET /api/v1/job/{id}`, `POST /api/v1/job/{id}/stop`, `GET /api/v1/jobs/active` | unused (GraphQL `job`, `stopJob`) |
 
-`/images`, `/previews` and `/api/v1/exports` are file-serving endpoints, not
-business-API duplicates.
-
-## Removed
-
-`POST /api/v1/inference/detect` is gone: it had no caller, and the GraphQL
-`detectObjects` and the product's `performReviewAction` already cover it. There
-is no separate REST annotation endpoint.
-
-`GET /api/v1/config` is gone (2026-11-26) and the GraphQL `config` field is
-admin-only: both handed the server-side Google Maps key to anonymous callers
-(also on the public read-only deploy), and their only consumer, the static
-`map.html`, no longer exists.
+`/images`, `/previews` and `/api/v1/exports` serve files, not business data.
 
 ## Route alternatives (`routeAlternatives`, 2026-11-26)
 
@@ -271,3 +268,14 @@ AND with at least `ROUTE_SMOOTH_MIN_COVERAGE` (0.5) measured; null when none
 qualifies. Quality is compared through `app.core.rqi_scale` (direction-free).
 Same permission as `getRoute`; on the public schema at most 1 per request.
 The planner uses it instead of `getRoute` (which stays for API consumers).
+
+## Removed
+
+`POST /api/v1/inference/detect` is gone: it had no caller, and the GraphQL
+`detectObjects` and the product's `performReviewAction` already cover it. There
+is no separate REST annotation endpoint.
+
+`GET /api/v1/config` is gone (2026-11-26) and the GraphQL `config` field is
+admin-only: both handed the server-side Google Maps key to anonymous callers
+(also on the public read-only deploy), and their only consumer, the static
+`map.html`, no longer exists.
