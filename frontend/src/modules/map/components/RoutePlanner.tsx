@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Navigation, Play, MapPin, X, ChevronUp } from 'lucide-react'
 import { useMap } from '../hooks'
+import { useViewer } from '../../auth'
 import { useRoadSegments } from '../segments/hooks'
 import type { RoadSegment } from '../segments/types'
 import { isNarrowScreen } from '../screen'
@@ -30,6 +31,10 @@ const RoutePlanner = () => {
     setRouteForm,
     startPickingLocation,
   } = useMap()
+  // processRoute needs a signed-in user (and does not exist on the public
+  // read-only API), so anonymous visitors only get the route preview.
+  const { viewer } = useViewer()
+  const canAnalyze = viewer !== null
   
   const { routeQuality, routeQualityLoading, routeQualityError, focusSegment } = useRoadSegments()
 
@@ -229,7 +234,7 @@ const RoutePlanner = () => {
             )}
         </button>
         
-        {routePoints && (
+        {routePoints && canAnalyze && (
              <button 
                 onClick={handleAnalyze}
                 disabled={isAnalyzingRoute}
