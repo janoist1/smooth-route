@@ -13,6 +13,8 @@ Mirrored (every stored value on the 1-5 RQI scale, continuous ones too):
   street_view_images.rqi_score                     YOLO damage-derived level
   street_view_images.dino_rqi_score                DINO level
   street_view_images.analysis_metadata.dino_score  continuous DINO estimate
+  street_view_images.analysis_metadata.dino_rqi_score_prev  pre-rescore class
+                                                   (scripts/rescore_dino.py)
   road_segments.score, road_segments.rqi           only if the table exists
   training_data.manual_dino_rqi                    legacy, unused column (only if present)
 Not touched: probabilities (dino_p_bad, road_segments.p_bad, confidence). They
@@ -59,6 +61,7 @@ OPTIONAL_COLUMN_TARGETS = (
 # (table, json column, key, decimals kept): RQI values inside a JSON document.
 JSON_TARGETS = (
     ("street_view_images", "analysis_metadata", "dino_score", 3),
+    ("street_view_images", "analysis_metadata", "dino_rqi_score_prev", 3),
 )
 
 

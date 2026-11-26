@@ -1,6 +1,7 @@
 export const ROUTES = {
   HOME: { path: '/', exact: true },
   TRAINING_LIST: { path: '/training', exact: true },
+  QUICK_LABEL: { path: '/training/quick', exact: true },
   TRAINING_REVIEW: { path: '/training/:id/review', exact: true },
   SETTINGS: { path: '/settings', exact: true },
   ADMIN: { path: '/admin', exact: true },

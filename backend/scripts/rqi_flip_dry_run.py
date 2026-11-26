@@ -103,7 +103,8 @@ def check_target(conn, M, table, value_expr, where, label, decimals=None):
         fails.append(f"{label}: bad-road count changes {bbad} -> {abad}")
     if lossy:
         fails.append(f"{label}: {lossy} values would not round-trip exactly")
-    if decimals is None and {M.MIRROR - v: n for v, n in before.items()} != after:
+    # exact value-count mirror: only meaningful when every value round-trips exactly
+    if decimals is None and not inexact and {M.MIRROR - v: n for v, n in before.items()} != after:
         fails.append(f"{label}: after-distribution is not the mirror of before")
     if nonnull and abs((float(bavg) + float(aavg)) - M.MIRROR) > 1e-6:
         fails.append(f"{label}: mean before + after != {M.MIRROR}")

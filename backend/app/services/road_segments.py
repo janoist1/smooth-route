@@ -587,7 +587,6 @@ def _refresh(
         )
         return stats
     except OverpassError as exc:
-        logger.warning("road segments: Overpass unavailable, refresh skipped (%s)", exc)
         log(f"road segments: Overpass unavailable, refresh skipped ({exc})")
         return None
     except Exception:  # noqa: BLE001 — a derived view must never fail the job

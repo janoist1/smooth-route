@@ -114,6 +114,19 @@ class TestRealSchemaWiring:
         assert result.errors is None
         assert result.data["me"] == {"clerkId": "user_1", "role": "user"}
 
-    def test_config_stays_anonymous(self, schema):
-        result = self.exec(schema, "{ config }", None)
-        assert result.errors is None
+    def test_config_is_admin_only(self, schema):
+        # `config` returns the server-side Google Maps key: never to anonymous
+        # callers or plain users (the public read-only deploy leaked it).
+        for identity in (None, USER):
+            result = self.exec(schema, "{ config }", identity)
+            assert result.data is None
+            assert "Admin privileges required" in result.errors[0].message
+
+    def test_read_only_schema_does_not_leak_maps_key(self, monkeypatch):
+        from app.core.config import settings
+        from app.graphql.schema import read_schema
+
+        monkeypatch.setattr(settings, "GOOGLE_MAPS_API_KEY", "AIza-test-secret")
+        result = self.exec(read_schema, "{ config }", None)
+        assert result.data is None
+        assert "AIza-test-secret" not in str(result.errors)

@@ -139,10 +139,11 @@ def snapshot(conn):
         "SELECT id, manual_rqi, to_jsonb(t) - 'manual_rqi' - 'manual_dino_rqi' AS rest, "
         "(to_jsonb(t)->>'manual_dino_rqi')::float AS legacy FROM training_data t"))}
     svi = {r.id: (r.rqi_score, r.dino_rqi_score,
-                  r.dino_score, r.meta_rest, r.rest) for r in conn.execute(sa.text(
+                  r.dino_score, r.meta_rest, r.rest, r.prev) for r in conn.execute(sa.text(
         "SELECT id, rqi_score, dino_rqi_score, "
         "(analysis_metadata->>'dino_score')::numeric AS dino_score, "
-        "analysis_metadata::jsonb - 'dino_score' AS meta_rest, "
+        "(analysis_metadata->>'dino_rqi_score_prev')::numeric AS prev, "
+        "analysis_metadata::jsonb - 'dino_score' - 'dino_rqi_score_prev' AS meta_rest, "
         "to_jsonb(s) - 'rqi_score' - 'dino_rqi_score' - 'analysis_metadata' AS rest "
         "FROM street_view_images s"))}
     rs = {}
@@ -239,6 +240,8 @@ def main(argv=None):
               "street_view_images.rqi_score / dino_rqi_score = 6 - x")
         check(all(svi1[k][2] == mirror(v[2]) for k, v in svi0.items()),
               "analysis_metadata.dino_score = 6 - x (exact, 3 decimals)")
+        check(all(svi1[k][5] == mirror(v[5]) for k, v in svi0.items()),
+              "analysis_metadata.dino_rqi_score_prev = 6 - x")
         check(all(svi1[k][3] == v[3] and svi1[k][4] == v[4] for k, v in svi0.items()),
               "dino_p_bad and every other metadata key / column unchanged")
         check(export1 == export0,

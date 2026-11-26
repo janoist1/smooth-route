@@ -6,9 +6,9 @@ entirely by ``backend/config/segment_aggregation.json`` so the numbers can be
 retuned without touching code:
 
     {"version": 1, "segment_length_m": 200, "aggregator": "median_score",
-     "trim_fraction": 0.0, "thresholds": [1.577, 2.472, 3.007],
-     "p_bad_threshold": 0.49, "min_images": 2,
-     "scale": {"classes": [1, 2, 3, 4], "higher_is_worse": true, "bad_class": 3},
+     "trim_fraction": 0.0, "thresholds": [2.948, 3.504, 4.423],
+     "p_bad_threshold": 0.5, "min_images": 2,
+     "scale": {"classes": [2, 3, 4, 5], "higher_is_worse": false, "bad_class": 3},
      "confidence": {"n_ref": 0.5, "spread_ref": 1.5, "margin_ref": 0.5,
                     "high": 0.7, "medium": 0.6},
      "age": {"grace_years": 3, "half_life_years": 5}}
@@ -85,9 +85,10 @@ class RqiScale:
     ``bad_class``        this class and every worse one counts as "bad"
                          (what the calibrated ``dino_p_bad`` predicts).
 
-    Today: classes (1, 2, 3, 4), higher is worse, bad from 3.
-    Flipped to "5 = excellent": classes (2, 3, 4, 5), higher_is_worse false,
-    bad_class 3, and ``thresholds`` mirrored (t → 6 − t, re-sorted).
+    Since 2026-11-26 ("5 = excellent", shared/rqi_scale.json): classes
+    (2, 3, 4, 5), higher_is_worse false, bad_class 3, thresholds mirrored from
+    the ML recipe (t → 6 − t, re-sorted). Before: (1, 2, 3, 4), higher is worse.
+    backend/tests/test_rqi_scale.py keeps this block equal to the canonical scale.
     """
 
     classes: tuple[int, ...]

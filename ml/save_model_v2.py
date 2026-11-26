@@ -60,13 +60,23 @@ RECIPES = {
     "cls+patch+clip": (["cls", "patch", "clip"], True),
     "cls+patch flipavg": (["cls_avg", "patch_avg"], False),
     "all": (["cls_avg", "patch_avg", "patch_crop", "clip"], True),
+    # Era 9 candidate: + VLM attributes (ml/cache/vlm_attributes.csv). NOT
+    # servable by dino_service — needs a VLM call per frame (see docs).
+    "cls+patch+vlm": (["cls", "patch", "vlm"], False),
 }
 
 HEADS = {
     "ridge": lambda: RidgeCV(alphas=[1, 3, 10, 30, 100, 300]),
     # tuned on 5-fold CV (ml/tune_svr.py): C=1, gamma=scale, eps=0.05
     "svr-rbf": lambda: SVR(C=1.0, gamma="scale", epsilon=0.05),
+    # Era 9: champion SVR on the DINO block, stacked with VLM attributes
+    "stack-vlm": lambda: _stack_vlm(),
 }
+
+
+def _stack_vlm():
+    from vlm_heads import StackedVLMHead
+    return StackedVLMHead(n_base=768)
 
 # backbone key -> full HF name written into the artifact (the backend loads this
 # name). Must stay in sync with extract_features_v2.BACKBONES.
@@ -86,6 +96,11 @@ def build_features(recipe, backbone):
     pool["patch_avg"] = (pool["patch"] + pool["patch_flip"]) / 2
     pool["clip"] = C["clip"]
     keys, _ = RECIPES[recipe]
+    if "vlm" in keys:
+        from vlm_attributes import attribute_matrix
+        files = pd.read_csv(os.path.join(CACHE, "dataset_v2.csv"))[
+            "image_filename"]
+        pool["vlm"] = attribute_matrix(list(files))
     return np.hstack([pool[k] for k in keys])
 
 

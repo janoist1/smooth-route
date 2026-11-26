@@ -33,6 +33,8 @@ def test_targets_cover_every_stored_rqi_value(M):
         ("street_view_images", "dino_rqi_score"),
     }
     assert ("street_view_images", "analysis_metadata", "dino_score", 3) in M.JSON_TARGETS
+    # rescore_dino.py keeps the class a frame had before re-scoring
+    assert ("street_view_images", "analysis_metadata", "dino_rqi_score_prev", 3) in M.JSON_TARGETS
     # probabilities describe the same event on either numbering -> never mirrored
     flat = " ".join(str(t) for t in M.COLUMN_TARGETS + M.OPTIONAL_COLUMN_TARGETS + M.JSON_TARGETS)
     assert "p_bad" not in flat and "confidence" not in flat

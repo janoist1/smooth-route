@@ -170,7 +170,10 @@ def _points_from_images(db, results) -> List[Point]:
 
 @strawberry.type
 class Query:
-    @strawberry.field
+    # The server-side Google Maps key (bills Street View Static + Directions).
+    # Admin-only: it was anonymous for the removed static map.html, which let
+    # anyone read the key from the public read-only deploy.
+    @strawberry.field(permission_classes=[IsAdmin])
     def config(self) -> str:
         return settings.GOOGLE_MAPS_API_KEY or ""
 

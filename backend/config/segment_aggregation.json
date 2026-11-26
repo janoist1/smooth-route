@@ -3,8 +3,8 @@
   "segment_length_m": 200,
   "aggregator": "median_score",
   "trim_fraction": 0.0,
-  "thresholds": [2.993, 3.528, 4.423],
-  "p_bad_threshold": 0.49,
+  "thresholds": [2.948, 3.504, 4.423],
+  "p_bad_threshold": 0.5,
   "min_images": 2,
   "scale": {
     "classes": [2, 3, 4, 5],
@@ -13,10 +13,10 @@
   },
   "confidence": {
     "n_ref": 0.5,
-    "spread_ref": 1.5,
-    "margin_ref": 0.5,
-    "high": 0.7,
-    "medium": 0.6
+    "spread_ref": 2.0,
+    "margin_ref": 0.6,
+    "high": 0.8,
+    "medium": 0.55
   },
   "age": {
     "grace_years": 3,

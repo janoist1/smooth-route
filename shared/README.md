@@ -105,8 +105,10 @@ Tooling, all tested:
 - `backend/alembic/pending/rqi_flip_direction.py` (revision `0006`, revises
   `0005`) is the data migration, **inactive** outside `versions/`. It mirrors
   `training_data.manual_rqi`, `street_view_images.rqi_score` /
-  `dino_rqi_score`, `analysis_metadata.dino_score`, `road_segments.score` /
-  `rqi` and the legacy `training_data.manual_dino_rqi` (if present).
+  `dino_rqi_score`, `analysis_metadata.dino_score`,
+  `analysis_metadata.dino_rqi_score_prev` (written by `rescore_dino.py`),
+  `road_segments.score` / `rqi` and the legacy `training_data.manual_dino_rqi`
+  (if present).
   Probabilities stay untouched. Its own inverse, so downgrade runs the same
   SQL. Upgrade refuses unless the deployed JSON says `higher_is_better`.
 - `backend/scripts/rqi_flip_dry_run.py` gives a READ-ONLY before/after report
@@ -114,24 +116,26 @@ Tooling, all tested:
 - `backend/scripts/rqi_flip_rehearsal.py` runs upgrade + downgrade on a
   throwaway PostGIS container loaded with a pg_dump of the dev data.
 
-Steps at the go:
+Steps at the go (the branch already contains `claude/analysis-layer` @ d2513f0
+with every other session's work merged, and all call sites in it flipped):
 
-1. Merge the remaining branches into the integration branch first. Then merge
-   this branch. Resolve `rqi_scale.json` / `rqi_scale.py` in favour of this
-   branch (the label-queue branch carries an older copy).
-2. Migrate the call sites in the newly merged code (checklist below), with
-   gates green.
-3. `git mv backend/alembic/pending/rqi_flip_direction.py backend/alembic/versions/`,
+1. Merge anything newer from `claude/analysis-layer` into this branch. On
+   conflicts in `rqi_scale.*` keep this branch's version, and
+   `backend/config/segment_aggregation.json` must stay in the flipped numbering
+   (`scripts/sync_rqi_scale.py` has `flip_segment_config` for a fresh recipe).
+   `backend/tests/test_rqi_scale.py` catches both. Gates green.
+2. `git mv backend/alembic/pending/rqi_flip_direction.py backend/alembic/versions/`,
    re-check `down_revision` is the head, and update
    `backend/tests/test_rqi_flip_migration.py` (`test_is_not_active_yet`, `PENDING`).
-4. Run `backend/scripts/rqi_flip_dry_run.py` and `backend/scripts/rqi_flip_rehearsal.py`;
+3. Run `backend/scripts/rqi_flip_dry_run.py` and `backend/scripts/rqi_flip_rehearsal.py`;
    both must PASS.
-5. Local DB: stop the dev server, run `alembic upgrade head` (from `backend/`).
-   The migration also mirrors `road_segments`; a fresh `build_segments.py` run
-   gives the same result. Then regenerate `data/cache/frame_scores.csv` (label queue).
-6. ML check: `bash ml/export_labels.sh`; `git diff --stat ml/labels.csv` must be
+4. Local DB: stop the dev server and anything that writes RQI values (rescore,
+   label queue), then run `alembic upgrade head` (from `backend/`). The migration
+   also mirrors `road_segments`; a fresh `build_segments.py` gives the same result.
+   Delete `data/cache/frame_scores.csv` so the label queue rescoring rebuilds it.
+5. ML check: `bash ml/export_labels.sh`; `git diff --stat ml/labels.csv` must be
    empty. Optionally re-run `ml/evaluate_artifact.py`.
-7. Public site, with owner approval: `backend/scripts/publish.py` (upgrades Neon,
+6. Public site, with owner approval: `backend/scripts/publish.py` (upgrades Neon,
    then reloads `street_view_images`) and the `master` push in the same window.
 
 Rollback: `alembic downgrade 0005` with the flipped code, then revert the flip
@@ -139,11 +143,8 @@ commit. Keep the app stopped in between.
 
 ### Checklist for code merged after this branch
 
-| Branch / area | What to check |
+| Area | What to check |
 |---|---|
-| label queue (`claude/label-queue-quick-rate-*`) | already uses `SCALE` / `from_severity`; keep this branch's `rqi_scale.*` on conflict; run its tests with the flipped JSON; the docstring "P(RQI >= 3)" becomes Közepes or worse; regenerate `frame_scores.csv` after the migration |
-| QA (`claude/qa-analysis-layer-*`) | e2e tests: RouteQualityCard test ids are now `route-bar-<key>` / `route-class-<key>` (level key, not number); `segment_read.py` / `queries.py` hunks |
-| frame quality (`claude/frame-quality-audit-*`) | `road_segments.py`: this branch changed one line (report loop over `SCALE.model_levels`) |
-| VLM attributes (`claude/ml-vlm-attributes-*`) | edits `ml/save_model_v2.py`: keep the `R.*` constants and the artifact's `scale_direction` |
-| any new code | no literal levels; lists best first; tests via `sv()` |
+| any new code | no literal levels; per-level lists best first; tests via `sv()`; anything that stores an RQI value must be added to the migration's targets |
+| segment recipe changes | a new `ml/segment_recipe.json` (severity) must reach `backend/config/segment_aggregation.json` mirrored (`flip_segment_config`) |
 | owner decisions | trainingStats cuts fair/poor at the Közepes/Rossz midpoint, adminStats at Közepes: pick one. Whether to collect Nagyon rossz labels (train them as Rossz, or keep dropping them). Whether to drop the unused `manual_dino_rqi` column |
