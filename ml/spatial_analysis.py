@@ -193,7 +193,7 @@ def main():
     overall["ci95"] = S.cluster_bootstrap_ci(yc, r, g1k)
     print(f"  overall: QWK={overall['qwk']:.3f}  MAE={overall['mae']:.3f}  "
           f"exact={overall['exact']:.3f}  AUC={overall['bad_auc']:.3f}")
-    print(f"  cell-bootstrap 95% CI: " + "  ".join(
+    print("  cell-bootstrap 95% CI: " + "  ".join(
         f"{k}=[{a:.3f}, {b:.3f}]" for k, (a, b) in overall["ci95"].items()))
     ea = {"overall": overall, "per_area": {}, "per_class": {}}
     regions = {**{a: area == a for a in S.AREA_LABELS},

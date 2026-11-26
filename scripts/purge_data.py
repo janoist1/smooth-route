@@ -1,4 +1,4 @@
-from app.models.models import TrainingData, StreetViewImage, Job
+from app.models.models import TrainingData, StreetViewImage
 from app.core.database import SessionLocal
 
 def purge_training_data():

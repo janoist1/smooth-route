@@ -1,7 +1,6 @@
 
 import sys
 import os
-import json
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -35,7 +34,6 @@ def cleanup_shadows():
             if not entry.annotations:
                 continue
             
-            original_len = len(entry.annotations)
             new_annotations = []
             has_changes = False
             
@@ -77,7 +75,7 @@ def cleanup_shadows():
                 
         if modified_count > 0:
             db.commit()
-            print(f"\nCleanup Complete!")
+            print("\nCleanup Complete!")
             print(f"Images modified: {modified_count}")
             print(f"Mega-Shadow boxes deleted: {boxes_removed}")
             print(f"Shadow tags added: {tags_added}")

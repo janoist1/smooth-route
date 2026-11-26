@@ -1,7 +1,6 @@
 
 import sys
 import os
-import json
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -51,10 +50,10 @@ def analyze_shadows():
                     # If w > 300 and h > 200, it's likely a mega box.
                     if w > 100 and h > 100: # Heuristic threshold for logging
                          print(f"Large Shadow detected in {entry.image_filename}: {w}x{h}")
-                         if w * h > 50000: # Arbitrary "huge" threshold
+                         if area > 50000: # Arbitrary "huge" threshold
                              mega_shadows += 1
 
-        print(f"\nStats:")
+        print("\nStats:")
         print(f"Total 'shadow' boxes: {shadow_boxes}")
         print(f"Likely 'Mega-Shadows' (>50k px area): {mega_shadows}")
         
