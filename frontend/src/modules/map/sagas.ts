@@ -1,20 +1,12 @@
-import { call, put, takeLatest, select, takeEvery } from 'redux-saga/effects'
+import { put, takeLatest, select, takeEvery } from 'redux-saga/effects'
 import type { SagaIterator } from 'redux-saga'
 import { takeLatestAsync } from 'saga-toolkit'
 import type { SagaActionFromCreator } from 'saga-toolkit'
 import { actions } from './slice'
 import { actions as apiActions } from '../api'
-import { client, gql } from '../graphql'
+import { gql, gqlMutate, gqlQuery, gqlQueryResult } from '../graphql'
 import type { RootState } from '../../store'
 import * as selectors from './selectors'
-import type {
-  GetPointsQuery,
-  GetRoadQualityGridQuery,
-  GetPointDetailQuery,
-  GetRouteQuery,
-  ProcessRouteMutation,
-  GetActiveJobQuery,
-} from '../graphql/generated/graphql'
 import type { QualityGrid } from './aggregation'
 import { shouldShowGrid } from './aggregation'
 
@@ -117,12 +109,12 @@ const MAP_POINT_LIMIT = 20000
 function* fetchPointsWorker(action: SagaActionFromCreator<typeof actions.fetchPoints>) {
   const bbox = action.meta.arg
 
-  const result: { data: GetPointsQuery } = yield call([client, client.query], {
+  const data = yield* gqlQuery({
     query: GET_POINTS,
     variables: { limit: MAP_POINT_LIMIT, bbox },
   })
 
-  return result.data.points.map(p => ({
+  return data.points.map(p => ({
     id: p.id,
     latitude: p.latitude,
     longitude: p.longitude,
@@ -137,22 +129,22 @@ function* fetchPointsWorker(action: SagaActionFromCreator<typeof actions.fetchPo
 function* fetchGridWorker(action: SagaActionFromCreator<typeof actions.fetchGrid>) {
   const { bbox, zoom } = action.meta.arg
 
-  const result: { data: GetRoadQualityGridQuery } = yield call([client, client.query], {
+  const data = yield* gqlQuery({
     query: GET_ROAD_QUALITY_GRID,
     variables: { zoom, bbox },
   })
 
-  return (result.data.roadQualityGrid ?? { cell: 0, cells: [] }) as QualityGrid
+  return (data.roadQualityGrid ?? { cell: 0, cells: [] }) as QualityGrid
 }
 
 function* fetchPointDetailWorker(action: SagaActionFromCreator<typeof actions.fetchPointDetail>) {
   const id = action.meta.arg
-  const result: { data: GetPointDetailQuery } = yield call([client, client.query], {
+  const data = yield* gqlQuery({
     query: GET_POINT_DETAIL,
     variables: { id },
   })
 
-  const pt = result.data.point
+  const pt = data.point
   if (!pt) throw new Error('Point not found')
 
   return {
@@ -182,7 +174,7 @@ function* fetchPointDetailWorker(action: SagaActionFromCreator<typeof actions.fe
 function* planRouteWorker(action: SagaActionFromCreator<typeof actions.planRoute>) {
   const { origin, destination } = action.meta.arg
   
-  const result: { data: GetRouteQuery } = yield call([client, client.query], {
+  const result = yield* gqlQueryResult({
     query: GET_ROUTE,
     variables: { origin, destination },
   })
@@ -200,7 +192,7 @@ function* planRouteWorker(action: SagaActionFromCreator<typeof actions.planRoute
 function* analyzeRouteWorker(action: SagaActionFromCreator<typeof actions.analyzeRoute>) {
   const { origin, destination } = action.meta.arg
   
-  const result: { data: ProcessRouteMutation } = yield call([client, client.mutate], {
+  const data = yield* gqlMutate({
     mutation: PROCESS_ROUTE,
     variables: {
       input: {
@@ -210,7 +202,7 @@ function* analyzeRouteWorker(action: SagaActionFromCreator<typeof actions.analyz
     }
   })
   
-  return result.data.processRoute.id
+  return data.processRoute.id
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -224,7 +216,7 @@ function* watchJobStart(action: any) {
 // progress UI survives a page reload (routeAnalysisJobId lives only in memory).
 function* reconnectRouteJobSaga(): SagaIterator {
   try {
-    const result: { data: GetActiveJobQuery } = yield call([client, client.query], {
+    const result = yield* gqlQueryResult({
       query: GET_ACTIVE_JOB,
       fetchPolicy: 'network-only',
     })

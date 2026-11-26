@@ -1,11 +1,11 @@
 import React from 'react'
-import { gql } from '@apollo/client'
 import { useQuery } from '@apollo/client/react'
 import { Loader2, ImageIcon, DollarSign, MapPin, Users } from 'lucide-react'
 import { StatCard, StatsGrid } from 'modules/ui'
+import { gql } from 'modules/graphql'
 import MainLayout from '../MainLayout'
 
-const ADMIN_STATS_QUERY = gql`
+const ADMIN_STATS_QUERY = gql(`
   query AdminStats {
     adminStats {
       totalImages
@@ -33,35 +33,7 @@ const ADMIN_STATS_QUERY = gql`
       }
     }
   }
-`
-
-interface DailyCount {
-  day: string
-  count: number
-}
-interface JobSummary {
-  id: string
-  status: string
-  message: string | null
-  progress: number
-  total: number
-}
-interface AdminStats {
-  totalImages: number
-  imagesThisMonth: number
-  freeTierLimit: number
-  billableThisMonth: number
-  totalPoints: number
-  analyzedPoints: number
-  pendingAnalysis: number
-  rqiGood: number
-  rqiFair: number
-  rqiPoor: number
-  totalUsers: number
-  adminUsers: number
-  imagesPerDay: DailyCount[]
-  recentJobs: JobSummary[]
-}
+`)
 
 // Street View Static overage price (Essentials SKU, ~$7 / 1000 requests).
 const PRICE_PER_IMAGE = 0.007
@@ -88,7 +60,7 @@ const StatusDot: React.FC<{ status: string }> = ({ status }) => {
 }
 
 const AdminStatsPage: React.FC = () => {
-  const { data, loading, error } = useQuery<{ adminStats: AdminStats }>(ADMIN_STATS_QUERY, {
+  const { data, loading, error } = useQuery(ADMIN_STATS_QUERY, {
     fetchPolicy: 'no-cache',
   })
 

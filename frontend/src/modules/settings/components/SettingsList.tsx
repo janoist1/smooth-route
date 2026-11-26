@@ -4,11 +4,11 @@ import { GlassPanel, FormControl, TextInput, NumberInput, Select } from '../../u
 import { client, gql } from '../../graphql'
 import type { SystemSetting } from '..'
 
-const GET_AVAILABLE_MODELS = gql`
+const GET_AVAILABLE_MODELS = gql(`
   query GetAvailableModels {
     availableModels
   }
-`
+`)
 
 interface SettingsListProps {
   items: SystemSetting[]
@@ -51,7 +51,7 @@ const SettingsList: React.FC<SettingsListProps> = ({
       }
 
       try {
-        const { data } = await client.query<{ availableModels: string[] }>({
+        const { data } = await client.query({
           query: GET_AVAILABLE_MODELS,
           fetchPolicy: 'network-only',
         })

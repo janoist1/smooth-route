@@ -4,7 +4,7 @@ import type { Task, EventChannel, SagaIterator } from 'redux-saga'
 import { eventChannel, END } from 'redux-saga'
 import { type SagaActionFromCreator, takeLatestAsync } from 'saga-toolkit'
 import { actions } from './slice'
-import { client, gql } from '../graphql'
+import { gql, gqlQuery } from '../graphql'
 
 const GET_JOB = gql(`
   query GetJob($id: String!) {
@@ -25,14 +25,13 @@ const GET_JOB = gql(`
 function* pollJobWorker(action: SagaActionFromCreator<typeof actions.pollJob>) {
     const jobId = action.meta.arg
     
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result: { data: any } = yield call([client, client.query], {
+    const data = yield* gqlQuery({
         query: GET_JOB,
         variables: { id: jobId },
         fetchPolicy: 'network-only'
     })
     
-    const job = result.data.job
+    const job = data.job
     if (!job) throw new Error(`Job ${jobId} not found`)
     
     return {

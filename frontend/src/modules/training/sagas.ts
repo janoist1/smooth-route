@@ -1,26 +1,16 @@
-import { call, select, put, takeLatest } from 'redux-saga/effects'
+import { select, put, takeLatest } from 'redux-saga/effects'
 
 import { actions, fetchImage, fetchList, fetchStats } from './slice'
-import type { Annotation, TrainingPoint, TrainingStats } from './types'
+import type { Annotation } from './types'
 
 import { takeLatestAsync } from 'saga-toolkit'
 import type { SagaActionFromCreator } from 'saga-toolkit'
-import { client, gql } from '../graphql'
-import type {
-  GetTrainingDataQuery,
-  GetActiveJobQuery,
-} from '../graphql/generated/graphql'
+import { gql, gqlMutate, gqlQuery, gqlQueryResult } from '../graphql'
+import type { FilterMode } from '../graphql/generated/graphql'
 import { selectTrainingState } from './selectors'
 import { actions as apiActions } from '../api'
 
 // --- GraphQL Queries & Mutations ---
-
-interface ReviewActionResult {
-    success: boolean
-    message?: string
-    processedImageUrl?: string
-    annotations?: Annotation[]
-}
 
 const GET_TRAINING_DATA = gql(`
     query GetTrainingData($id: Int!) {
@@ -129,13 +119,13 @@ function* fetchImageWorker(action: SagaActionFromCreator<typeof actions.fetchIma
   const pointId = action.meta.arg
 
   // FETCH via GraphQL
-  const result: { data: GetTrainingDataQuery } = yield call([client, client.query], {
+  const data = yield* gqlQuery({
     query: GET_TRAINING_DATA,
     variables: { id: pointId },
     fetchPolicy: 'network-only', // Ensure freshness
   })
 
-  const pt = result.data.point
+  const pt = data.point
 
   if (!pt || !pt.imageUrl) {
     throw new Error('No image found for this point')
@@ -153,15 +143,13 @@ function* fetchImageWorker(action: SagaActionFromCreator<typeof actions.fetchIma
 function* fetchListWorker(action: SagaActionFromCreator<typeof actions.fetchList>) {
   const { mode, offset = 0, model = 'yolo' } = action.meta.arg
 
-  const result: {
-    data: { trainingPoints: { items: TrainingPoint[]; totalCount: number; hasMore: boolean } }
-  } = yield call([client, client.query], {
+  const data = yield* gqlQuery({
     query: GET_TRAINING_POINTS,
-    variables: { mode: mode.toUpperCase(), offset, limit: 20, model },
+    variables: { mode: mode.toUpperCase() as FilterMode, offset, limit: 20, model },
     fetchPolicy: 'network-only',
   })
 
-  const { items, totalCount, hasMore } = result.data.trainingPoints
+  const { items, totalCount, hasMore } = data.trainingPoints
 
   return {
     items,
@@ -174,9 +162,9 @@ function* fetchStatsWorker(action: SagaActionFromCreator<typeof actions.fetchSta
   const { mode, model } = action.meta.arg
   const isDino = model === 'dino'
 
-  const result: { data: { trainingStats: TrainingStats } } = yield call([client, client.query], {
+  const result = yield* gqlQueryResult({
     query: GET_TRAINING_STATS,
-    variables: { mode: mode.toUpperCase(), isDino },
+    variables: { mode: mode.toUpperCase() as FilterMode, isDino },
     fetchPolicy: 'network-only',
   })
 
@@ -213,7 +201,7 @@ function* saveAnnotationsWorker() {
     },
   }
 
-  yield call([client, client.mutate], {
+  yield* gqlMutate({
     mutation: SAVE_TRAINING_DATA,
     variables: { input },
   })
@@ -230,7 +218,7 @@ function* deleteTrainingDataWorker(
 ) {
   const filename = action.meta.arg
 
-  yield call([client, client.mutate], {
+  yield* gqlMutate({
     mutation: DELETE_TRAINING_DATA,
     variables: { imageFilename: filename },
   })
@@ -246,7 +234,7 @@ function* deleteTrainingDataWorker(
 
 function* stopJobSaga(action: SagaActionFromCreator<typeof actions.stopJob>) {
   const jobId = action.meta.arg
-  yield call([client, client.mutate], {
+  yield* gqlMutate({
     mutation: STOP_JOB,
     variables: { jobId },
   })
@@ -255,7 +243,7 @@ function* stopJobSaga(action: SagaActionFromCreator<typeof actions.stopJob>) {
 
 // Restore active job state on reload
 function* reconnectJobSaga() {
-  const result: { data: GetActiveJobQuery } = yield call([client, client.query], {
+  const result = yield* gqlQueryResult({
     query: GET_ACTIVE_JOB,
     fetchPolicy: 'network-only',
   })
@@ -279,25 +267,22 @@ function* reconnectJobSaga() {
 
 function* runAnalysisSaga(action: SagaActionFromCreator<typeof actions.runAnalysis>) {
   const input = action.meta.arg
-  const result: { data: { runAnalysis: { id: string } } } = yield call([client, client.mutate], {
+  const data = yield* gqlMutate({
     mutation: RUN_ANALYSIS,
     variables: { input },
   })
 
-  const jobId = result.data.runAnalysis.id
+  const jobId = data.runAnalysis.id
   yield put(apiActions.registerJob(jobId))
   return { jobId }
 }
 
 function* startTrainingSaga() {
-  const result: { data: { startModelTraining: { id: string } } } = yield call(
-    [client, client.mutate],
-    {
-      mutation: START_MODEL_TRAINING,
-    },
-  )
+  const data = yield* gqlMutate({
+    mutation: START_MODEL_TRAINING,
+  })
 
-  const jobId = result.data.startModelTraining.id
+  const jobId = data.startModelTraining.id
   yield put(apiActions.registerJob(jobId))
   return { jobId }
 }
@@ -331,7 +316,7 @@ function* reviewActionWorker(action: SagaActionFromCreator<typeof actions.perfor
       finalParams.filename = filename
   }
 
-  const result: { data: { performReviewAction: ReviewActionResult } } = yield call([client, client.mutate], {
+  const data = yield* gqlMutate({
     mutation: PERFORM_REVIEW_ACTION,
     variables: {
       input: {
@@ -341,7 +326,7 @@ function* reviewActionWorker(action: SagaActionFromCreator<typeof actions.perfor
     },
   })
 
-  const response = result.data.performReviewAction
+  const response = data.performReviewAction
   
   if (!response.success) {
       throw new Error(response.message || 'Review action failed')

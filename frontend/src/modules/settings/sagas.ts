@@ -1,11 +1,9 @@
-import { call } from 'redux-saga/effects'
 import { takeLatestAsync } from 'saga-toolkit'
 import type { SagaActionFromCreator } from 'saga-toolkit'
 import { fetchModelInfo, fetchSettings, updateSetting } from './slice'
-import type { RqiModelInfo, SystemSetting } from './types'
-import { client, gql } from '../graphql'
+import { gql, gqlMutate, gqlQuery } from '../graphql'
 
-const GET_SETTINGS = gql`
+const GET_SETTINGS = gql(`
   query GetSettings {
     settings {
       key
@@ -16,9 +14,9 @@ const GET_SETTINGS = gql`
       explanation
     }
   }
-`
+`)
 
-const UPDATE_SETTING = gql`
+const UPDATE_SETTING = gql(`
   mutation UpdateSetting($input: UpdateSettingInput!) {
     updateSetting(input: $input) {
       key
@@ -29,9 +27,9 @@ const UPDATE_SETTING = gql`
       explanation
     }
   }
-`
+`)
 
-const GET_MODEL_INFO = gql`
+const GET_MODEL_INFO = gql(`
   query GetRqiModelInfo {
     rqiModelInfo {
       available
@@ -48,41 +46,25 @@ const GET_MODEL_INFO = gql`
       scaleMeaning
     }
   }
-`
+`)
 
-function* fetchSettingsWorker(): Generator<
-  unknown,
-  SystemSetting[],
-  { data: { settings: SystemSetting[] } }
-> {
-  const response = (yield call([client, client.query], {
-    query: GET_SETTINGS,
-    fetchPolicy: 'network-only',
-  })) as { data: { settings: SystemSetting[] } }
-  return response.data.settings
+function* fetchSettingsWorker() {
+  const data = yield* gqlQuery({ query: GET_SETTINGS, fetchPolicy: 'network-only' })
+  return data.settings
 }
 
-function* updateSettingWorker(
-  action: SagaActionFromCreator<typeof updateSetting>,
-): Generator<unknown, SystemSetting, { data: { updateSetting: SystemSetting } }> {
+function* updateSettingWorker(action: SagaActionFromCreator<typeof updateSetting>) {
   const { key, value } = action.meta.arg
-  const response = (yield call([client, client.mutate], {
+  const data = yield* gqlMutate({
     mutation: UPDATE_SETTING,
     variables: { input: { key, value } },
-  })) as { data: { updateSetting: SystemSetting } }
-  return response.data.updateSetting
+  })
+  return data.updateSetting
 }
 
-function* fetchModelInfoWorker(): Generator<
-  unknown,
-  RqiModelInfo,
-  { data: { rqiModelInfo: RqiModelInfo } }
-> {
-  const response = (yield call([client, client.query], {
-    query: GET_MODEL_INFO,
-    fetchPolicy: 'network-only',
-  })) as { data: { rqiModelInfo: RqiModelInfo } }
-  return response.data.rqiModelInfo
+function* fetchModelInfoWorker() {
+  const data = yield* gqlQuery({ query: GET_MODEL_INFO, fetchPolicy: 'network-only' })
+  return data.rqiModelInfo
 }
 
 export default [
