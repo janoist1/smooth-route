@@ -3,16 +3,15 @@ Image download: fetch the actual Street View JPEGs for pending points and
 rewrite their image_url to the local path.
 """
 import os
-import shutil
 import uuid
-
-import requests
 
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.models.models import StreetViewImage
 from app.services.capture_date import parse_capture_date
 from app.services.job_service import JobStep, update_job
+from app.services.sv_client import StreetViewError, StreetViewFatal, default_client
+from app.services.sv_quota import DEFAULT_JOB_CAP, JobBudget, QuotaExceeded, cap_from_env
 
 
 def fill_capture_metadata(img: StreetViewImage, lookup=None) -> None:
@@ -64,22 +63,31 @@ def download_images(job_id: str):
         save_dir = os.path.join(settings.resolve_data_dir(), "images")
         os.makedirs(save_dir, exist_ok=True)
 
+        # Every image goes through the shared client: booked on the monthly
+        # quota counter and this job's own cap BEFORE it is requested, paced
+        # at the steady rate, and a quota / billing signal ends the job.
+        client = default_client()
+        budget = JobBudget(cap_from_env("GOOGLE_SV_JOB_CAP", DEFAULT_JOB_CAP))
+        stop_reason = None
+
         for i, img in enumerate(pending_images):
             try:
-                filename = f"sv_{img.id}_{uuid.uuid4().hex[:8]}.jpg"
-                filepath = os.path.join(save_dir, filename)
-
-                response = requests.get(img.image_url, stream=True, timeout=10)
-                if response.status_code == 200:
-                    with open(filepath, 'wb') as f:
-                        shutil.copyfileobj(response.raw, f)
-                    img.image_url = f"images/{filename}"
-                    downloaded_count += 1
-                    fill_capture_metadata(img)
-                else:
-                    print(f"Failed to download {img.image_url}: {response.status_code}")
+                body = client.image_from_url(img.image_url, job=budget)
+            except (QuotaExceeded, StreetViewFatal) as stop:
+                stop_reason = str(stop)
+                break
+            except StreetViewError as e:
+                # Never print the stored URL: it carries the API key.
+                print(f"Image for point {img.id} skipped: {e}")
             except Exception as e:
-                print(f"Error downloading image {img.id}: {e}")
+                print(f"Error downloading image {img.id}: {type(e).__name__}")
+            else:
+                filename = f"sv_{img.id}_{uuid.uuid4().hex[:8]}.jpg"
+                with open(os.path.join(save_dir, filename), 'wb') as f:
+                    f.write(body)
+                img.image_url = f"images/{filename}"
+                downloaded_count += 1
+                fill_capture_metadata(img)
 
             if i % 5 == 0:
                 update_job(job_id, progress=30 + int((i / total) * 20),  # 30% -> 50%
@@ -87,6 +95,13 @@ def download_images(job_id: str):
                 db.commit()  # periodic commit
 
         db.commit()
+        if stop_reason:
+            # Points not fetched keep their queued URL, so a later job resumes
+            # exactly where this one stopped.
+            raise RuntimeError(
+                f"Street View download stopped after {downloaded_count} of {total} images: "
+                f"{stop_reason}"
+            )
         update_job(job_id, progress=50, message=f"{downloaded_count} kép letöltve.")
     finally:
         db.close()

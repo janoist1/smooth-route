@@ -167,31 +167,18 @@ class GoogleMapsService:
         (the panorama live today nearest to lat/lng within `radius` m).
         Returns {pano_id, lat, lng, date} or None when there is no panorama.
         `date` is the raw month-precision capture date, e.g. "2019-06".
+
+        Goes through the shared gentle client (`sv_client`): paced at the
+        configured steady rate, and a quota / billing / key signal raises
+        `StreetViewFatal` so the calling job stops instead of hammering on.
         """
-        import requests
+        from app.services.sv_client import StreetViewError, default_client
+
         if not settings.GOOGLE_MAPS_API_KEY:
             return None
-
-        url = "https://maps.googleapis.com/maps/api/streetview/metadata"
-        params = {"key": settings.GOOGLE_MAPS_API_KEY}
-        if pano_id:
-            params["pano"] = pano_id
-        else:
-            params["location"] = f"{lat},{lng}"
-            params["radius"] = radius
-
         try:
-            resp = requests.get(url, params=params, timeout=5)
-            data = resp.json()
-            if data.get("status") == "OK":
-                return {
-                    "pano_id": data.get("pano_id"),
-                    "lat": data["location"]["lat"],
-                    "lng": data["location"]["lng"],
-                    "date": data.get("date")
-                }
-            return None
-        except Exception as e:
+            return default_client().metadata(lat, lng, pano_id=pano_id, radius=radius)
+        except StreetViewError as e:  # this lookup failed; the job goes on
             print(f"SV Metadata error: {e}")
             return None
 

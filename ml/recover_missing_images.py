@@ -13,6 +13,11 @@ point we first hit the free metadata endpoint; if the pano at that location
 was captured AFTER the labelling date, the road may have changed since it was
 scored, so we skip it (reported at the end).
 
+Every request goes through the backend's shared Street View client
+(backend/app/services/sv_client.py): images are booked on the monthly quota
+counter and this run's cap BEFORE they are requested, traffic is paced at
+~1 request/s, and a quota / billing signal stops the run.
+
 Usage:  .venv/bin/python ml/recover_missing_images.py [--limit N] [--dry-run]
 """
 import argparse
@@ -20,16 +25,25 @@ import csv
 import os
 import re
 import sys
-import time
-
-import requests
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 IMAGES = os.path.join(ROOT, "data", "images")
 LABELS = os.path.join(ROOT, "ml", "labels.csv")
 
-META_URL = "https://maps.googleapis.com/maps/api/streetview/metadata"
-IMG_URL = "https://maps.googleapis.com/maps/api/streetview"
+sys.path.insert(0, os.path.join(ROOT, "backend"))
+from app.services.sv_client import (  # noqa: E402
+    StreetViewClient,
+    StreetViewError,
+    StreetViewFatal,
+)
+from app.services.sv_quota import (  # noqa: E402
+    DEFAULT_JOB_CAP,
+    JobBudget,
+    QuotaExceeded,
+    cap_from_env,
+    default_quota,
+)
+
 # Labels were created 2026-01-02 .. 2026-01-17; any pano captured in or after
 # Feb 2026 cannot be what the labeller saw.
 LABEL_CUTOFF = "2026-02"
@@ -71,6 +85,9 @@ def main():
 
     os.makedirs(IMAGES, exist_ok=True)
     ok, skipped_new_pano, no_pano, failed = 0, [], [], []
+    client = StreetViewClient(key, default_quota())
+    budget = JobBudget(cap_from_env("GOOGLE_SV_JOB_CAP", DEFAULT_JOB_CAP))
+    print(client.quota.summary(), f"| this run: at most {budget.cap} images")
 
     for i, r in enumerate(todo, 1):
         lat, lng = float(r["latitude"]), float(r["longitude"])
@@ -78,20 +95,19 @@ def main():
         fname = r["image_filename"]
 
         try:
-            meta = requests.get(
-                META_URL,
-                params={"location": f"{lat},{lng}", "radius": 15, "key": key},
-                timeout=10,
-            ).json()
-        except Exception as e:
+            meta = client.metadata(lat, lng, radius=15)
+        except StreetViewFatal as stop:
+            print(f"STOPPED: {stop}")
+            break
+        except StreetViewError as e:
             failed.append((fname, f"meta error: {e}"))
             continue
 
-        if meta.get("status") != "OK":
-            no_pano.append((fname, meta.get("status")))
+        if meta is None:
+            no_pano.append((fname, "no panorama"))
             continue
 
-        pano_date = meta.get("date", "")  # e.g. "2023-06"
+        pano_date = meta.get("date") or ""  # e.g. "2023-06"
         if pano_date and pano_date >= LABEL_CUTOFF:
             skipped_new_pano.append((fname, pano_date))
             continue
@@ -101,30 +117,20 @@ def main():
             continue
 
         try:
-            resp = requests.get(
-                IMG_URL,
-                params={
-                    "size": "600x400",
-                    "location": f"{lat},{lng}",
-                    "heading": heading,
-                    "pitch": pitch,
-                    "key": key,
-                },
-                timeout=30,
-            )
-            if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image"):
-                with open(os.path.join(IMAGES, fname), "wb") as f:
-                    f.write(resp.content)
-                ok += 1
-            else:
-                failed.append((fname, f"HTTP {resp.status_code}"))
-        except Exception as e:
+            body = client.image(lat=lat, lng=lng, heading=heading, pitch=pitch, job=budget)
+        except (QuotaExceeded, StreetViewFatal) as stop:
+            print(f"STOPPED: {stop}")
+            break
+        except StreetViewError as e:
             failed.append((fname, str(e)))
+        else:
+            with open(os.path.join(IMAGES, fname), "wb") as f:
+                f.write(body)
+            ok += 1
 
         if i % 25 == 0:
             print(f"  {i}/{len(todo)}  ok={ok} newer_pano={len(skipped_new_pano)} "
                   f"no_pano={len(no_pano)} failed={len(failed)}")
-        time.sleep(0.05)  # be polite
 
     print(f"\nDone. downloaded={ok}  skipped(newer pano)={len(skipped_new_pano)}  "
           f"no_pano={len(no_pano)}  failed={len(failed)}")

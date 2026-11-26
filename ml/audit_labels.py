@@ -17,6 +17,8 @@ import numpy as np
 import pandas as pd
 from PIL import Image
 
+import rqi_scale as R  # script dir is on sys.path
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LABELS = os.path.join(ROOT, "ml", "labels.csv")
 IMAGES = os.path.join(ROOT, "data", "images")
@@ -42,13 +44,13 @@ def main():
     print(f"Columns: {list(df.columns)}\n")
 
     df = df[df["manual_rqi"].notna()].copy()
-    df["rqi_round"] = df["manual_rqi"].round().clip(1, 5).astype(int)
+    df["rqi_round"] = df["manual_rqi"].round().clip(R.MIN_LEVEL, R.MAX_LEVEL).astype(int)
 
     # --- distribution ---
-    print("=== RQI distribution (rounded 1-5) ===")
+    print(f"=== RQI distribution (rounded, severity {R.MIN_LEVEL}-{R.MAX_LEVEL}) ===")
     dist = df["rqi_round"].value_counts().sort_index()
     total = len(df)
-    for k in range(1, 6):
+    for k in R.LEVELS:
         n = int(dist.get(k, 0))
         bar = "#" * int(40 * n / max(total, 1))
         print(f"  {k}: {n:4d} ({100*n/max(total,1):5.1f}%) {bar}")

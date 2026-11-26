@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { getRQIColor } from '../../ui'
+import { RQI_MODEL_LEVELS, getRQIColor } from '../../ui'
 import { useMap } from '../hooks'
 import { useRoadSegments } from '../segments/hooks'
 import { rqiLabelHu } from '../segments/labels'
@@ -9,15 +9,14 @@ import './roadCards.css'
 
 const roadColor = (color: string) => ({ '--road-color': color }) as React.CSSProperties
 
-// Classes 1 and 2 share a colour on the map, so they share a legend entry.
+// One chip per level the map can show (best first), then "no data". Every
+// level has its own colour in the canonical scale (shared/rqi_scale.json).
 const QUALITY_CHIPS = [
-  { label: `${rqiLabelHu(1)} / ${rqiLabelHu(2)}`, color: getRQIColor(1) },
-  { label: rqiLabelHu(3), color: getRQIColor(3) },
-  { label: rqiLabelHu(4), color: getRQIColor(4) },
+  ...RQI_MODEL_LEVELS.map(level => ({ label: rqiLabelHu(level), color: getRQIColor(level) })),
   { label: rqiLabelHu(null), color: getRQIColor(null) },
 ]
 
-const SAMPLE_COLOR = getRQIColor(1)
+const SAMPLE_COLOR = getRQIColor(RQI_MODEL_LEVELS[0])
 
 /** A short line sample drawn exactly like the map draws a segment. */
 const LineSample: React.FC<{ opacity: number; dashed?: boolean }> = ({ opacity, dashed }) => (

@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest'
+import { RQI_UNKNOWN, fromSeverity as sv, rqiLevel, rqiValue } from '../../ui'
+import type { RqiLevelKey } from '../../ui'
 import {
   FRAME_DOT_MIN_ZOOM,
   SEGMENT_MIN_ZOOM,
@@ -68,24 +70,27 @@ describe('segmentOpacity', () => {
   })
 })
 
+// Classes given as severity (1 = best) via sv(): valid for either numbering.
+const colorOf = (key: RqiLevelKey) => rqiLevel(rqiValue(key))!.color
+
 describe('segmentStyle', () => {
-  const seg = (rqi: number | null, confidence: number, confidenceLevel: string) => ({
-    rqi,
+  const seg = (severity: number | null, confidence: number, confidenceLevel: string) => ({
+    rqi: severity === null ? null : sv(severity),
     confidence,
     confidenceLevel,
   })
 
   it('colours by quality class (same colours as the dots and the grid)', () => {
-    expect(segmentStyle(seg(1, 1, 'high'), 14).color).toBe('#4ade80')
-    expect(segmentStyle(seg(2, 1, 'high'), 14).color).toBe('#4ade80')
-    expect(segmentStyle(seg(3, 1, 'high'), 14).color).toBe('#facc15')
-    expect(segmentStyle(seg(4, 1, 'high'), 14).color).toBe('#f87171')
-    expect(segmentStyle(seg(null, 1, 'high'), 14).color).toBe('#888')
+    expect(segmentStyle(seg(1, 1, 'high'), 14).color).toBe(colorOf('excellent'))
+    expect(segmentStyle(seg(2, 1, 'high'), 14).color).toBe(colorOf('good'))
+    expect(segmentStyle(seg(3, 1, 'high'), 14).color).toBe(colorOf('fair'))
+    expect(segmentStyle(seg(4, 1, 'high'), 14).color).toBe(colorOf('poor'))
+    expect(segmentStyle(seg(null, 1, 'high'), 14).color).toBe(RQI_UNKNOWN.color)
   })
 
   it('draws a confident segment solid and strong', () => {
     expect(segmentStyle(seg(2, 1, 'high'), 15)).toEqual({
-      color: '#4ade80',
+      color: colorOf('good'),
       weight: 5,
       opacity: 1,
       lineCap: 'round',
@@ -121,7 +126,7 @@ describe('segmentStyle', () => {
 
 describe('segmentCasingStyle', () => {
   it('is a slightly wider dark line that follows the opacity and the dashes', () => {
-    const solid = segmentStyle({ rqi: 2, confidence: 1, confidenceLevel: 'high' }, 14)
+    const solid = segmentStyle({ rqi: sv(2), confidence: 1, confidenceLevel: 'high' }, 14)
     expect(segmentCasingStyle(solid)).toEqual({
       color: '#0b1220',
       weight: 6,
@@ -129,7 +134,7 @@ describe('segmentCasingStyle', () => {
       lineCap: 'round',
     })
 
-    const dashed = segmentStyle({ rqi: 4, confidence: 0.2, confidenceLevel: 'low' }, 14)
+    const dashed = segmentStyle({ rqi: sv(4), confidence: 0.2, confidenceLevel: 'low' }, 14)
     const casing = segmentCasingStyle(dashed)
     expect(casing.dashArray).toBe(dashed.dashArray)
     expect(casing.lineCap).toBe('butt')

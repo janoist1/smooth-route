@@ -7,6 +7,8 @@ unit-tested in isolation and reused by the analyzer without importing YOLO.
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
+from app.core.rqi_scale import SCALE
+
 # Pipeline 2.0 taxonomy — YOLO class id -> short code.
 DAMAGE_CLASSES: Dict[int, str] = {
     0: "long_crack",
@@ -51,21 +53,27 @@ class DamageDetection:
 class RoadQualityResult:
     """Result of a road-quality analysis for one image."""
 
-    rqi_score: float  # 1-5 scale (lower = better)
+    rqi_score: float  # canonical RQI level (app.core.rqi_scale), all 5 levels
     damage_count: int
     damage_types: Dict[str, int]  # {type: count}
     detections: List[DamageDetection]
     analysis_metadata: Optional[Dict] = None  # e.g. {"damage_percent": ...}
 
 
+# Upper damage% bound of each band, best band first (severity 1..4); anything
+# at or above the last bound is the worst level (severity 5).
+DAMAGE_PERCENT_BANDS = (0.5, 2.0, 5.0, 10.0)
+
+
 def rqi_from_damage_percent(damage_percent: float) -> float:
-    """Map the share of road area that is damaged (%) to an RQI score (1-5)."""
-    if damage_percent < 0.5:
-        return 1.0
-    if damage_percent < 2.0:
-        return 2.0
-    if damage_percent < 5.0:
-        return 3.0
-    if damage_percent < 10.0:
-        return 4.0
-    return 5.0
+    """Map the share of road area that is damaged (%) to an RQI level.
+
+    The bands are defined in severity order (1 = least damage) and converted
+    to the canonical scale, so a direction flip needs no change here.
+    """
+    severity = len(DAMAGE_PERCENT_BANDS) + 1
+    for i, upper in enumerate(DAMAGE_PERCENT_BANDS):
+        if damage_percent < upper:
+            severity = i + 1
+            break
+    return float(SCALE.from_severity(severity))

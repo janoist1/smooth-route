@@ -1,5 +1,6 @@
 import React from 'react'
 import { Cpu } from 'lucide-react'
+import { RQI_AT_OR_WORSE_SIGN, RQI_BAD_FROM } from '../../ui'
 import { useSettings } from '../hooks'
 import { useRqiModelInfo } from '../hooks'
 
@@ -22,7 +23,7 @@ const ModelCard: React.FC = () => {
         { label: 'Pontos találat', value: pct(info.exactAcc), hint: 'ahányszor eltalálja az osztályzatot' },
         { label: 'QWK', value: num(info.qwk), hint: 'sorrendi egyezés (1 = tökéletes)' },
         { label: 'Átl. hiba (MAE)', value: num(info.mae), hint: 'átlagos eltérés osztályzatban' },
-        { label: 'Jó/rossz döntés', value: pct(info.badRoadAcc), hint: 'rossz út (RQI≥3) felismerése' },
+        { label: 'Jó/rossz döntés', value: pct(info.badRoadAcc), hint: `rossz út (RQI${RQI_AT_OR_WORSE_SIGN}${RQI_BAD_FROM}) felismerése` },
         { label: 'Rossz-út AUC', value: num(info.badRoadAuc), hint: 'megkülönböztető képesség' },
         { label: 'Tanítókép', value: info.nTrain != null ? String(info.nTrain) : '–', hint: 'címkézett kép a modellben' },
       ]

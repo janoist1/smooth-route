@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Predict RQI (1-4, lower = better road) for one or more Street View images.
+Predict RQI for one or more Street View images (printed on the canonical
+scale, shared/rqi_scale.json; the model itself works in severity, 1 = best).
 
 Loads the saved artifact (ml/cache/rqi_model.joblib), builds the feature
 vector its `feature_recipe` asks for (DINOv2 views/tokens, optionally CLIP),
@@ -31,7 +32,8 @@ NOTROAD_PROMPTS = [
     "an indoor scene inside a building, a lobby or a shop",
     "a photo of people, a sidewalk, a plaza or pedestrian area with no road",
 ]
-LABELS = {1: "excellent", 2: "good", 3: "fair", 4: "poor"}
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import rqi_scale as R  # noqa: E402
 
 _cache = {}
 
@@ -129,11 +131,16 @@ def main():
     if len(sys.argv) < 2:
         print(__doc__)
         sys.exit(1)
-    for p, score, rqi, p_bad, road_prob in predict(sys.argv[1:]):
+    results = predict(sys.argv[1:])
+    direction = _load_models()["art"].get("scale_direction", R.SEVERITY)
+    for p, score, rqi, p_bad, road_prob in results:
+        # model output is in the artifact's orientation -> canonical for display
+        level = R.SCALE.level(R.SCALE.convert(rqi, direction))
+        canon = R.SCALE.convert(score, direction)
         warn = "  ⚠ not clearly a road" if road_prob < 0.55 else ""
         pb = f"  P(bad)={p_bad:.2f}" if p_bad is not None else ""
-        print(f"{os.path.basename(p):40s} RQI={rqi} ({LABELS[rqi]})  "
-              f"score={score:.2f}{pb}  P(road)={road_prob:.2f}{warn}")
+        print(f"{os.path.basename(p):40s} RQI={level.value} ({level.label_hu})  "
+              f"score={canon:.2f}{pb}  P(road)={road_prob:.2f}{warn}")
 
 
 if __name__ == "__main__":

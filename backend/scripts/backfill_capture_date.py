@@ -2,8 +2,8 @@
 Street View Metadata API.
 
 Usage (from backend/):
-    ../.venv/bin/python scripts/backfill_capture_date.py [--limit N] [--qps 10]
-        [--workers 4] [--chunk 200] [--dry-run]
+    ../.venv/bin/python scripts/backfill_capture_date.py [--limit N] [--qps 1]
+        [--workers 1] [--chunk 200] [--dry-run]
 
 - Only rows with capture_date IS NULL are touched → safe to re-run / resume;
   results are committed per chunk, so an interrupt loses at most one chunk.
@@ -148,8 +148,10 @@ def load_api_key() -> str:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--limit", type=int, default=0, help="max rows this run (0 = all)")
-    ap.add_argument("--qps", type=float, default=10.0, help="max metadata requests/second")
-    ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument("--qps", type=float, default=1.0,
+                    help="max metadata requests/second (gentle default: 1)")
+    ap.add_argument("--workers", type=int, default=1,
+                    help="parallel lookups (default 1 = strictly sequential, no bursts)")
     ap.add_argument("--chunk", type=int, default=200, help="rows per commit")
     ap.add_argument("--dry-run", action="store_true", help="query, but write nothing")
     args = ap.parse_args()

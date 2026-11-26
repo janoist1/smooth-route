@@ -75,11 +75,19 @@ class Point:
     @strawberry.field
     def segment_id(self) -> Optional[strawberry.ID]:
         """The road segment (`RoadSegment.id`) this frame belongs to; null if
-        it is not on a segment. Resolved with one small query per point — ask
-        for it on a single `point`, not on a long `points` list.
+        it is not on a segment, or if the segment builder does not use the
+        frame at all (not scored yet, or marked unusable) — so a non-null id
+        always means the frame is among `segmentFrames(segmentId)`. Resolved
+        with one small query per point — ask for it on a single `point`, not
+        on a long `points` list.
         """
         from app.graphql.resolver_helpers import get_db_session
+        from app.services.segment_aggregation import frame_score, frame_usable
         from app.services.segment_read import segment_id_for_point
+
+        if (not frame_usable(self.analysis_metadata)
+                or frame_score(self.dino_rqi_score, self.analysis_metadata) is None):
+            return None
 
         db = get_db_session()
         try:
@@ -119,12 +127,12 @@ class Point:
 
     @strawberry.field
     def dino_p_bad(self) -> Optional[float]:
-        """Calibrated P(road is bad, RQI>=3) written by the DINO pass."""
+        """Calibrated P(road is bad = Közepes or worse) written by the DINO pass."""
         return self._meta_float("dino_p_bad")
 
     @strawberry.field
     def dino_score(self) -> Optional[float]:
-        """Continuous DINO RQI estimate (1.0-4.0) before ordinal rounding."""
+        """Continuous DINO RQI estimate on the canonical scale, before cutting into levels."""
         return self._meta_float("dino_score")
 
 @strawberry.type
@@ -269,12 +277,13 @@ class RoadSegment:
     id: strawberry.ID
     # [[lat, lng], ...]
     path: List[List[float]]
-    # RQI class; null if the piece has no frames. The scale (labels, direction)
-    # is defined in backend/config/segment_aggregation.json.
+    # RQI level on the canonical scale (shared/rqi_scale.json, 5 = Kiváló); null
+    # if the piece has no frames. backend/config/segment_aggregation.json's
+    # "scale" block mirrors that file (a test keeps them equal).
     rqi: Optional[int]
     # Aggregated continuous score on the same scale.
     score: Optional[float]
-    # Mean P(road is bad) of the frames, 0-1.
+    # Mean P(road is bad = Közepes or worse) of the frames, 0-1.
     p_bad: Optional[float]
     # 0-1, after the image-age factor.
     confidence: float
@@ -314,7 +323,8 @@ class RouteQuality:
     total_length_m: float
     # Length of the path that runs along a segment with data.
     covered_length_m: float
-    # Metres per RQI class, in ascending class order (today: class 1, 2, 3, 4).
+    # Metres per RQI class, BEST FIRST (Kiváló, Jó, Közepes, Rossz — the
+    # scale's model levels best -> worst), whatever the numbering direction.
     # Always sums to coveredLengthM.
     length_by_rqi: List[float]
     # Length-weighted mean segment score over the covered part; null if none.

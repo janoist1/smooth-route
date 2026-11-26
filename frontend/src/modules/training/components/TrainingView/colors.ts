@@ -1,8 +1,7 @@
-export const getColorForRqi = (score: number) => {
-  if (score <= 2.0) return '#22c55e' // Green (Good)
-  if (score <= 3.5) return '#facc15' // Yellow (Medium)
-  return '#ef4444' // Red (Bad)
-}
+import { getRQIColor } from '../../../ui'
+
+/** RQI colour for the labelling UI — the canonical scale's level colour. */
+export const getColorForRqi = (score: number) => getRQIColor(score)
 
 export const getColorForLabel = (label: string) => {
   switch (label) {

@@ -1,6 +1,6 @@
 import React from 'react'
 import type { RoadPointDetail } from '../types'
-import { getRQIColor, getRQILabel, resolveRqi } from '../../ui'
+import { getRQIColor, resolveRqi, rqiScoreLabelHu, rqiTextColor } from '../../ui'
 import { useRqiDisplaySource } from '../../settings'
 import { useViewer } from '../../auth'
 import { formatCaptureAge, formatCaptureDate, isStaleCapture, STALE_AFTER_YEARS } from '../captureDate'
@@ -127,13 +127,13 @@ const PointDetailCard: React.FC<PointDetailCardProps> = ({ detail, loading, onCl
           <span
             style={{
               background: getRQIColor(displayScore),
-              color: '#000',
+              color: rqiTextColor(getRQIColor(displayScore)),
               padding: '4px 12px',
               borderRadius: '20px',
               fontWeight: 'bold',
               fontSize: '0.85rem',
             }}>
-            {getRQILabel(displayScore)}
+            {rqiScoreLabelHu(displayScore)}
           </span>
         </div>
 
@@ -142,7 +142,7 @@ const PointDetailCard: React.FC<PointDetailCardProps> = ({ detail, loading, onCl
             {displayScore !== undefined ? displayScore.toFixed(1) : '-'}
           </span>
           <div style={{ display: 'flex', flexDirection: 'column' }}>
-             <span style={{ color: 'var(--text-dim)', fontSize: '0.9rem' }}>/ 5.0 RQI Score</span>
+             <span style={{ color: 'var(--text-dim)', fontSize: '0.9rem' }}>RQI-pontszám</span>
              <span style={{ color: targetModel === 'dino' ? '#34d399' : '#60a5fa', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase' }}>
                 {sourceLabel} AI
              </span>
