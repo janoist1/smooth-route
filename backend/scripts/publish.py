@@ -31,6 +31,7 @@ from sqlalchemy.orm import Session  # noqa: E402
 
 from app.core.config import settings  # noqa: E402
 from app.core.migrations import alembic_config  # noqa: E402
+from app.core.secret_scan import find_secrets  # noqa: E402
 from app.models.models import RoadSegment, StreetViewImage  # noqa: E402
 
 # Columns the public site reads. image_url + location are intentionally omitted
@@ -105,6 +106,14 @@ def main() -> None:
     segments = read_segments(src_engine)
     with_data = sum(1 for s in segments if s["n_images"])
     print(f"read {len(segments)} road segments from source ({with_data} with data)")
+
+    # Never ship a credential (e.g. a Street View Static URL with ?key= in a
+    # local image_url). image_url is already dropped; this guards every column.
+    leaks = find_secrets(payload) + find_secrets(segments)
+    if leaks:
+        for row_id, column, kind in leaks[:20]:
+            print(f"SECRET in row {row_id} column {column}: {kind}")
+        sys.exit(f"Refusing to publish: {len(leaks)} value(s) look like credentials.")
 
     if args.dry_run:
         print(f"DRY RUN: would publish {len(payload)} rows and {len(segments)} "

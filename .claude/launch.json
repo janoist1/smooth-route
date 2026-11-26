@@ -15,6 +15,23 @@
       "port": 5199,
       "autoPort": false,
       "cwd": "frontend"
+    },
+    {
+      "name": "api-readonly-8004",
+      "runtimeExecutable": "/Users/i/Dev/smooth-route/.venv/bin/python",
+      "runtimeArgs": ["-m", "uvicorn", "app.main:app", "--port", "8004"],
+      "port": 8004,
+      "autoPort": false,
+      "cwd": "backend",
+      "env": {
+        "PUBLIC_READ_ONLY": "1",
+        "RUN_MIGRATIONS_ON_STARTUP": "false",
+        "AUTH_MODE": "clerk",
+        "CLERK_ISSUER": "",
+        "CLERK_JWKS_URL": "",
+        "GOOGLE_MAPS_API_KEY": "",
+        "ALLOWED_ORIGINS": "https://simaut.hu,https://smooth-route-chi.vercel.app"
+      }
     }
   ]
 }
