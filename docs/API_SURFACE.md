@@ -76,7 +76,7 @@ segmentId: ID
 `roadQualityGrid`). Returns only segments that have frames. Below **zoom 13**
 it returns `[]` (the quality grid is the overview there); at most 5000
 segments per call (best-supported first). Geometry is simplified with
-`ST_SimplifyPreserveTopology` at half a screen pixel for the zoom, unsimplified
+`ST_Simplify` (Douglas-Peucker, collapsed pieces kept) at half a screen pixel for the zoom, unsimplified
 from zoom 18. Only stretches we have frames for are stored, so `rqi` / `score`
 are in practice never null; the types stay nullable as the contract says.
 

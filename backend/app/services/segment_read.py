@@ -114,7 +114,7 @@ def should_serve_segments(zoom: int) -> bool:
 
 
 def simplify_tolerance_deg(zoom: int) -> float:
-    """ST_SimplifyPreserveTopology tolerance for a Leaflet zoom: half a
+    """ST_Simplify tolerance for a Leaflet zoom: half a
     screen pixel in degrees of longitude (one 256 px tile spans 360/2^zoom
     degrees), 0 once zoomed in far enough that nothing would be removed.
     """
@@ -263,7 +263,11 @@ def fetch_segments_in_bbox(
     cfg = cfg or load_config()
     min_lng, min_lat, max_lng, max_lat = (float(v) for v in bbox)
     tolerance = simplify_tolerance_deg(zoom)
-    geom = "s.geom" if tolerance <= 0 else "ST_SimplifyPreserveTopology(s.geom, :tol)"
+    # Plain Douglas-Peucker: each segment is one short LineString (~7 points),
+    # so topology preservation buys nothing, and ST_SimplifyPreserveTopology
+    # (a GEOS round trip per row) was ~85 ms of a ~110 ms zoom-13 Budapest
+    # query vs ~4 ms here. preserveCollapsed keeps tiny pieces from vanishing.
+    geom = "s.geom" if tolerance <= 0 else "ST_Simplify(s.geom, :tol, true)"
     rows = db.execute(
         text(
             f"""
