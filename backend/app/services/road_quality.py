@@ -47,7 +47,7 @@ class RoadQualityService:
     # --- Orchestration ----------------------------------------------------
     def analyze_points(
         self,
-        job_id: str = None,
+        job_id: Optional[str] = None,
         strategy: str = "YOLO",
         limit: int = 0,
         reanalyze: bool = False,

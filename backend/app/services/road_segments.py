@@ -270,9 +270,9 @@ def build_rows(
 
     rows: list[dict] = []
     class_counts: Counter = Counter()
-    class_km: Counter = Counter()
+    class_km: defaultdict[int, float] = defaultdict(float)
     level_counts: Counter = Counter()
-    level_km: Counter = Counter()
+    level_km: defaultdict[str, float] = defaultdict(float)
     for line_id in sorted(by_line):
         if only_ids is not None and line_id not in only_ids:
             continue

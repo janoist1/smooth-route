@@ -114,7 +114,7 @@ class StreetViewClient:
 
     # -- shared request loop ------------------------------------------------
     def _request(self, url: str, params: dict, what: str,
-                 before_attempt: Optional[Callable[[], None]] = None) -> tuple[int, str, bytes]:
+                 before_attempt: Optional[Callable[[], object]] = None) -> tuple[int, str, bytes]:
         """GET with the steady rate, back-off on transient errors, and an
         immediate ``StreetViewFatal`` on HTTP 403/429."""
         if not self._key:

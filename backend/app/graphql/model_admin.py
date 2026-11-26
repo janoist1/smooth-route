@@ -62,7 +62,8 @@ class ModelAdminQuery:
             sprint = store.sprint_count(db)
         finally:
             db.close()
-        n, by_area, by_level = ops.summarize_new_labels(rows, trained, SCALE.nearest, lq.area_of)
+        n, by_area, by_level = ops.summarize_new_labels(
+            [tuple(r) for r in rows], trained, SCALE.nearest, lq.area_of)
         summary = ops.latest_summary()
         return ModelAdmin(
             trained_on=len(trained), new_labels=n,
