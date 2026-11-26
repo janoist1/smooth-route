@@ -2,6 +2,13 @@ import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import { bindActionCreators } from '@reduxjs/toolkit'
 import { canUndo, newClientId, prefetchUrls, retrainMilestone } from './logic'
+
+/** A frame/pair must be on screen this long before a rating counts (double-tap guard). */
+export const MIN_SHOWN_MS = 300
+
+/** True once the item with `id` has been on screen for at least MIN_SHOWN_MS. */
+export const shownLongEnough = (shown: { id: number | null; t0: number }, id: number, now: number): boolean =>
+  shown.id === id && now - shown.t0 >= MIN_SHOWN_MS
 import { selectRoot } from './selectors'
 import { actions } from './slice'
 import type { LabelMode, LabelStrategy, PairResult } from './types'
@@ -54,6 +61,8 @@ export const useQuickLabel = () => {
   const judge = useCallback(
     (result: PairResult) => {
       if (!currentPair) return
+      // Double-tap guard: a pair shown for under 300 ms has not been seen yet.
+      if (!shownLongEnough(pairShownAt.current, currentPair.a.id, performance.now())) return
       const elapsedMs =
         pairShownAt.current.id === currentPair.a.id ? performance.now() - pairShownAt.current.t0 : undefined
       dispatch(actions.judgePair({ aId: currentPair.a.id, result, clientId: newClientId(), elapsedMs }))
@@ -64,6 +73,8 @@ export const useQuickLabel = () => {
   const rate = useCallback(
     (rqi: number) => {
       if (!current) return
+      // Double-tap guard: the second tap would rate the next, still unseen frame.
+      if (!shownLongEnough(shownAt.current, current.id, performance.now())) return
       const elapsedMs = shownAt.current.id === current.id ? performance.now() - shownAt.current.t0 : undefined
       dispatch(actions.rate({ id: current.id, rqi, elapsedMs }))
     },
@@ -71,7 +82,8 @@ export const useQuickLabel = () => {
   )
 
   const skip = useCallback(() => {
-    if (current) dispatch(actions.skip({ id: current.id }))
+    if (!current || !shownLongEnough(shownAt.current, current.id, performance.now())) return
+    dispatch(actions.skip({ id: current.id }))
   }, [current, dispatch])
 
   const undoable = canUndo(state.history)

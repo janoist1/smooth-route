@@ -1,7 +1,7 @@
 // The page renders one big button per level of the shared RQI scale (name
 // first) and a tap stores that level's value.
 import { describe, expect, it, vi } from 'vitest'
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { Provider } from 'react-redux'
 import { combineReducers, configureStore } from '@reduxjs/toolkit'
 import createSagaMiddleware from 'redux-saga'
@@ -66,7 +66,8 @@ describe('QuickLabelView', () => {
     )
     await act(async () => {
       store.dispatch(actions.enter())
-      await new Promise(r => setTimeout(r, 50))
+      // longer than the 300 ms double-tap guard
+      await new Promise(r => setTimeout(r, 400))
     })
 
     // The model's guess is not on screen before rating (anchoring bias).
@@ -85,5 +86,48 @@ describe('QuickLabelView', () => {
     expect(saved).toEqual([expect.objectContaining({ input: expect.objectContaining({ pointId: 7, rqi: worst.value }) })])
     // After rating, the previous frame's model guess is revealed.
     expect(screen.getByText(/Modell: Jó/)).toBeInTheDocument()
+  })
+
+  it('a held key rates nothing and a double tap within 300 ms rates one frame', async () => {
+    // The previous test's view must not answer the same window key events.
+    cleanup()
+    window.localStorage.clear()
+    const sagaMiddleware = createSagaMiddleware()
+    const store = configureStore({
+      reducer: combineReducers({ labeling: reducer }),
+      middleware: gdm => gdm({ serializableCheck: false }).concat(sagaMiddleware),
+    })
+    sagaMiddleware.run(function* () {
+      yield all(sagas)
+    })
+    render(
+      <Provider store={store}>
+        <QuickLabelView onBack={() => {}} />
+      </Provider>,
+    )
+    await act(async () => {
+      store.dispatch(actions.enter())
+      await new Promise(r => setTimeout(r, 400))
+    })
+    const before = saved.length
+    const key = String(RQI_LEVELS[0].value)
+
+    // Auto-repeat events of a held key are ignored.
+    await act(async () => {
+      for (let i = 0; i < 5; i++) fireEvent.keyDown(window, { key, repeat: true })
+      await new Promise(r => setTimeout(r, 50))
+    })
+    expect(saved.length).toBe(before)
+
+    // Two quick presses: the second lands on the next frame, shown for under 300 ms.
+    await act(async () => {
+      fireEvent.keyDown(window, { key })
+    })
+    await act(async () => {
+      fireEvent.keyDown(window, { key })
+      await new Promise(r => setTimeout(r, 50))
+    })
+    expect(saved.length).toBe(before + 1)
+    expect(saved[before]).toEqual(expect.objectContaining({ input: expect.objectContaining({ pointId: 7 }) }))
   })
 })
