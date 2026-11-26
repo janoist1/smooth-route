@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { summarizeRouteQuality, weightedMeanRqi } from './routeSummary'
+import { rqiClassColor, summarizeRouteQuality, weightedMeanRqi } from './routeSummary'
 import type { RouteQuality } from './types'
 
 const quality = (over: Partial<RouteQuality> = {}): RouteQuality => ({
@@ -52,6 +52,20 @@ describe('summarizeRouteQuality', () => {
     const s = summarizeRouteQuality(quality({ meanScore: 2.7 }))
     expect(s.meanScore).toBe(2.7)
     expect(s.meanLabel).toBe('Közepes')
+  })
+
+  it('colours the mean by the class its label names', () => {
+    // 2.4 is "Jó": green like class 2, although getRQIColor(2.4) alone is yellow.
+    expect(summarizeRouteQuality(quality({ meanScore: 2.4 }))).toMatchObject({
+      meanLabel: 'Jó',
+      meanColor: '#4ade80',
+    })
+    expect(rqiClassColor(1.5)).toBe('#4ade80') // Kiváló
+    expect(rqiClassColor(2.5)).toBe('#4ade80') // Jó (upper edge)
+    expect(rqiClassColor(2.6)).toBe('#facc15') // Közepes
+    expect(rqiClassColor(3.5)).toBe('#facc15')
+    expect(rqiClassColor(3.6)).toBe('#f87171') // Rossz
+    expect(rqiClassColor(null)).toBe('#888')
   })
 
   it('reports "no data" when nothing on the route is measured', () => {

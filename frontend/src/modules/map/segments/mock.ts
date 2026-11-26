@@ -42,7 +42,7 @@ const makeSegment = (id: string, path: LatLng[], i: number, j: number, salt: num
     id,
     path,
     rqi,
-    score: Math.round((rqi + (rand(i, j, salt + 60) - 0.5) * 0.9) * 100) / 100,
+    score: Math.round(Math.max(1, Math.min(4, rqi + (rand(i, j, salt + 60) - 0.5) * 0.9)) * 100) / 100,
     pBad: Math.round(Math.max(0.01, Math.min(0.99, (rqi - 1) / 3 + (rand(i, j, salt + 70) - 0.5) * 0.3)) * 100) / 100,
     confidence,
     confidenceLevel,

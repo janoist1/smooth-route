@@ -4,6 +4,7 @@ import {
   SEGMENT_MIN_ZOOM,
   isStaleSegment,
   layersForZoom,
+  segmentCasingStyle,
   segmentOpacity,
   segmentStyle,
   segmentWeight,
@@ -115,6 +116,24 @@ describe('segmentStyle', () => {
 
   it('dims a segment hidden by the old-image filter', () => {
     expect(segmentStyle(seg(2, 1, 'high'), 14, { dimmed: true }).opacity).toBeCloseTo(0.35)
+  })
+})
+
+describe('segmentCasingStyle', () => {
+  it('is a slightly wider dark line that follows the opacity and the dashes', () => {
+    const solid = segmentStyle({ rqi: 2, confidence: 1, confidenceLevel: 'high' }, 14)
+    expect(segmentCasingStyle(solid)).toEqual({
+      color: '#0b1220',
+      weight: 6,
+      opacity: 0.6,
+      lineCap: 'round',
+    })
+
+    const dashed = segmentStyle({ rqi: 4, confidence: 0.2, confidenceLevel: 'low' }, 14)
+    const casing = segmentCasingStyle(dashed)
+    expect(casing.dashArray).toBe(dashed.dashArray)
+    expect(casing.lineCap).toBe('butt')
+    expect(casing.opacity).toBeLessThan(dashed.opacity)
   })
 })
 

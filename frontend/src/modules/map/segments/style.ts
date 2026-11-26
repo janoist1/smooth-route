@@ -108,6 +108,19 @@ export const segmentStyle = (
   }
 }
 
+/**
+ * Dark outline drawn under a segment so the quality colours keep their
+ * contrast on light base maps (invisible on the dark one). It follows the
+ * segment's own opacity and dash pattern.
+ */
+export const segmentCasingStyle = (style: SegmentStyle): SegmentStyle => ({
+  color: '#0b1220',
+  weight: style.weight + 2,
+  opacity: Math.round(style.opacity * 0.6 * 1000) / 1000,
+  ...(style.dashArray ? { dashArray: style.dashArray } : {}),
+  lineCap: style.lineCap,
+})
+
 /** White outline drawn under the selected segment. */
 export const selectionHaloStyle = (zoom: number) => ({
   color: '#ffffff',

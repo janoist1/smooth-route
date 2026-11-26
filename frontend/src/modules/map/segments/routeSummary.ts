@@ -35,6 +35,19 @@ export interface RouteSummary {
   meanScore: number | null
   /** Hungarian label of the mean ("Jó"); "Nincs adat" without data. */
   meanLabel: string
+  /** Colour of the class the mean falls into (always agrees with meanLabel). */
+  meanColor: string
+}
+
+/**
+ * Colour for a CONTINUOUS score, by the class its label names. getRQIColor's
+ * own bands are cut at whole numbers (2.4 would be yellow) while the label
+ * bands are cut at the halves (2.4 is "Jó") — going through the class keeps a
+ * badge's colour and text in agreement.
+ */
+export const rqiClassColor = (score?: number | null): string => {
+  if (score == null || !Number.isFinite(score)) return getRQIColor(null)
+  return getRQIColor(Math.max(1, Math.ceil(score - 0.5)))
 }
 
 const nonNegative = (value: unknown): number =>
@@ -94,5 +107,6 @@ export const summarizeRouteQuality = (quality: RouteQuality): RouteSummary => {
     unknownShare: Math.max(0, 1 - classShare),
     meanScore,
     meanLabel: rqiLabelHu(meanScore),
+    meanColor: rqiClassColor(meanScore),
   }
 }
