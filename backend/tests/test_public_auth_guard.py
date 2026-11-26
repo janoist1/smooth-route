@@ -20,9 +20,12 @@ def test_allowed_combinations_pass():
     make(PUBLIC_READ_ONLY=False, AUTH_MODE="clerk").check_public_auth()
 
 
-def test_app_startup_calls_the_guard():
+def test_app_startup_calls_the_guard(monkeypatch):
     import inspect
 
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "RUN_MIGRATIONS_ON_STARTUP", False)
     import app.main as main
 
     assert "settings.check_public_auth()" in inspect.getsource(main)

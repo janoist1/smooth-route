@@ -14,6 +14,7 @@ import strawberry
 from graphql import parse
 
 from app.graphql import limits
+from app.graphql.permissions import IsAdmin
 from app.graphql.limits import (
     InputLimitError,
     check_operation,
@@ -200,17 +201,17 @@ class TestRoutePath:
 
 
 class TestPublicSchemaGuard:
-    def test_getroute_alias_amplification_blocked(self, read_schema):
+    def test_getroute_alias_amplification_blocked(self, full_schema):
         query = "{ a: getRoute(origin: \"Budapest\", destination: \"Győr\") { points { lat } }" \
                 " b: getRoute(origin: \"Budapest\", destination: \"Pécs\") { points { lat } } }"
-        assert errors_of(read_schema, query) == ["At most 1 getRoute per request"]
+        assert errors_of(full_schema, query) == ["At most 1 getRoute per request"]
 
     def test_fragment_spread_counts_too(self, read_schema):
         query = """
-          { ...R  b: getRoute(origin: "a", destination: "b") { points { lat } } }
-          fragment R on Query { a: getRoute(origin: "c", destination: "d") { points { lat } } }
+          { ...R  b: routeAlternatives(origin: "a", destination: "b") { fastestIndex } }
+          fragment R on Query { a: routeAlternatives(origin: "c", destination: "d") { fastestIndex } }
         """
-        assert "At most 1 getRoute per request" in errors_of(read_schema, query)
+        assert "At most 1 routeAlternatives per request" in errors_of(read_schema, query)
 
     def test_points_limit_via_variables(self, read_schema):
         query = "query($l: Int) { points(limit: $l) { id } }"
@@ -246,8 +247,8 @@ class TestPublicSchemaGuard:
     def test_google_key_field_closed_on_public_schema(self, read_schema, full_schema):
         result = read_schema.execute_sync("{ config }", context_value={"identity": None})
         assert result.data is None
-        assert result.errors[0].message == "config is not available on the public API"
-        assert result.errors[0].extensions == {"code": "FORBIDDEN"}
+        assert result.errors[0].message.startswith("Cannot query field")
+        assert result.errors[0].nodes[0].name.value == "config"
         # The full (local) schema leaves it to the field's own permission.
         check_operation(full_schema._schema, parse("{ config }"))
 
@@ -307,6 +308,10 @@ class TestFrontendDocumentsPass:
 
 @strawberry.type
 class ProbeQuery:
+    @strawberry.field(permission_classes=[IsAdmin])
+    def needs_admin(self) -> str:
+        return "ok"
+
     @strawberry.field
     def broken(self) -> str:
         raise RuntimeError("(psycopg2.OperationalError) host=ep-secret.neon.tech")
@@ -328,9 +333,10 @@ class TestMasking:
         probe = strawberry.Schema(query=ProbeQuery, extensions=schema_extensions(public=False))
         assert "psycopg2" in probe.execute_sync("{ broken }").errors[0].message
 
-    def test_permission_errors_not_masked(self, read_schema):
-        result = read_schema.execute_sync(
-            "{ adminStats { totalUsers } }", context_value={"identity": None}
+    def test_permission_errors_not_masked(self):
+        probe = strawberry.Schema(query=ProbeQuery, extensions=schema_extensions(public=True))
+        result = probe.execute_sync(
+            "{ needsAdmin }", context_value={"identity": None}
         )
         assert result.errors[0].message == "Admin privileges required"
 
@@ -368,9 +374,9 @@ def gql_errors(query):
     body = c.post("/graphql", json={"query": query}).json()
     assert body["data"] is None, body
     return [e["message"] for e in body["errors"]]
-two = '{ a: getRoute(origin: "x", destination: "y") { points { lat } } ' \
-      'b: getRoute(origin: "x", destination: "z") { points { lat } } }'
-assert gql_errors(two) == ["At most 1 getRoute per request"]
+two = '{ a: routeAlternatives(origin: "x", destination: "y") { fastestIndex } ' \
+      'b: routeAlternatives(origin: "x", destination: "z") { fastestIndex } }'
+assert gql_errors(two) == ["At most 1 routeAlternatives per request"]
 assert "tokens" in gql_errors("{ " + "me { role } " * 1000 + "}")[0]
 assert "introspection" in gql_errors("{ __schema { types { name } } }")[0]
 
