@@ -123,14 +123,19 @@ class GoogleMapsService:
 
     def get_street_view_url(self, lat: float, lng: float, heading: float = 0, pitch: Optional[float] = None) -> str:
         """
-        Generates a signed URL for Street View Static API.
+        Street View Static request URL for a point — WITHOUT the API key.
+
+        The URL is stored in `street_view_images.image_url` until the image is
+        downloaded, and `image_url` is readable through the public API, so the
+        key must never be part of it. `sv_client.image_from_url` adds the
+        configured key when the image is actually requested.
         """
         if pitch is None:
             from app.core.settings_manager import settings_manager
             pitch = settings_manager.get_setting("google_maps_pitch", -20.0)
-            
+
         base_url = "https://maps.googleapis.com/maps/api/streetview"
-        return f"{base_url}?size=600x400&location={lat},{lng}&heading={heading}&pitch={pitch}&key={settings.GOOGLE_MAPS_API_KEY}"
+        return f"{base_url}?size=600x400&location={lat},{lng}&heading={heading}&pitch={pitch}"
 
     def calculate_heading(self, p1: Tuple[float, float], p2: Tuple[float, float]) -> float:
         """

@@ -333,3 +333,21 @@ def test_stored_url_is_fetched_through_the_guard_with_the_configured_key(tmp_pat
         c.image_from_url(stored)               # cap of 1 is used up
     with pytest.raises(StreetViewError):
         c.image_from_url("https://example.com/maps/api/streetview?x=1")
+
+
+def test_queued_urls_carry_no_key_and_still_download(tmp_path):
+    """Route collection stores the request URL until the image is fetched, and
+    image_url is public API data: the key must not be in it."""
+    pytest.importorskip("googlemaps")
+    from app.services.google_maps import GoogleMapsService
+
+    svc = GoogleMapsService.__new__(GoogleMapsService)
+    url = svc.get_street_view_url(47.5, 19.05, heading=67.6, pitch=-20.0)
+    assert url == ("https://maps.googleapis.com/maps/api/streetview"
+                   "?size=600x400&location=47.5,19.05&heading=67.6&pitch=-20.0")
+    assert "key=" not in url
+
+    http = FakeHttp(OK_IMAGE)
+    c, _t, _logs = client(tmp_path, http)
+    assert c.image_from_url(url) == JPEG
+    assert http.calls[0][1]["key"] == "SECRET-KEY"            # added only at request time
