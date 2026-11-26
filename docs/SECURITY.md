@@ -81,7 +81,11 @@ live URLs.
    the Atlantic.
 7. **Neon read-only role** (SQL editor): a login role with `SELECT` only and
    `ALTER ROLE … SET statement_timeout = '5s'`; use its *pooled* URL as Vercel's
-   `DATABASE_URL`. The owner role stays local for `publish.py` only.
+   `DATABASE_URL`. The owner role stays local for `publish.py` only. Also run
+   `ALTER DEFAULT PRIVILEGES FOR ROLE neondb_owner IN SCHEMA public GRANT SELECT ON TABLES TO <role>`:
+   `GRANT … ON ALL TABLES` covers only existing tables, so without it a later
+   migration's table (e.g. `road_segments`) is unreadable. Full SQL:
+   `backend/scripts/release_rehearsal.sh` step 3.
 8. After DNS (R1.4): `ALLOWED_ORIGINS=https://simaut.hu` only; check that Vercel
    preview deployments are protected or disabled (`git.deploymentEnabled`).
 9. Local hygiene: `chmod 600 .env`; reinstall the shared `.venv` from
