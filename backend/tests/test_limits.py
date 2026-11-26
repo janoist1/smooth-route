@@ -29,7 +29,7 @@ from app.graphql.limits import (
 
 BUDAPEST_BBOX = [19.0, 47.4, 19.3, 47.6]  # zoom ~14 viewport is far smaller
 BACKEND_DIR = Path(__file__).resolve().parents[1]
-FRONTEND_GQL = BACKEND_DIR.parent / "frontend/src/modules/graphql/generated/gql.ts"
+FRONTEND_GQL = BACKEND_DIR.parent / "frontend/src/modules/graphql/generated/gql.ts"  # noqa: E501
 
 
 @pytest.fixture(scope="module")
@@ -176,14 +176,19 @@ class TestRoutePath:
             validate_route_path(path)
 
     def test_too_long(self):
-        # 2 000 km of zig-zag inside the service area.
+        # ~1 800 km of zig-zag across Hungary.
         zigzag = [[46.0, 16.0], [48.5, 23.0]] * 3
         with pytest.raises(InputLimitError, match="longer than"):
             validate_route_path(zigzag)
 
+    def test_short_and_foreign_paths_are_cheap_and_allowed(self):
+        assert validate_route_path([]) == []
+        assert validate_route_path([[47.5, 19.0]]) == [(47.5, 19.0)]
+        assert len(validate_route_path([[48.21, 16.37], [50.08, 14.43]])) == 2  # Wien-Praha
+
     @pytest.mark.parametrize(
         "path",
-        [None, [], [[47.5, 19.0]], [[47.5, 19.0], [40.7, -74.0]], [[47.5, 19.0], [47.5]],
+        [None, [[47.5, 19.0], [47.5]], [[47.5, 19.0], [95.0, 19.0]],
          [[47.5, 19.0], ["a", "b"]], "!!!", 42],
     )
     def test_bad_paths(self, path):
@@ -238,6 +243,14 @@ class TestPublicSchemaGuard:
         result = asyncio.run(read_schema.execute(huge, context_value={"identity": None}))
         assert result.data is None and "tokens" in result.errors[0].message
 
+    def test_google_key_field_closed_on_public_schema(self, read_schema, full_schema):
+        result = read_schema.execute_sync("{ config }", context_value={"identity": None})
+        assert result.data is None
+        assert result.errors[0].message == "config is not available on the public API"
+        assert result.errors[0].extensions == {"code": "FORBIDDEN"}
+        # The full (local) schema leaves it to the field's own permission.
+        check_operation(full_schema._schema, parse("{ config }"))
+
     def test_introspection_off_on_public_schema(self, read_schema):
         assert errors_of(read_schema, "{ __schema { types { name } } }")
         result = read_schema.execute_sync("{ __typename }")  # Apollo adds this
@@ -256,21 +269,32 @@ class TestFrontendDocumentsPass:
 
     VARIABLES = {
         "GetPoints": {"limit": 20_000, "bbox": BUDAPEST_BBOX},
+        "GetSegmentFrames": {"limit": 2_000, "bbox": [19.04, 47.49, 19.05, 47.50]},
+        "GetRoadSegments": {"zoom": 15, "bbox": [19.0, 47.45, 19.1, 47.52]},
+        "GetRouteQuality": {"path": [[47.4979, 19.0402], [47.53, 21.63]]},
         "GetRoadQualityGrid": {"zoom": 8, "bbox": [14.0, 45.0, 24.0, 50.0]},
         "GetRoute": {"origin": "47.4979,19.0402", "destination": "Debrecen"},
         "GetPointDetail": {"id": 1},
     }
 
     def documents(self):
-        if not FRONTEND_GQL.exists():
-            pytest.skip("frontend generated documents not present")
-        text = FRONTEND_GQL.read_text()
-        raw = set(re.findall(r'^\s*"(\\n\s*query [^"]*)": typeof', text, re.M))
-        return [s.encode().decode("unicode_escape") for s in raw]
+        """Query documents from the gql(`...`) templates in frontend/src."""
+        src = FRONTEND_GQL.parents[2]  # frontend/src
+        if not src.is_dir():
+            pytest.skip("frontend sources not present")
+        docs = set()
+        for path in src.rglob("*.ts*"):
+            if "generated" in path.parts or ".test." in path.name:
+                continue
+            for body in re.findall(r"gql\(\s*`([^`]*)`", path.read_text()):
+                if re.match(r"\s*query\b", body):
+                    docs.add(body)
+        return sorted(docs)
 
     def test_all_queries_pass(self, read_schema):
         docs = self.documents()
-        assert docs
+        names = {parse(d).definitions[0].name.value for d in docs}
+        assert {"GetPoints", "GetRoadQualityGrid", "GetRoute"} <= names
         for source in docs:
             document = parse(source)
             name = document.definitions[0].name.value

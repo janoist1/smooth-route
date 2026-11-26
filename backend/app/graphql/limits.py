@@ -78,9 +78,13 @@ MAX_ROUTE_ENDPOINT_CHARS = 200
 # cannot be checked without a (paid) geocode, so they only get the length cap.
 SERVICE_AREA = (15.5, 45.4, 23.5, 49.0)  # minLng, minLat, maxLng, maxLat
 
-# --- routeQuality(path): PostGIS buffer/match along a user path ---------------
-MAX_PATH_POINTS = 5_000  # a Google overview polyline across HU is < 2 000
-MAX_PATH_KM = 1_000.0  # longest drive inside HU is ~600 km
+# --- routeQuality(path): segment match along a user path ----------------------
+# == services/segment_read.MAX_PATH_POINTS (kept equal, not imported, so this
+# module stays import-light).
+MAX_PATH_POINTS = 20_000
+# The matcher samples every 10 m in Python: ~1.1 ms CPU per km (benchmarked),
+# so 800 km is ~1 s worst case. Longest drive inside HU is ~600 km.
+MAX_PATH_KM = 800.0
 MAX_ENCODED_POLYLINE_CHARS = 50_000
 
 # --- How often a root field may appear in one operation (distinct aliases) ----
@@ -91,6 +95,12 @@ MAX_ROOT_FIELD_COUNT = {
     "points": 2,
     "roadQualityGrid": 2,
 }
+
+# Root fields the anonymous public schema never serves, whatever their
+# permission class says. `config` returned the server-side Google key to
+# anyone until the QA fix (460c5f9) made it admin-only; this keeps it shut on
+# the public deploy whichever branch merges first.
+PUBLIC_DENIED_ROOT_FIELDS = frozenset({"config"})
 
 _COORD_RE = re.compile(r"^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$")
 _CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
@@ -261,7 +271,7 @@ def _as_lat_lng(point: Any) -> tuple[Any, Any]:
         )
     if isinstance(point, Sequence) and not isinstance(point, (str, bytes)):
         if len(point) != 2:
-            raise InputLimitError("each path point must be [lat, lng]")
+            raise InputLimitError("every path point must be [lat, lng]")
         return point[0], point[1]
     lat = getattr(point, "lat", getattr(point, "latitude", None))
     lng = getattr(point, "lng", getattr(point, "longitude", None))
@@ -269,11 +279,13 @@ def _as_lat_lng(point: Any) -> tuple[Any, Any]:
 
 
 def validate_route_path(path: Any) -> list[tuple[float, float]]:
-    """routeQuality(path) input -> [(lat, lng), …] inside the service area.
+    """routeQuality(path) input -> [(lat, lng), …].
 
     Accepts [[lat, lng], …], [{lat, lng}, …], input objects with .lat/.lng (or
     .latitude/.longitude), or a Google encoded polyline string. Caps the point
-    count and the total length, so the PostGIS buffer/match work is bounded.
+    count and the total length, so the matching work is bounded. No service-
+    area check: a route outside Hungary just matches nothing (cheap), and
+    getRoute accepts addresses abroad, so rejecting it would only show an error.
     """
     if path is None:
         raise InputLimitError("path is required")
@@ -288,17 +300,15 @@ def validate_route_path(path: Any) -> list[tuple[float, float]]:
             raise InputLimitError("path is not a valid encoded polyline") from None
     if not isinstance(path, Sequence):
         raise InputLimitError("path must be a list of [lat, lng] points")
-    if not 2 <= len(path) <= MAX_PATH_POINTS:
-        raise InputLimitError(f"path must have 2 to {MAX_PATH_POINTS} points")
+    if len(path) > MAX_PATH_POINTS:
+        raise InputLimitError(f"path has too many points (max {MAX_PATH_POINTS})")
 
     coords: list[tuple[float, float]] = []
     for point in path:
         raw_lat, raw_lng = _as_lat_lng(point)
         lat, lng = _finite(raw_lat, "lat"), _finite(raw_lng, "lng")
         if not (-90 <= lat <= 90 and -180 <= lng <= 180):
-            raise InputLimitError("path contains an invalid lat,lng")
-        if not _in_service_area(lat, lng):
-            raise InputLimitError("path leaves the service area")
+            raise InputLimitError("path point out of range (expected [lat, lng])")
         coords.append((lat, lng))
 
     total_km = sum(_haversine_km(a, b) for a, b in zip(coords, coords[1:]))
@@ -310,8 +320,15 @@ def validate_route_path(path: Any) -> list[tuple[float, float]]:
 # --- Extensions -------------------------------------------------------------------
 
 
+# Every extension is registered as a zero-argument CLASS, never an instance:
+# strawberry-graphql >= 0.33x (what Vercel installs) then builds a fresh one per
+# request; shared instances leak execution_context between concurrent requests
+# (strawberry#4369) and are deprecated. 0.287 (local venv) calls
+# cls(execution_context=None), hence the keyword.
+
+
 class MaxTokensParser(SchemaExtension):
-    """Parse with a token cap on both execution paths.
+    """Parse with a MAX_TOKENS cap on both execution paths.
 
     Strawberry's MaxTokensLimiter only sets `parse_options`, which the async
     path — every HTTP request — ignores (strawberry-graphql 0.287), so a
@@ -319,14 +336,29 @@ class MaxTokensParser(SchemaExtension):
     is the same hook ParserCache uses; Strawberry then skips its own parse.
     """
 
-    def __init__(self, max_token_count: int) -> None:
-        self.max_token_count = max_token_count
+    def __init__(self, *, execution_context=None) -> None:
+        self.execution_context = execution_context
 
     def on_parse(self):
         ctx = self.execution_context
         if ctx.graphql_document is None and ctx.query:
-            ctx.graphql_document = parse(ctx.query, max_tokens=self.max_token_count)
+            ctx.graphql_document = parse(ctx.query, max_tokens=MAX_TOKENS)
         yield
+
+
+class DepthLimit(QueryDepthLimiter):
+    def __init__(self, *, execution_context=None) -> None:
+        super().__init__(max_depth=MAX_QUERY_DEPTH)
+
+
+class AliasLimit(MaxAliasesLimiter):
+    def __init__(self, *, execution_context=None) -> None:
+        super().__init__(max_alias_count=MAX_ALIASES)
+
+
+class NoIntrospection(DisableIntrospection):
+    def __init__(self, *, execution_context=None) -> None:
+        super().__init__()
 
 
 # --- Pre-execution guard -------------------------------------------------------
@@ -394,8 +426,10 @@ def check_operation(
     document,
     operation_name: Optional[str] = None,
     variables: Optional[dict[str, Any]] = None,
+    denied_fields: frozenset = frozenset(),
 ) -> None:
-    """Raise InputLimitError when the selected operation breaks a limit.
+    """Raise InputLimitError when the selected operation breaks a limit
+    (a GraphQLError with code FORBIDDEN for a field in `denied_fields`).
 
     Anything this function cannot interpret (unknown operation, variable
     coercion errors) is left for normal execution to report.
@@ -420,6 +454,11 @@ def check_operation(
     response_keys: dict[str, set[str]] = {}
     for node in _root_field_nodes(operation.selection_set, fragments, set()):
         name = node.name.value
+        if name in denied_fields:
+            raise GraphQLError(
+                f"{name} is not available on the public API",
+                extensions={"code": "FORBIDDEN"},
+            )
         field_def = root_type.fields.get(name)
         if field_def is None:
             continue
@@ -436,6 +475,8 @@ def check_operation(
 class PublicQueryGuard(SchemaExtension):
     """Runs check_operation before execution; a violation skips execution."""
 
+    denied_fields: frozenset = frozenset()
+
     def on_execute(self):
         ctx = self.execution_context
         if ctx.graphql_document is not None:
@@ -444,8 +485,15 @@ class PublicQueryGuard(SchemaExtension):
                 ctx.graphql_document,
                 ctx.operation_name,
                 ctx.variables,
+                denied_fields=self.denied_fields,
             )
         yield
+
+
+class PublicSchemaGuard(PublicQueryGuard):
+    """PublicQueryGuard plus PUBLIC_DENIED_ROOT_FIELDS (public schema only)."""
+
+    denied_fields = PUBLIC_DENIED_ROOT_FIELDS
 
 
 # --- Error masking (public schema) ---------------------------------------------
@@ -457,21 +505,19 @@ def should_mask_error(error: GraphQLError) -> bool:
     return original is not None and not isinstance(original, GraphQLError)
 
 
+class MaskUnexpectedErrors(MaskErrors):
+    def __init__(self, *, execution_context=None) -> None:
+        super().__init__(should_mask_error=should_mask_error)
+
+
 def schema_extensions(public: bool) -> list:
-    """Extensions for strawberry.Schema(..., extensions=...).
+    """Extension classes for strawberry.Schema(..., extensions=...).
 
     public=True (the anonymous read-only schema) also disables introspection
     and masks unexpected errors; the full local schema keeps both for dev.
     """
-    extensions: list = [
-        QueryDepthLimiter(max_depth=MAX_QUERY_DEPTH),
-        MaxAliasesLimiter(max_alias_count=MAX_ALIASES),
-        MaxTokensParser(max_token_count=MAX_TOKENS),
-        PublicQueryGuard,
-    ]
+    guard = PublicSchemaGuard if public else PublicQueryGuard
+    extensions: list = [MaxTokensParser, DepthLimit, AliasLimit, guard]
     if public:
-        extensions += [
-            DisableIntrospection(),
-            MaskErrors(should_mask_error=should_mask_error),
-        ]
+        extensions += [NoIntrospection, MaskUnexpectedErrors]
     return extensions
