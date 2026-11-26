@@ -12,6 +12,24 @@ const authLink = new SetContextLink(async prevContext => {
   }
 })
 
+// Apollo Client 4 only accepts a non-default errorPolicy in defaultOptions once
+// it is declared here (type-level opt-in, keeps call sites' result types right).
+// Apollo's documented augmentation pattern requires namespaces here.
+/* eslint-disable @typescript-eslint/no-namespace */
+declare module '@apollo/client' {
+  export namespace ApolloClient {
+    export namespace DeclareDefaultOptions {
+      interface WatchQuery {
+        errorPolicy: 'ignore'
+      }
+      interface Query {
+        errorPolicy: 'all'
+      }
+    }
+  }
+}
+/* eslint-enable @typescript-eslint/no-namespace */
+
 // Dev: empty → relative "/graphql" (Vite proxy to :8000). Prod: the read-API
 // origin, e.g. https://api.simaut.hu (frontend and API are separate deploys).
 const API_URL = import.meta.env.VITE_API_URL ?? ''

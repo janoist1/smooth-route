@@ -28,14 +28,17 @@ export const initialState: MapState = {
   pickingLocationFor: null,
 }
 
-export const fetchPoints = createSagaAction<number[] | undefined, RoadPoint[]>('map/fetchPoints')
-export const fetchGrid = createSagaAction<{ bbox?: number[]; zoom: number }, QualityGrid>(
+// saga-toolkit's createSagaAction takes <Returned, ThunkArg> (matching RTK's
+// createAsyncThunk), so the resolved payload comes first and the dispatch arg
+// second — same order the training/settings modules use.
+export const fetchPoints = createSagaAction<RoadPoint[], number[] | undefined>('map/fetchPoints')
+export const fetchGrid = createSagaAction<QualityGrid, { bbox?: number[]; zoom: number }>(
   'map/fetchGrid',
 )
-export const fetchPointDetail = createSagaAction<number, RoadPointDetail>('map/fetchPointDetail')
+export const fetchPointDetail = createSagaAction<RoadPointDetail, number>('map/fetchPointDetail')
 
-export const planRoute = createSagaAction<{ origin: string; destination: string }, [number, number][]>('map/planRoute')
-export const analyzeRoute = createSagaAction<{ origin: string; destination: string }, string>('map/analyzeRoute')
+export const planRoute = createSagaAction<[number, number][], { origin: string; destination: string }>('map/planRoute')
+export const analyzeRoute = createSagaAction<string, { origin: string; destination: string }>('map/analyzeRoute')
 
 // Dispatched on map page load to restore a running route job from the backend.
 export const reconnectRouteJob = createAction('map/reconnectRouteJob')

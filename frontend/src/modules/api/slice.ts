@@ -27,8 +27,10 @@ const initialState: JobsState = {
     activeJobId: null
 }
 
-export const pollJob = createSagaAction<string, JobState>('api/pollJob')
-export const stopJob = createSagaAction<string, void>('api/stopJob')
+// createSagaAction is <Returned, ThunkArg>: the resolved payload first, the
+// dispatch arg (job id) second.
+export const pollJob = createSagaAction<JobState, string>('api/pollJob')
+export const stopJob = createSagaAction<void, string>('api/stopJob')
 
 const apiSlice = createSlice({
     name: 'api',

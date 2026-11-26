@@ -253,7 +253,7 @@ function* handleSelectionSaga(action: ReturnType<typeof actions.selectPoint>) {
 }
 
 // Listen for job updates to trigger refetch upon completion
-function* watchJobUpdates(action: ReturnType<typeof apiActions.updateJob>) {
+function* watchJobUpdates(action: ReturnType<typeof apiActions.updateJob>): SagaIterator {
   const { id, status } = action.payload
 
   // Check if this is our analysis job
@@ -289,12 +289,14 @@ function* watchJobUpdates(action: ReturnType<typeof apiActions.updateJob>) {
 }
 
 export default [
-  takeLatestAsync(actions.fetchPoints.type, fetchPointsWorker),
-  takeLatestAsync(actions.fetchGrid.type, fetchGridWorker),
-  takeLatestAsync(actions.fetchPointDetail.type, fetchPointDetailWorker),
+  // saga-toolkit dispatches the RTK pending action, so subscribe to its type
+  // (createSagaAction only exposes `.type` at runtime, not in the types).
+  takeLatestAsync(actions.fetchPoints.pending.type, fetchPointsWorker),
+  takeLatestAsync(actions.fetchGrid.pending.type, fetchGridWorker),
+  takeLatestAsync(actions.fetchPointDetail.pending.type, fetchPointDetailWorker),
   takeLatest(actions.selectPoint.type, handleSelectionSaga),
-  takeLatestAsync(actions.planRoute.type, planRouteWorker),
-  takeLatestAsync(actions.analyzeRoute.type, analyzeRouteWorker),
+  takeLatestAsync(actions.planRoute.pending.type, planRouteWorker),
+  takeLatestAsync(actions.analyzeRoute.pending.type, analyzeRouteWorker),
   // Use toString() to be safe if it's an action creator or string
   takeLatest(actions.analyzeRoute.fulfilled.toString(), watchJobStart),
   takeLatest(actions.reconnectRouteJob.type, reconnectRouteJobSaga),

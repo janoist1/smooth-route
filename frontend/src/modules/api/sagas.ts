@@ -150,6 +150,6 @@ function* watchRegisterJob(): SagaIterator {
 }
 
 export default [
-    takeLatestAsync(actions.pollJob.type, pollJobWorker),
+    takeLatestAsync(actions.pollJob.pending.type, pollJobWorker),
     fork(watchRegisterJob),
 ]
