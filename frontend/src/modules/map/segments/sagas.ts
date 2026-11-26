@@ -5,19 +5,16 @@ import type { SagaPendingAction } from 'saga-toolkit'
 import { gqlQuery } from '../../graphql'
 import { actions as mapActions } from '../slice'
 import * as mapSelectors from '../selectors'
+import { rankRouteAlternatives, type RouteAlternative } from '../alternatives'
 import type { RoadPoint } from '../types'
 import { actions, fetchRouteQuality, fetchSegmentFrames, fetchSegments } from './slice'
 import * as selectors from './selectors'
 import * as api from './api'
-import { distanceToPathM, pathBbox } from './geometry'
-import { SEGMENT_FRAME_RADIUS_M, layersForZoom } from './style'
+import { layersForZoom } from './style'
 import type { LatLng, RoadSegment, RouteQuality } from './types'
 
 /** Quiet time after the last map move before the segment request is sent. */
 export const SEGMENT_FETCH_DEBOUNCE_MS = 250
-
-/** Hard cap on frames loaded around one segment (the bbox is the real bound). */
-const SEGMENT_FRAME_LIMIT = 2000
 
 type SegmentMocks = Awaited<ReturnType<typeof api.loadSegmentMocks>>
 
@@ -47,33 +44,25 @@ export function* fetchSegmentsWorker(action: SagaPendingAction<typeof fetchSegme
   }
 }
 
-// Frames within a few metres of the selected segment, for inspection below
+// Frames belonging to the selected segment, for inspection below
 // the zoom where all dots show. Optional extra: a failure just means no dots.
 export function* fetchSegmentFramesWorker(action: SagaPendingAction<typeof fetchSegmentFrames>) {
   const segment = action.meta.arg
-  const bbox = pathBbox(segment.path, SEGMENT_FRAME_RADIUS_M + 5)
-  if (!bbox) return [] as RoadPoint[]
   try {
     const data = yield* gqlQuery({
       query: api.GET_SEGMENT_FRAMES,
-      variables: { limit: SEGMENT_FRAME_LIMIT, bbox },
+      variables: { segmentId: segment.id },
     })
-    return (data.points ?? [])
-      .filter(
-        p => distanceToPathM([p.latitude, p.longitude], segment.path) <= SEGMENT_FRAME_RADIUS_M,
-      )
-      .map(
-        (p): RoadPoint => ({
-          id: p.id,
-          latitude: p.latitude,
-          longitude: p.longitude,
-          heading: p.heading ?? undefined,
-          // Same mapping as the viewport dots (../sagas.ts) so both colour alike.
-          rqi_score: p.rqiScore ?? undefined,
-          rqi_source: p.rqiSource ?? undefined,
-          capture_date: p.captureDate,
-        }),
-      )
+    return (data.segmentFrames ?? []).map((p): RoadPoint => ({
+      id: p.id,
+      latitude: p.latitude,
+      longitude: p.longitude,
+      heading: p.heading ?? undefined,
+      // Same mapping as the viewport dots (../sagas.ts) so both colour alike.
+      rqi_score: p.rqiScore ?? undefined,
+      rqi_source: p.rqiSource ?? undefined,
+      capture_date: p.captureDate,
+    }))
   } catch (error) {
     console.warn('Segment frames could not be loaded:', error)
     return [] as RoadPoint[]
@@ -81,8 +70,10 @@ export function* fetchSegmentFramesWorker(action: SagaPendingAction<typeof fetch
 }
 
 export function* fetchRouteQualityWorker(action: SagaPendingAction<typeof fetchRouteQuality>) {
-  const path = action.meta.arg
+  return yield* loadRouteQuality(action.meta.arg)
+}
 
+function* loadRouteQuality(path: LatLng[]) {
   if (api.segmentMocksEnabled()) {
     const mocks: SegmentMocks = yield call(api.loadSegmentMocks)
     return mocks.mockRouteQuality(path) as RouteQuality | null
@@ -132,6 +123,31 @@ export function* onAnalysisFinished(): SagaIterator {
   }
   const route: LatLng[] | null = yield select(mapSelectors.selectRoutePoints)
   if (supported && route && route.length > 1) yield put(actions.fetchRouteQuality(route))
+  if (!supported) return
+
+  const segment: RoadSegment | null = yield select(selectors.selectSelectedSegment)
+  if (segment) yield put(actions.fetchSegmentFrames(segment))
+
+  const alternatives: RouteAlternative[] | null = yield select(mapSelectors.selectRouteAlternatives)
+  if (!alternatives?.length) return
+  try {
+    const refreshed: RouteAlternative[] = []
+    for (const alternative of alternatives) {
+      const quality: RouteQuality | null = yield call(loadRouteQuality, alternative.points)
+      if (!quality) return
+      refreshed.push({ ...alternative, quality })
+    }
+    // Selection can change while requests run. Keep the current choice, and
+    // discard results if a new plan replaced or cleared these alternatives.
+    const current: RouteAlternative[] | null = yield select(mapSelectors.selectRouteAlternatives)
+    if (current !== alternatives) return
+    const selected: number | null = yield select(mapSelectors.selectSelectedRouteIndex)
+    yield put(
+      mapActions.setRouteAlternatives({ routes: rankRouteAlternatives(refreshed), selected }),
+    )
+  } catch (error) {
+    console.warn('Route alternatives could not be refreshed:', error)
+  }
 }
 
 export default [
@@ -141,5 +157,10 @@ export default [
   takeLatest(mapActions.planRoute.fulfilled.type, onRoutePlanned),
   takeLatest(mapActions.selectRouteAlternative.type, onRouteAlternativeSelected),
   takeLatest([actions.selectSegment.type, actions.focusSegment.type], onSegmentSelected),
-  takeLatest(mapActions.finishAnalysis.type, onAnalysisFinished),
+  takeLatest(
+    [mapActions.finishAnalysis.type, mapActions.planRoute.pending.type, mapActions.clearRoute.type],
+    function* (action: { type: string }): SagaIterator {
+      if (mapActions.finishAnalysis.match(action)) yield* onAnalysisFinished()
+    },
+  ),
 ]

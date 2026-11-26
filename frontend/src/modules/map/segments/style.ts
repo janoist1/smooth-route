@@ -128,6 +128,3 @@ export const selectionHaloStyle = (zoom: number) => ({
   opacity: 0.9,
   lineCap: 'round' as const,
 })
-
-/** Frame dots further than this from the selected segment are not its frames. */
-export const SEGMENT_FRAME_RADIUS_M = 25

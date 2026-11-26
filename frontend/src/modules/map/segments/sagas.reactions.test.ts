@@ -38,11 +38,12 @@ interface StateOver {
   route?: LatLng[] | null
   supported?: boolean
   lastQuery?: { bbox: number[]; zoom: number } | null
+  segment?: RoadSegment | null
 }
 
-const stateWith = ({ zoom = 14, route = null, supported = true, lastQuery = null }: StateOver = {}) => ({
+const stateWith = ({ zoom = 14, route = null, supported = true, lastQuery = null, segment = null }: StateOver = {}) => ({
   map: { ...mapInitial, viewport: { ...mapInitial.viewport, zoom }, routePoints: route },
-  roads: { ...roadsInitial, supported, lastQuery },
+  roads: { ...roadsInitial, supported, lastQuery, selected: segment },
 })
 
 // Runs a saga outside the store; collects what it dispatches.
@@ -82,6 +83,12 @@ describe('onRouteAlternativeSelected', () => {
 })
 
 describe('onAnalysisFinished', () => {
+  it('refreshes the selected segment frames after analysis', () => {
+    const segment = { id: 'selected', path: ROUTE } as RoadSegment
+    const { dispatched } = run(onAnalysisFinished, stateWith({ segment }))
+    expect(dispatched.map(announced)).toEqual([{ type: fetchSegmentFrames.pending.type, arg: segment }])
+  })
+
   it('refreshes the visible segments and the route summary', () => {
     const { dispatched } = run(onAnalysisFinished, stateWith({ zoom: 14, route: ROUTE, lastQuery: QUERY }))
     expect(dispatched.map(announced)).toEqual([
@@ -114,11 +121,12 @@ describe('workers — edge cases', () => {
     gqlQueryMock.mockReset()
   })
 
-  it('a segment without geometry has no frames and needs no request', async () => {
+  it('segment membership depends on the id even when client geometry is missing', async () => {
     const empty = { id: 's0', path: [] } as unknown as RoadSegment
+    gqlQueryMock.mockReturnValue({ segmentFrames: [] })
     const { task } = run(fetchSegmentFramesWorker, {}, pending<SagaPendingAction<typeof fetchSegmentFrames>>(empty))
     await expect(task.toPromise()).resolves.toEqual([])
-    expect(gqlQueryMock).not.toHaveBeenCalled()
+    expect(gqlQueryMock).toHaveBeenCalledWith(expect.objectContaining({ variables: { segmentId: 's0' } }))
   })
 
   it('a route-quality failure other than "unknown field" is a real error', async () => {
