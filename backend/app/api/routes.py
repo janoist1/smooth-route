@@ -17,7 +17,7 @@ from app.services.job_service import (
     update_job,
 )
 from sqlalchemy import func
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 import asyncio
 import json
 from sse_starlette.sse import EventSourceResponse
@@ -43,8 +43,7 @@ class PointResponse(BaseModel):
     heading: float
     rqi_score: Optional[float]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PointDetailResponse(BaseModel):
@@ -61,8 +60,7 @@ class PointDetailResponse(BaseModel):
     image_path: Optional[str]  # Relative path for serving
     created_at: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 @router.get("/api/v1/config")

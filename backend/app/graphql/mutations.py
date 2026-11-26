@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 import threading
 import json
-import datetime
+from app.core.timeutil import utcnow
 
 from app.core.database import SessionLocal
 from app.models.models import StreetViewImage, TrainingData as TrainingDataModel, Job as JobModel
@@ -74,7 +74,7 @@ class Mutation:
             message=f"Analysis started ({input.strategy})",
             error=None,
             result=None,
-            created_at=datetime.datetime.utcnow(),
+            created_at=utcnow(),
             completed_at=None
         )
 
@@ -101,7 +101,7 @@ class Mutation:
             message="Training started (Background Process)",
             error=None,
             result=None,
-            created_at=datetime.datetime.utcnow(),
+            created_at=utcnow(),
             completed_at=None
         )
 
@@ -128,7 +128,7 @@ class Mutation:
             message="Job started",
             error=None,
             result=None,
-            created_at=datetime.datetime.utcnow(),
+            created_at=utcnow(),
             completed_at=None
         )
 
@@ -148,7 +148,7 @@ class Mutation:
                 existing.tags = input.tags
                 existing.comment = input.manual_comment
                 existing.meta_data = input.meta_data
-                existing.updated_at = datetime.datetime.utcnow()
+                existing.updated_at = utcnow()
             else:
                 new_entry = TrainingDataModel(
                     image_filename=input.image_filename,

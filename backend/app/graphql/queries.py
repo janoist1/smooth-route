@@ -6,6 +6,8 @@ import threading
 import json
 import datetime
 
+from app.core.timeutil import utcnow
+
 from app.core.database import SessionLocal
 from app.models.models import StreetViewImage, TrainingData as TrainingDataModel, Job as JobModel, User
 from app.core.config import settings
@@ -352,7 +354,7 @@ class Query:
         effective = func.coalesce(
             StreetViewImage.dino_rqi_score, StreetViewImage.rqi_score
         )
-        month_start = datetime.datetime.utcnow().replace(
+        month_start = utcnow().replace(
             day=1, hour=0, minute=0, second=0, microsecond=0
         )
 

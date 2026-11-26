@@ -8,7 +8,7 @@ with 5-fold stratified CV. Reports the metrics that matter for an ordinal
 scale (MAE, off-by-one accuracy, quadratic weighted kappa) against naive
 baselines, plus a pooled confusion matrix.
 
-Usage:  .venv/bin/python ml/train.py
+Usage:  .venv/bin/python ml/legacy/train.py
 """
 import os
 
@@ -19,7 +19,7 @@ from sklearn.metrics import cohen_kappa_score, confusion_matrix, mean_absolute_e
 from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import StandardScaler
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 CACHE = os.path.join(ROOT, "ml", "cache")
 
 DROP_RQI5 = True          # only 3 present, partly non-road junk

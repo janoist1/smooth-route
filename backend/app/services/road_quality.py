@@ -5,7 +5,7 @@ Composes the focused units — route collection, image download, and YOLO damage
 analysis — and orchestrates the per-point analysis pass. Kept as the single
 `road_quality_service` entry point used by tasks.py and cli.py.
 """
-from datetime import datetime
+from app.core.timeutil import utcnow
 from typing import Dict, Optional
 
 from app.core.database import SessionLocal
@@ -91,7 +91,7 @@ class RoadQualityService:
                             "dino_strategy": "DINO Classification",
                             "dino_score": round(float(score), 3),
                             **({"dino_p_bad": round(p_bad, 3)} if p_bad is not None else {}),
-                            "dino_timestamp": str(datetime.utcnow()),
+                            "dino_timestamp": str(utcnow()),
                         }
                         analyzed_count += 1
                 else:

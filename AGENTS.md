@@ -33,7 +33,9 @@ megérted a feladatot, ne nyiss meg többet.
 ## Futtatás és fejlesztőkörnyezet
 
 - **Python:** MINDIG a `.venv/bin/python` (torch + MPS itt van). Ne hozz létre új
-  venv-et. A backend-teszteknek nem kell torch/DB.
+  venv-et. A backend-teszteknek nem kell torch/DB. **Git worktree-ben** nincs saját
+  `.venv` — a fő checkout interpreterét használd (abszolút úttal).
+- **Node:** 22+ (CI: Node 22). Frontend: React 19 + Vite 8 + Vitest 4.
 - **DB:** Postgres/PostGIS Dockerben, **:5433**-on: `docker compose up -d db`.
 - **Dev szerver:** `make dev` (backend uvicorn :8000 + Vite frontend :5173).
 - **Google Maps kulcs:** a gyökér `.env`-ben (`GOOGLE_MAPS_API_KEY`), route→kép
@@ -43,10 +45,12 @@ megérted a feladatot, ne nyiss meg többet.
 
 ```bash
 cd backend && ../.venv/bin/python -m pytest -q                 # izolált, nincs DB/torch
-cd frontend && npm run typecheck && npm run lint && npm test
+cd frontend && npm ci && npm run typecheck && npm run lint && npm test && npm run build
 ```
 
-CI mindkettőt futtatja (`.github/workflows/ci.yml`). **Zöld nélkül nem kész.**
+CI a pytestet és a frontend typecheck/lint/testet futtatja
+(`.github/workflows/ci.yml`); a buildet a Vercel futtatja pushkor, ezért lokálisan
+is kell. **Zöld nélkül nem kész.**
 
 ### ML-élesítési kapu (KRITIKUS szabály)
 
@@ -58,9 +62,10 @@ hasonlít: **QWK ≥ 0.774, MAE ≤ 0.405, bad-AUC ≥ 0.934**. A régi, véletl
 0.889/0.195/0.970 számok térbeli szivárgás miatt optimisták voltak, ne
 hivatkozz rájuk. A „mérhetően jobb" feltétele: a kapu páros összevetésében a
 ΔQWK 95%-os CI-je 0 fölött van. A koordináták forrása `ml/image_coords.csv`
-(`ml/build_coords.py`); új címkék után ezt is újra kell generálni. Sose a régi
-`ml/train.py` / `backend/train_dino_head.py` szkripteket használd, azok
-referenciák vagy zsákutcák. Fogalmak: [docs/GLOSSARY.md](docs/GLOSSARY.md).
+(`ml/build_coords.py`); új címkék után ezt is újra kell generálni. Sose az
+`ml/legacy/` (v1: `train.py`, `save_model.py`, `extract_features.py`) vagy a
+`backend/train_dino_head.py` szkripteket használd, azok referenciák vagy
+zsákutcák. Fogalmak: [docs/GLOSSARY.md](docs/GLOSSARY.md).
 
 ## Buktatók (amiken más már elvérzett)
 
@@ -72,23 +77,42 @@ referenciák vagy zsákutcák. Fogalmak: [docs/GLOSSARY.md](docs/GLOSSARY.md).
 - **Egy review-felület, két panel:** a címkézés `/training/:id/review`-n megy
   (pontozás + poligonjelölés); nincs külön `/training/dino` útvonal, és a régi
   DINO-*tanítás* gomb megszűnt. Az RQI-modellt az `ml/` pipeline tanítja, nem a web.
+- **Két backend-függőséglista:** `backend/pyproject.toml` (teljes, torch-csal) és
+  `backend/requirements.txt` (torch-mentes, CSAK a Vercel-deployhoz; a
+  `.vercelignore` rejti el a pyproject-et). Új futásidejű függőség a read-only
+  útvonalon mindkettőbe kell.
+- **SQLAlchemy `<2.1`:** a 2.1 a sima `postgresql://` URL-t psycopg v3-ra képezi
+  (psycopg2 helyett) → CI és Vercel elhasal. A plafon csak driverváltással együtt
+  emelhető.
+- **A CLI nagy része törött:** `collect-points`, `download-images`,
+  `fetch-missing-images`, `analyze-points` a már nem létező `processing_service`-t
+  importálja; a webes job-flow a működő út.
+- **Gyökér rendben tartása:** egyszeri szkript → `scripts/` (ha a `Makefile`
+  használja) vagy `scripts/legacy/`; elavult jegyzet → `docs/archive/`.
 
-## Állapot (2026-07-03)
+## Állapot (2026-11-18)
 
 A javítási terv **A–D fázisa kész**. A publikálás **kétkörös**
 (ld. [docs/PUBLISH_PLAN.md](docs/PUBLISH_PLAN.md)): az elemzés lokálisan, kérésre
 fut, így **round 1 = read-only publikálás**. Deploy-topológia: **két Vercel-
-projekt** — `simaut.hu` (frontend) + `api.simaut.hu` (`backend/`, ugyanaz az
-app `PUBLIC_READ_ONLY=1`-gyel) → **Neon** olvasható DB, a képek helyett Google
-Street View deep-linkek. Kész és pusholva: **F1** (Clerk auth), **F1.5** (térkép
-minőség-rács + admin stats), **R1.1** (pano_id + SV link), **R1.2** (read-only
-mód + Vercel-artefaktumok). **Soron következő: R1.3** (Neon + `publish` script),
-majd **R1.4** (DNS + deploy). A round-2 (auth/queue/kvóta, F0–F6) a
-user-beküldésig vár. A lokális dev változatlan (`make dev`, teljes backend);
-a read-only csak env-flag. Commit/push csak explicit kérésre.
+projekt** (frontend + `backend/` `PUBLIC_READ_ONLY=1`-gyel), **Neon** olvasható DB,
+a képek helyett Google Street View deep-linkek; mindkettő a `master` pusholásakor
+deployol. Kész: **F1** (Clerk auth), **F1.5** (minőség-rács + admin stats),
+**R1.1** (pano_id + SV link), **R1.2** (read-only mód + Vercel-artefaktumok),
+**R1.3** (`backend/scripts/publish.py` → Neon); az oldal a Vercel alap-domainjein
+él. **Nyitott: R1.4** (DNS `simaut.hu` / `api.simaut.hu`, Google-kulcs
+restrikció, budget-alert). A round-2 (auth/queue/kvóta, F0–F6) a user-beküldésig
+vár. 2026-11: repó-takarítás (legacy szkriptek/jegyzetek áthelyezve),
+függőségfrissítés (frontend: Vite 8, Vitest 4, graphql-codegen 8, lucide 1.x;
+backend: CVE-floorok, Pydantic/SQLAlchemy/utcnow elavulások). A lokális dev
+változatlan (`make dev`, teljes backend); a read-only csak env-flag.
+Commit/push csak explicit kérésre.
 
 **RQI-kiértékelés (2026-11-18):** térben csoportosított CV-re váltottunk. A v2
 bajnok őszinte számai: QWK 0.774 / MAE 0.405 / AUC 0.934. Budapesten gyenge,
 új régióban QWK ~0.66. A bajnok marad, mert egyik kihívó sem mérhetően jobb.
 Teendők (holdout régió, szórtabb címkék, szakasz-aggregálás):
 [docs/MODEL_EXPERIMENTS.md](docs/MODEL_EXPERIMENTS.md), 6. korszak.
+**Képdátum (2026-11-18):** `street_view_images.capture_date` (Metadata API,
+ingyenes) + `backend/scripts/backfill_capture_date.py`; a részletkártya jelzi a
+régi képet.

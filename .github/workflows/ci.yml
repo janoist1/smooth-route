@@ -40,10 +40,11 @@ jobs:
       # `pip install -e .` would drag in torch via ultralytics). The auth and
       # permission tests import the real FastAPI app pieces and GraphQL
       # schema, so the web/DB layer packages are required; psycopg2 is only
-      # loaded as a dialect, no server is contacted.
+      # loaded as a dialect, no server is contacted. sqlalchemy<2.1: 2.1 maps
+      # `postgresql://` to psycopg v3 (see backend/requirements.txt).
       - run: >
           pip install pytest ruff pydantic pydantic-settings httpx
-          fastapi sqlalchemy geoalchemy2 psycopg2-binary
+          fastapi "sqlalchemy<2.1" geoalchemy2 psycopg2-binary
           strawberry-graphql sse-starlette alembic "PyJWT[crypto]"
       - run: ruff check --select F821 .
       - run: pytest

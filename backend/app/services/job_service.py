@@ -3,7 +3,7 @@ Job service for tracking background tasks.
 """
 
 import uuid
-from datetime import datetime
+from app.core.timeutil import utcnow
 from typing import Dict, Optional
 from enum import Enum
 
@@ -32,7 +32,7 @@ class Job:
         self.total = 0
         self.message = ""
         self.error = None
-        self.created_at = datetime.utcnow()
+        self.created_at = utcnow()
         self.completed_at = None
         self.result = None
 
