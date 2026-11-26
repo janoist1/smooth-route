@@ -286,6 +286,26 @@
   z-index: 1000;
 }
 
+/* ---------- Map notice (empty area / load error) ---------- */
+
+.map-notice {
+  position: absolute;
+  top: 84px; /* below the floating nav */
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  max-width: calc(100vw - 140px);
+  padding: 8px 16px;
+  border-radius: 20px;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: #fff;
+  font-size: 0.85rem;
+  text-align: center;
+  pointer-events: none;
+}
+
 /* ---------- Legend ---------- */
 
 .map-legend {

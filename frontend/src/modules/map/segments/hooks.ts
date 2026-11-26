@@ -10,6 +10,10 @@ export interface UseRoadSegments {
   /** Segments of the current viewport. */
   segments: RoadSegment[]
   segmentsLoading: boolean
+  /** The last segment request failed (not a cancelled one). */
+  segmentsError: string | null
+  /** A request finished and this area simply has no measured roads. */
+  segmentsEmpty: boolean
   /** False when the backend has no segment API (legacy grid/points view). */
   segmentsSupported: boolean
   selectedSegment: RoadSegment | null
@@ -31,6 +35,8 @@ export const useRoadSegments = (): UseRoadSegments => {
 
   const segments = useSelector(selectors.selectSegments)
   const segmentsLoading = useSelector(selectors.selectSegmentsLoading)
+  const segmentsError = useSelector(selectors.selectSegmentsError)
+  const lastQuery = useSelector(selectors.selectLastSegmentQuery)
   const segmentsSupported = useSelector(selectors.selectSegmentsSupported)
   const selectedSegment = useSelector(selectors.selectSelectedSegment)
   const segmentFrames = useSelector(selectors.selectSegmentFrames)
@@ -54,6 +60,9 @@ export const useRoadSegments = (): UseRoadSegments => {
   return {
     segments,
     segmentsLoading,
+    segmentsError,
+    segmentsEmpty:
+      lastQuery !== null && !segmentsLoading && !segmentsError && segments.length === 0,
     segmentsSupported,
     selectedSegment,
     segmentFrames,

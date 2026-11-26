@@ -175,6 +175,8 @@ const MapView: React.FC<MapViewProps> = ({ onTrain, onMapMove }) => {
   const {
     segments,
     segmentsLoading,
+    segmentsError,
+    segmentsEmpty,
     segmentsSupported,
     selectedSegment,
     segmentFrames,
@@ -347,6 +349,15 @@ const MapView: React.FC<MapViewProps> = ({ onTrain, onMapMove }) => {
           onClose={() => selectPoint(null)}
           onTrain={onTrain}
         />
+      )}
+
+      {/* Nothing to draw here: say so instead of showing a bare map. */}
+      {layers.segments && !loading && !segmentsLoading && (segmentsError || segmentsEmpty) && (
+        <div className="map-notice" role="status">
+          {segmentsError
+            ? 'Az útszakaszok betöltése nem sikerült.'
+            : 'Ezen a területen még nincs felmért út.'}
+        </div>
       )}
 
       {/* Loading Overlay */}

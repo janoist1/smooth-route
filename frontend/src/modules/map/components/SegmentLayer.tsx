@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useMap } from 'react-leaflet'
 import L from 'leaflet'
 import type { RoadSegment } from '../segments/types'
+import { confidenceLabelHu, rqiLabelHu, segmentTitle } from '../segments/labels'
 import {
   isStaleSegment,
   segmentCasingStyle,
@@ -90,6 +91,13 @@ const SegmentLayer: React.FC<SegmentLayerProps> = ({
       })
       line.on('mouseover', () => paint(entry, liveRef.current, true))
       line.on('mouseout', () => paint(entry, liveRef.current, false))
+      // Mouse users get the gist on hover; on a phone a tap opens the card.
+      if (!L.Browser.mobile) {
+        line.bindTooltip(
+          `${segmentTitle(segment)} · ${rqiLabelHu(segment.rqi)} · megbízhatóság: ${confidenceLabelHu(segment.confidenceLevel)}`,
+          { sticky: true, direction: 'top', opacity: 0.9 },
+        )
+      }
 
       group.addLayer(casing)
       group.addLayer(line)

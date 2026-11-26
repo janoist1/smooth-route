@@ -43,8 +43,12 @@ const LineSample: React.FC<{ opacity: number; dashed?: boolean }> = ({ opacity, 
  * screen (it starts collapsed on both).
  */
 export const MapLegend: React.FC = () => {
-  const [open, setOpen] = useState(() => !isCompactScreen())
-  const { viewport } = useMap()
+  const { viewport, routePoints } = useMap()
+  // null = no choice made yet: open where there is room, and step aside while
+  // a planned route's summary fills the left column. A click settles it.
+  const [userOpen, setUserOpen] = useState<boolean | null>(null)
+  const [roomy] = useState(() => !isCompactScreen())
+  const open = userOpen ?? (roomy && !routePoints)
   const { segmentsSupported } = useRoadSegments()
   const layers = layersForZoom(viewport.zoom, segmentsSupported)
 
@@ -54,7 +58,7 @@ export const MapLegend: React.FC = () => {
         type="button"
         className="map-legend__toggle"
         aria-expanded={open}
-        onClick={() => setOpen(value => !value)}>
+        onClick={() => setUserOpen(!open)}>
         <span>Jelmagyarázat</span>
         <span aria-hidden="true">{open ? '▾' : '▸'}</span>
       </button>
