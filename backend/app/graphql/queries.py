@@ -15,7 +15,7 @@ from app.services.job_service import create_job, get_job
 from app.services.map_aggregation import grid_cell_size_for_zoom
 from app.core.settings_manager import settings_manager
 
-from .types import Point, Job, TrainingData, ProcessRouteInput, TrainingDataInput, RunAnalysisInput, TrainingStats, TrainingPointsResponse, FilterMode, Setting, UpdateSettingInput, DetectInput, DetectPrediction, ReviewActionInput, ReviewActionResult, RqiModelInfo
+from .types import Point, Job, TrainingData, ProcessRouteInput, TrainingDataInput, RunAnalysisInput, TrainingStats, TrainingPointsResponse, FilterMode, Setting, UpdateSettingInput, DetectInput, DetectPrediction, ReviewActionInput, ReviewActionResult, RqiModelInfo, RoadSegment, RouteQuality
 
 from app.graphql.resolver_helpers import get_db_session, image_filename_from_url as get_filename
 from app.graphql.permissions import IsAdmin, IsAuthenticated, IsAuthenticatedUnlessPublicRead
@@ -82,6 +82,29 @@ class AdminStats:
 # Street View Static is an Essentials SKU: 10k free billable events per month.
 STREET_VIEW_FREE_TIER = 10000
 
+
+def _road_segment(record) -> RoadSegment:
+    """services.segment_read.SegmentRecord → GraphQL RoadSegment."""
+    from app.services.capture_date import format_capture_date
+
+    def _round(value, digits):
+        return None if value is None else round(float(value), digits)
+
+    return RoadSegment(
+        id=strawberry.ID(record.id),
+        path=[[lat, lng] for lat, lng in record.path],
+        rqi=record.rqi,
+        score=_round(record.score, 3),
+        p_bad=_round(record.p_bad, 3),
+        confidence=round(float(record.confidence), 3),
+        confidence_level=record.confidence_level,
+        n_images=record.n_images,
+        length_m=round(float(record.length_m), 1),
+        road_name=record.road_name,
+        highway=record.highway,
+        capture_date_min=format_capture_date(record.capture_date_min),
+        capture_date_max=format_capture_date(record.capture_date_max),
+    )
 
 
 
@@ -347,6 +370,46 @@ class Query:
                 for row in rows
             ],
         }
+
+    @strawberry.field
+    def road_segments(self, bbox: List[float], zoom: int) -> List[RoadSegment]:
+        """Road-segment layer: real road geometry (OSM), quality per ~150 m piece.
+
+        `bbox` = `[minLng, minLat, maxLng, maxLat]` like `roadQualityGrid`.
+        Only segments with frames (`nImages > 0`); geometry simplified for the
+        zoom. Returns `[]` below zoom 13 (the quality grid covers the overview)
+        and at most 5000 segments per call. Anonymous; served from the
+        pre-built `road_segments` table (no Overpass / model at request time).
+        """
+        from app.services.segment_read import fetch_segments_in_bbox
+
+        db = get_db_session()
+        try:
+            return [_road_segment(r) for r in fetch_segments_in_bbox(db, bbox, zoom)]
+        finally:
+            db.close()
+
+    @strawberry.field
+    def route_quality(self, path: List[List[float]]) -> RouteQuality:
+        """Quality summary of a route. `path` = `[[lat, lng], ...]`.
+
+        The path is matched to the stored segments (15 m buffer, direction
+        within 45 degrees, both travel directions merged). Anonymous, read-only.
+        """
+        from app.services.segment_read import route_quality as compute
+
+        db = get_db_session()
+        try:
+            result = compute(db, path)
+        finally:
+            db.close()
+        return RouteQuality(
+            total_length_m=round(result.total_length_m, 1),
+            covered_length_m=round(result.covered_length_m, 1),
+            length_by_rqi=[round(v, 1) for v in result.length_by_rqi],
+            mean_score=None if result.mean_score is None else round(result.mean_score, 3),
+            worst_segments=[_road_segment(r) for r in result.worst_segments],
+        )
 
     @strawberry.field(permission_classes=[IsAdmin])
     def admin_stats(self) -> AdminStats:
