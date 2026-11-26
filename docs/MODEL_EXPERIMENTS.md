@@ -575,7 +575,7 @@ harness reproduces the gate exactly (0.774 / 0.405 / 0.934).
   (AUC 0.61). Twelve frames cannot tune a fifth cut-point.
 
 **Budapest error analysis (T-43)** (`ml/scene_bias.py analyse`: the champion's spatial
-out-of-fold predictions joined with the Era 9 VLM attributes; 10 frames viewed):
+out-of-fold predictions joined with the Era 9 VLM attributes; 9 frames viewed):
 
 - **"Too optimistic in Budapest" is the motorway, not the city.** All the
   owner-Jó → predicted-Kiváló cases inside the city box are the 132 M1/M7 frames at
