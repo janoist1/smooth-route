@@ -54,6 +54,7 @@ def collect_points(origin: str, destination: str, job_id: str):
                         pitch=meta['pitch'],
                         image_url=meta['image_url'],
                         pano_id=meta.get('pano_id'),  # for the Street View deep-link
+                        capture_date=meta.get('capture_date'),  # how old the imagery is
                         rqi_score=None,  # pending analysis
                     ))
                     saved_count += 1

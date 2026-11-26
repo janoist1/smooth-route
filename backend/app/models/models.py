@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import CheckConstraint, Column, Integer, String, Float, DateTime, JSON, Uuid, func
+from sqlalchemy import CheckConstraint, Column, Date, Integer, String, Float, DateTime, JSON, Uuid, func
 from sqlalchemy.ext.declarative import declarative_base
 from geoalchemy2 import Geometry
 from datetime import datetime
@@ -50,6 +50,10 @@ class StreetViewImage(Base):
     # Street View panorama id (from the free metadata API). Lets the public
     # site deep-link to the exact panorama without storing/serving the image.
     pano_id = Column(String, nullable=True, index=True)
+    # When Google captured that panorama (Metadata API `date`, month
+    # precision → stored as the 1st of the month). NULL = unknown. The RQI is
+    # only as current as this date, not as `created_at` (our download time).
+    capture_date = Column(Date, nullable=True, index=True)
     location = Column(Geometry("POINT", srid=4326), index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 

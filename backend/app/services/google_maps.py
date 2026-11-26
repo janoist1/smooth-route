@@ -1,6 +1,7 @@
 import googlemaps
 from typing import Dict, List, Optional, Tuple
 from app.core.config import settings
+from app.services.capture_date import parse_capture_date
 import math
 
 class GoogleMapsService:
@@ -153,21 +154,32 @@ class GoogleMapsService:
         
         return compass_bearing
 
-    def get_panorama_metadata(self, lat: float, lng: float, radius: int = 50) -> Optional[Dict]:
-        """
-        Check if Street View is available at location and return metadata (pano_id, exact lat/lng).
+    def get_panorama_metadata(
+        self,
+        lat: Optional[float] = None,
+        lng: Optional[float] = None,
+        radius: int = 50,
+        pano_id: Optional[str] = None,
+    ) -> Optional[Dict]:
+        """Free Street View Metadata API lookup (no billable image request).
+
+        Looks up by `pano_id` when given (exact panorama), else by location
+        (the panorama live today nearest to lat/lng within `radius` m).
+        Returns {pano_id, lat, lng, date} or None when there is no panorama.
+        `date` is the raw month-precision capture date, e.g. "2019-06".
         """
         import requests
         if not settings.GOOGLE_MAPS_API_KEY:
             return None
-            
+
         url = "https://maps.googleapis.com/maps/api/streetview/metadata"
-        params = {
-            "location": f"{lat},{lng}",
-            "radius": radius,
-            "key": settings.GOOGLE_MAPS_API_KEY
-        }
-        
+        params = {"key": settings.GOOGLE_MAPS_API_KEY}
+        if pano_id:
+            params["pano"] = pano_id
+        else:
+            params["location"] = f"{lat},{lng}"
+            params["radius"] = radius
+
         try:
             resp = requests.get(url, params=params, timeout=5)
             data = resp.json()
@@ -229,7 +241,9 @@ class GoogleMapsService:
                     "heading": heading,
                     "pitch": -20.0,
                     "image_url": url,
-                    "pano_id": pano_id
+                    "pano_id": pano_id,
+                    # Capture month of this exact panorama (free metadata field).
+                    "capture_date": parse_capture_date(sv_meta.get("date")),
                 })
             
         return metadata

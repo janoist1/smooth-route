@@ -39,6 +39,7 @@ PUBLIC_COLUMNS = [
     "damage_types",
     "analysis_metadata",
     "pano_id",
+    "capture_date",  # Street View capture month → "Kép készült" on the card
     "created_at",
 ]
 

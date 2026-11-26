@@ -9,6 +9,8 @@ export interface RoadPoint {
   manual_rqi?: number
   rqi_source?: string
   heading?: number
+  // Street View capture month "YYYY-MM" (null = unknown) — see ./captureDate
+  capture_date?: string | null
 }
 
 export interface RoadPointDetail extends RoadPoint {

@@ -4,6 +4,8 @@ import datetime
 from strawberry.scalars import JSON
 from enum import Enum
 
+from app.services.capture_date import format_capture_date
+
 @strawberry.enum
 class FilterMode(Enum):
     ALL = "all"
@@ -26,6 +28,9 @@ class Point:
     created_at: datetime.datetime
     rqi_source: str = "yolo"
     pano_id: Optional[str] = None
+    # Street View panorama capture month (DB DATE, 1st of month). Exposed as
+    # the "YYYY-MM" captureDate field below — month is the API's precision.
+    capture_date_value: strawberry.Private[Optional[datetime.date]] = None
 
     # Manual Data (Joined)
     manual_rqi: Optional[float] = None
@@ -45,6 +50,15 @@ class Point:
         if self.pano_id:
             return f"{base}&pano={self.pano_id}{view}"
         return f"{base}&viewpoint={self.latitude},{self.longitude}{view}"
+
+    @strawberry.field
+    def capture_date(self) -> Optional[str]:
+        """When Google captured the Street View image ("YYYY-MM"); null = unknown.
+
+        The RQI describes the road as of this month, not as of createdAt
+        (our download time). Readable anonymously, incl. the read-only deploy.
+        """
+        return format_capture_date(self.capture_date_value)
 
     # Derived/Computed fields can go here
     @strawberry.field

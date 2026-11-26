@@ -11,7 +11,36 @@ import requests
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.models.models import StreetViewImage
+from app.services.capture_date import parse_capture_date
 from app.services.job_service import JobStep, update_job
+
+
+def fill_capture_metadata(img: StreetViewImage, lookup=None) -> None:
+    """Fill pano_id / capture_date right after the image was fetched.
+
+    Points collected by the current route_collector already carry both; this
+    covers older pending points. The lookup happens at download time, so the
+    live panorama IS the one in the image we just stored (unlike a later
+    backfill, which has to guard against Google replacing the pano).
+    """
+    if img.capture_date is not None:
+        return
+    if lookup is None:
+        from app.services.google_maps import google_maps_service
+        lookup = google_maps_service.get_panorama_metadata
+    try:
+        if img.pano_id:
+            meta = lookup(pano_id=img.pano_id)
+        else:
+            meta = lookup(img.latitude, img.longitude)
+    except Exception as e:  # metadata is best-effort; never fail the download
+        print(f"capture-date lookup failed for {img.id}: {e}")
+        return
+    if not meta:
+        return
+    img.capture_date = parse_capture_date(meta.get("date"))
+    if not img.pano_id and meta.get("pano_id"):
+        img.pano_id = meta["pano_id"]
 
 
 def download_images(job_id: str):
@@ -46,6 +75,7 @@ def download_images(job_id: str):
                         shutil.copyfileobj(response.raw, f)
                     img.image_url = f"images/{filename}"
                     downloaded_count += 1
+                    fill_capture_metadata(img)
                 else:
                     print(f"Failed to download {img.image_url}: {response.status_code}")
             except Exception as e:
