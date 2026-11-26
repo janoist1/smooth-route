@@ -53,7 +53,7 @@ def load(backbone):
     C = np.load(os.path.join(CACHE, "clip_v2.npz"))
     keep = np.ones(len(df), dtype=bool)
     if DROP_RQI5:
-        keep &= df["rqi"].values != 5
+        keep &= ~np.isin(df["rqi"].values, S.DROPPED_LEVELS)
     keep &= df["is_road_prob"].values >= ROAD_PROB_MIN
     feats = {k: F[k][keep] for k in F.files}
     feats["clip"] = C["clip"][keep]

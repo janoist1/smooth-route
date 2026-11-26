@@ -5,15 +5,24 @@ Plain-language definitions of the ML and project terms used across the docs. The
 "Here" are from the official spatial CV (2026-11-18); their source of truth is
 [ml/README.md](../ml/README.md).
 
-In one sentence: the model gives a road image a 1–4 grade; to know how far to
-trust it we hide images from it, ask it, and compare with the human grade — QWK,
-MAE, AUC etc. all measure that agreement from different angles.
+In one sentence: the model gives a road image a grade on the RQI scale; to know
+how far to trust it we hide images from it, ask it, and compare with the human
+grade — QWK, MAE, AUC etc. all measure that agreement from different angles.
+
+**The scale is defined once, in [shared/rqi_scale.json](../shared/rqi_scale.json)**
+(rules: [shared/README.md](../shared/README.md)): five levels,
+**5 Kiváló · 4 Jó · 3 Közepes · 2 Rossz · 1 Nagyon rossz** (higher = better; until
+2026-11-26 it was the mirror image). The model predicts 2–5 (Nagyon rossz has too
+few labels); a **bad road** is Közepes or worse (RQI ≤ 3). Other docs refer here
+instead of restating it. The ML numbers below were measured in the severity
+numbering (1 = Kiváló); the metrics are the same in either numbering.
 
 ## 1. Basics
 
 | Term | HU | Meaning — *here* |
 |---|---|---|
-| RQI (Road Quality Index) | útminőség-index | Our 1–4 road-quality scale; **lower is better** (1 excellent, 4 poor; 5 unused). |
+| RQI (Road Quality Index) | útminőség-index | Our 5-level road-quality scale (Kiváló, Jó, Közepes, Rossz, Nagyon rossz), **5 = Kiváló … 1 = Nagyon rossz**; the model uses 2–5. Definition: [shared/rqi_scale.json](../shared/rqi_scale.json). |
+| Severity orientation | – | The fixed numbering models, cut-points and ML files use: 1 = Kiváló, higher = worse (the pre-2026-11-26 numbering). Converted to the canonical scale only at the model ↔ DB boundary, so a direction flip changes no ML number ([shared/README.md](../shared/README.md)). |
 | Label / ground truth | címke | The human grade for an image; the truth we compare against. *Here: 1903 usable labelled images (`training_data`).* |
 | Model / artifact | modell / artifact | The trained predictor saved as one file with everything needed to serve it (head, recipe, cut-points, calibrator). *Here: `ml/cache/rqi_model.joblib` (saved with joblib).* |
 | Feature | jellemző | Numbers extracted from an image that the model works on. *Here: DINOv2 turns each image into 768 numbers.* |
@@ -24,13 +33,13 @@ MAE, AUC etc. all measure that agreement from different angles.
 | Term | HU | Meaning — *here* |
 |---|---|---|
 | Exact accuracy | pontos találat | Share of images where the predicted grade equals the human one. *Here: 61% on unseen streets.* |
-| ±1 accuracy | ±1 pontosság | Share off by at most one grade. *Here: 98.5%; no 1↔4 confusions.* |
+| ±1 accuracy | ±1 pontosság | Share off by at most one grade. *Here: 98.5%; no Kiváló↔Rossz confusions.* |
 | MAE (mean absolute error) | átlagos abszolút hiba | Average distance from the human grade, in grades. *Here: 0.405.* |
 | QWK (quadratic weighted kappa) | kvadratikusan súlyozott kappa | **Main score.** Agreement on an ordinal scale, punishing big misses quadratically and correcting for chance: 0 = guessing, 1 = perfect, > 0.8 strong. *Here: 0.774 (the old random-fold 0.889 was inflated by spatial leakage).* |
-| AUC (ROC AUC) | görbe alatti terület | Quality of the good/bad decision ("is RQI ≥ 3?"): probability that a truly bad road gets a higher risk than a truly good one. 0.5 = coin flip, 1 = perfect. *Here: 0.934 (Budapest only 0.78).* |
-| Confusion matrix | tévesztési mátrix | Table of true vs. predicted grade. *Here: errors are almost all next to the diagonal; class 2 is the weakest (recall 0.43).* |
+| AUC (ROC AUC) | görbe alatti terület | Quality of the good/bad decision ("is it Közepes or worse?"): probability that a truly bad road gets a higher risk than a truly good one. 0.5 = coin flip, 1 = perfect. *Here: 0.934 (Budapest only 0.78).* |
+| Confusion matrix | tévesztési mátrix | Table of true vs. predicted grade. *Here: errors are almost all next to the diagonal; Jó is the weakest class (recall 0.43).* |
 | Baseline | naiv alapvonal | A dumb reference the model must beat. *Here: a GPS-only k-NN (no image) gets QWK 0.60 on spatial CV; the image model 0.77.* |
-| Reliability table | megbízhatósági tábla | "When the model says X, what is it really?" *Here: a predicted 4 is truly 4 in 63% of cases and almost never a good road.* |
+| Reliability table | megbízhatósági tábla | "When the model says X, what is it really?" *Here: a predicted Rossz is truly Rossz in 63% of cases and almost never a good road.* |
 
 ## 3. Honest evaluation
 
@@ -63,7 +72,7 @@ MAE, AUC etc. all measure that agreement from different angles.
 | Ridge / SVR-RBF / ordinal logistic | – | Head types: linear, non-linear kernel regression, proportional-odds ordinal model. *Here: SVR-RBF ships; ordinal logistic is an equal fallback.* |
 | StandardScaler / pipeline | normalizálás / pipeline | Put features on a common scale; chain scaler → head so training and serving match. |
 | Cut-point / threshold | vágópont | Where the continuous score is cut into grades; tuned, not fixed at .5. |
-| Calibration, P(bad) | kalibráció, P(rossz) | Turns the score into a trustworthy probability that the road is bad (RQI ≥ 3); isotonic = the method. Shown on the point card as „Rossz út valószínűsége". |
+| Calibration, P(bad) | kalibráció, P(rossz) | Turns the score into a trustworthy probability that the road is bad (Közepes or worse — `bad_from` in the scale JSON); isotonic = the method. Shown on the point card as „Rossz út valószínűsége". |
 | TTA (test-time augmentation) | – | Averaging predictions over e.g. mirrored copies. Tried; did not help. |
 | Class imbalance | osztály-egyensúlytalanság | Some grades have far more examples than others. |
 | Epoch | epoch | One full pass over the training data. The shipped head is fit in one go; only the experimental fine-tune (`ml/finetune_lastblocks.py`) uses epochs. |

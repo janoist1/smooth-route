@@ -43,7 +43,7 @@ read-only deploy (`PUBLIC_READ_ONLY`), and reads only the pre-built
 type RoadSegment {
   id: ID!                   # "<osmWayId>:<pieceIndex>", stable across rebuilds
   path: [[Float!]!]!        # [[lat, lng], ...]
-  rqi: Int                  # class label (scale: see "The RQI scale" below)
+  rqi: Int                  # RQI level, 5 = Kiváló … 2 = Rossz (see "The RQI scale" below)
   score: Float              # aggregated continuous score, same scale
   pBad: Float               # 0–1, mean P(bad) of the frames
   confidence: Float!        # 0–1, after the image-age factor
@@ -60,7 +60,7 @@ type RoadSegment {
 type RouteQuality {
   totalLengthM: Float!
   coveredLengthM: Float!    # = sum(lengthByRqi)
-  lengthByRqi: [Float!]!    # metres per class, ascending class label (today 1, 2, 3, 4)
+  lengthByRqi: [Float!]!    # metres per class, BEST FIRST: Kiváló, Jó, Közepes, Rossz
   meanScore: Float          # length-weighted, on the score scale; null if nothing covered
   worstSegments: [RoadSegment!]!
 }
@@ -145,23 +145,26 @@ one small query per point — request it on a single `point`, not on a long
   `confidence.medium`, else `low`; fewer than `min_images` frames is always
   `low` (the class is still reported).
 
-**The RQI scale lives in one place.** Which class labels exist, which way the
-scale runs and where "bad" starts are stated only in the config —
-`thresholds` plus
+**The RQI scale.** The canonical definition is
+[shared/rqi_scale.json](../shared/rqi_scale.json) (rules: [shared/README.md](../shared/README.md)):
+5 = Kiváló, 4 = Jó, 3 = Közepes, 2 = Rossz, 1 = Nagyon rossz since 2026-11-26.
+The segment layer states it for itself in its config — `thresholds` plus
 
 ```json
-"scale": {"classes": [1, 2, 3, 4], "higher_is_worse": true, "bad_class": 3}
+"scale": {"classes": [2, 3, 4, 5], "higher_is_worse": false, "bad_class": 3}
 ```
 
-— and interpreted only by `RqiScale` in `segment_aggregation.py` (`classes` =
+— interpreted only by `RqiScale` in `segment_aggregation.py` (`classes` =
 labels by ascending score; `bad_class` and everything worse is "bad"). No other
-segment code compares a score or class to a literal. Flipping to
-"5 = excellent" (data x → 6 − x) is therefore a config edit —
-`"thresholds": [2.993, 3.528, 4.423]`,
-`"scale": {"classes": [2, 3, 4, 5], "higher_is_worse": false, "bad_class": 3}`
-— followed by a full `build_segments.py` run. `lengthByRqi` then lists classes
-2, 3, 4, 5 and `worstSegments` puts the lowest scores first. Both keys are
-required: a missing or invalid config file is an error, not a silent default.
+segment code compares a score or class to a literal. A backend test
+(`test_rqi_scale.py`) keeps this block equal to the canonical scale and the
+thresholds equal to the ML recipe (`ml/segment_recipe.json`, severity numbering)
+mirrored; `scripts/sync_rqi_scale.py --flip` mirrors both files together.
+`lengthByRqi` is always best first and `worstSegments` worst first, whichever
+way the numbers run. Both keys are required: a missing or invalid config file
+is an error, not a silent default. Until the data migration runs (pending,
+`backend/alembic/pending/`), stored segments are on the old numbering: rebuild
+them (`build_segments.py`) or migrate before serving this code.
 
 **Data flow.**
 

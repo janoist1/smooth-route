@@ -7,6 +7,7 @@ import json
 import datetime
 
 from app.core.timeutil import utcnow
+from app.core.rqi_scale import SCALE
 
 from app.core.database import SessionLocal
 from app.models.models import StreetViewImage, TrainingData as TrainingDataModel, Job as JobModel, User
@@ -472,11 +473,18 @@ class Query:
                 .count()
             )
             analyzed = db.query(StreetViewImage).filter(effective.isnot(None)).count()
-            good = db.query(StreetViewImage).filter(effective <= 2.0).count()
-            fair = db.query(StreetViewImage).filter(
-                effective > 2.0, effective <= 3.0
+            # Buckets on the canonical scale: good = Kiváló..Jó, fair = Közepes,
+            # poor = Rossz..Nagyon rossz (direction-agnostic helpers).
+            good_v, fair_v = SCALE.value_of("good"), SCALE.value_of("fair")
+            good = db.query(StreetViewImage).filter(
+                SCALE.at_or_better(effective, good_v)
             ).count()
-            poor = db.query(StreetViewImage).filter(effective > 3.0).count()
+            fair = db.query(StreetViewImage).filter(
+                SCALE.worse_than(effective, good_v), SCALE.at_or_better(effective, fair_v)
+            ).count()
+            poor = db.query(StreetViewImage).filter(
+                SCALE.worse_than(effective, fair_v)
+            ).count()
 
             per_day_rows = db.execute(
                 text(
@@ -691,15 +699,21 @@ class Query:
             
             avg_rqi = sum(effective_scores) / len(effective_scores) if effective_scores else 0.0
             
-            good = len([s for s in effective_scores if s <= 2.0])
-            fair = len([s for s in effective_scores if 2.0 < s <= 3.5])
-            poor = len([s for s in effective_scores if s > 3.5])
+            # NOTE: the fair|poor cut here is the Közepes/Rossz midpoint (3.5
+            # today) while adminStats cuts at Közepes itself; kept as-is (no
+            # behaviour change), unify in the scale phase 2.
+            good_v = SCALE.value_of("good")
+            fair_poor = SCALE.midpoint("fair", "poor")
+            good = len([s for s in effective_scores if SCALE.at_or_better(s, good_v)])
+            fair = len([s for s in effective_scores
+                        if SCALE.worse_than(s, good_v) and SCALE.at_or_better(s, fair_poor)])
+            poor = len([s for s in effective_scores if SCALE.worse_than(s, fair_poor)])
 
-            rqi1 = len([s for s in effective_scores if s < 1.5])
-            rqi2 = len([s for s in effective_scores if 1.5 <= s < 2.5])
-            rqi3 = len([s for s in effective_scores if 2.5 <= s < 3.5])
-            rqi4 = len([s for s in effective_scores if 3.5 <= s < 4.5])
-            rqi5 = len([s for s in effective_scores if s >= 4.5])
+            # rqiNCount = scores whose nearest level (halves toward the worse) is N
+            per_level = {v: 0 for v in SCALE.values}
+            for s in effective_scores:
+                per_level[SCALE.nearest(s, ties="worse")] += 1
+            rqi1, rqi2, rqi3, rqi4, rqi5 = (per_level[v] for v in (1, 2, 3, 4, 5))
 
             # 5. Pending analysis count (images without RQI score)
             if is_dino:

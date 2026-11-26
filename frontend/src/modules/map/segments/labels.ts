@@ -1,28 +1,17 @@
 // Hungarian wording + number formatting for the road-segment UI. Pure, so the
 // exact texts the owner sees are pinned by unit tests.
-import { getRQILabel } from '../../ui'
+import { RQI_MODEL_LEVELS, rqiScoreLabelHu } from '../../ui'
 import { formatCaptureDate, isStaleCapture, parseCaptureDate } from '../captureDate'
 import type { RoadSegment } from './types'
 
-// The quality bands come from getRQILabel (single source of truth for the
-// thresholds); only the wording is translated here.
-const QUALITY_HU: Record<string, string> = {
-  Excellent: 'Kiváló',
-  Good: 'Jó',
-  Fair: 'Közepes',
-  Poor: 'Rossz',
-  Critical: 'Nagyon rossz',
-  Unknown: 'Nincs adat',
-}
+/**
+ * Hungarian quality label for an RQI class or score — the canonical scale's
+ * label of the nearest level (shared/rqi_scale.json); "Nincs adat" if missing.
+ */
+export const rqiLabelHu = (score?: number | null): string => rqiScoreLabelHu(score)
 
-/** Hungarian quality label for an RQI class or score (1 = Kiváló … 4 = Rossz). */
-export const rqiLabelHu = (score?: number | null): string => {
-  const label = getRQILabel(score)
-  return QUALITY_HU[label] ?? label
-}
-
-/** Quality classes the app uses (5 is never produced), best first. */
-export const RQI_CLASSES = [1, 2, 3, 4] as const
+/** Quality classes the model produces (Nagyon rossz never), best first. */
+export const RQI_CLASSES: readonly number[] = RQI_MODEL_LEVELS
 
 const CONFIDENCE_HU: Record<string, string> = {
   high: 'magas',
@@ -117,7 +106,7 @@ export const formatPercent = (ratio?: number | null): string => {
   return `${Math.round(Math.max(0, Math.min(1, ratio)) * 100)}%`
 }
 
-/** "2,3" — the continuous score on the 1–4 scale; "–" when missing. */
+/** "2,3" — the continuous RQI score, one decimal; "–" when missing. */
 export const formatScore = (score?: number | null): string =>
   score == null || !Number.isFinite(score) ? '–' : formatDecimal(score, 1)
 

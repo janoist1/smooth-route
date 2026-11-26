@@ -1,8 +1,9 @@
-// RQI (Road Quality Index): 1 = excellent … 5 = unusable — lower is better.
-//
-// Single source of truth for how an RQI score is presented across the UI
-// (marker colour, quality label, and which model's score to show). Keep all
-// RQI display decisions here so the map, detail card and lists stay consistent.
+// RQI presentation helpers (marker colour, quality label, which model's score
+// to show). The scale itself (levels, labels, colours, direction, bad-road
+// boundary) is defined once in shared/rqi_scale.json and read via ./rqiScale;
+// nothing here hard-codes a level number or a threshold.
+import { RQI_UNKNOWN, nearestRqiLevel, rqiLevel, towardWorseRqiLevel } from './rqiScale'
+import type { RqiLevelKey } from './rqiScale'
 
 export type RqiDisplaySource = 'yolo' | 'dino' | 'both'
 
@@ -19,23 +20,31 @@ export interface ResolvedRqi {
   label: string
 }
 
-/** Marker / badge colour for a score (5-level scale). */
+/**
+ * Marker / badge colour for a score: the colour of the level reached when
+ * rounding toward the worse level (so 2.01 already shows Közepes yellow).
+ * Kiváló and Jó share the map green by design.
+ */
 export const getRQIColor = (score?: number | null): string => {
-  if (score === undefined || score === null) return '#888' // unknown
-  if (score <= 2.0) return '#4ade80' // green   – good
-  if (score <= 3.0) return '#facc15' // yellow  – fair
-  if (score <= 4.0) return '#f87171' // red     – poor
-  return '#ef4444' //                            dark red – very poor
+  if (score === undefined || score === null) return RQI_UNKNOWN.color
+  return rqiLevel(towardWorseRqiLevel(score))?.color ?? RQI_UNKNOWN.color
 }
 
-/** Human-readable quality label for a score. */
+// Legacy English wording kept verbatim: map/segments/labels.ts translates these
+// strings to Hungarian. New code should use rqiScoreLabelHu (./rqiScale).
+const LEGACY_LABEL_EN: Record<RqiLevelKey, string> = {
+  excellent: 'Excellent',
+  good: 'Good',
+  fair: 'Fair',
+  poor: 'Poor',
+  very_poor: 'Critical',
+}
+
+/** English quality label of the nearest level (halves toward the better one). */
 export const getRQILabel = (score?: number | null): string => {
-  if (score === undefined || score === null) return 'Unknown'
-  if (score <= 1.5) return 'Excellent'
-  if (score <= 2.5) return 'Good'
-  if (score <= 3.5) return 'Fair'
-  if (score <= 4.5) return 'Poor'
-  return 'Critical'
+  if (score === undefined || score === null) return RQI_UNKNOWN.label_en
+  const level = rqiLevel(nearestRqiLevel(score))
+  return level ? LEGACY_LABEL_EN[level.key] : RQI_UNKNOWN.label_en
 }
 
 /**

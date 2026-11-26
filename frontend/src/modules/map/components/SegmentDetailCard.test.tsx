@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { RQI_LEVELS, fromSeverity as sv } from '../../ui'
 import SegmentDetailCard from './SegmentDetailCard'
+import { formatScore } from '../segments/labels'
 import type { RoadSegment } from '../segments/types'
 
 const segment = (over: Partial<RoadSegment> = {}): RoadSegment => ({
@@ -9,8 +11,9 @@ const segment = (over: Partial<RoadSegment> = {}): RoadSegment => ({
     [47.5, 19.04],
     [47.501, 19.04],
   ],
-  rqi: 2,
-  score: 2.34,
+  // RQI values as sv(severity), 1 = best: valid for either scale numbering.
+  rqi: sv(2),
+  score: sv(2.34),
   pBad: 0.127,
   confidence: 0.87,
   confidenceLevel: 'high',
@@ -49,7 +52,11 @@ describe('SegmentDetailCard', () => {
   it('shows the quality label, score and bad-road probability', () => {
     renderCard()
     expect(screen.getByTestId('segment-quality')).toHaveTextContent('Jó')
-    expect(screen.getByTestId('segment-quality')).toHaveTextContent('Pontszám: 2,3 (1 = kiváló, 4 = rossz)')
+    const best = RQI_LEVELS[0]
+    const worst = RQI_LEVELS[RQI_LEVELS.length - 1]
+    expect(screen.getByTestId('segment-quality')).toHaveTextContent(
+      `Pontszám: ${formatScore(sv(2.34))} (${best.value} = kiváló, ${worst.value} = nagyon rossz)`,
+    )
     expect(screen.getByTestId('segment-pbad')).toHaveTextContent('Rossz út valószínűsége13%')
   })
 

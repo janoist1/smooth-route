@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { fromSeverity as sv, rqiLevel, rqiValue } from '../../ui'
 import RouteQualityCard from './RouteQualityCard'
+import { formatScore } from '../segments/labels'
 import type { RoadSegment, RouteQuality } from '../segments/types'
 
 const segment = (id: string, over: Partial<RoadSegment> = {}): RoadSegment => ({
@@ -9,8 +11,9 @@ const segment = (id: string, over: Partial<RoadSegment> = {}): RoadSegment => ({
     [47.5, 19.04],
     [47.501, 19.04],
   ],
-  rqi: 4,
-  score: 3.8,
+  // RQI values as sv(severity), 1 = best: valid for either scale numbering.
+  rqi: sv(4),
+  score: sv(3.8),
   pBad: 0.9,
   confidence: 0.8,
   confidenceLevel: 'high',
@@ -27,10 +30,10 @@ const quality = (over: Partial<RouteQuality> = {}): RouteQuality => ({
   totalLengthM: 62380,
   coveredLengthM: 30000,
   lengthByRqi: [15000, 9000, 4500, 1500],
-  meanScore: 1.9,
+  meanScore: sv(1.9),
   worstSegments: [
     segment('w1'),
-    segment('w2', { roadName: null, highway: 'tertiary', rqi: 3, lengthM: 1240 }),
+    segment('w2', { roadName: null, highway: 'tertiary', rqi: sv(3), lengthM: 1240 }),
   ],
   ...over,
 })
@@ -61,10 +64,10 @@ describe('RouteQualityCard', () => {
   it('draws the stacked bar with one part per class, sized by share of the route', () => {
     renderCard()
     // 15000 / 62380 = 24.05 %
-    expect(screen.getByTestId('route-bar-1')).toHaveStyle({ width: '24.05%' })
-    expect(screen.getByTestId('route-bar-2')).toHaveStyle({ width: '14.43%' })
-    expect(screen.getByTestId('route-bar-3')).toHaveStyle({ width: '7.21%' })
-    expect(screen.getByTestId('route-bar-4')).toHaveStyle({ width: '2.40%' })
+    expect(screen.getByTestId('route-bar-excellent')).toHaveStyle({ width: '24.05%' })
+    expect(screen.getByTestId('route-bar-good')).toHaveStyle({ width: '14.43%' })
+    expect(screen.getByTestId('route-bar-fair')).toHaveStyle({ width: '7.21%' })
+    expect(screen.getByTestId('route-bar-poor')).toHaveStyle({ width: '2.40%' })
     expect(screen.getByRole('img')).toHaveAccessibleName(
       'Kiváló: 15,0 km, Jó: 9,0 km, Közepes: 4,5 km, Rossz: 1,5 km, nincs adat: 52%',
     )
@@ -72,29 +75,29 @@ describe('RouteQualityCard', () => {
 
   it('lists the length per class and the unmeasured rest', () => {
     renderCard()
-    expect(screen.getByTestId('route-class-1')).toHaveTextContent('Kiváló 15,0 km')
-    expect(screen.getByTestId('route-class-4')).toHaveTextContent('Rossz 1,5 km')
+    expect(screen.getByTestId('route-class-excellent')).toHaveTextContent('Kiváló 15,0 km')
+    expect(screen.getByTestId('route-class-poor')).toHaveTextContent('Rossz 1,5 km')
     expect(screen.getByTestId('route-class-unknown')).toHaveTextContent('nincs adat 52%')
   })
 
   it('leaves out classes with no length', () => {
     renderCard({ quality: quality({ coveredLengthM: 24000, lengthByRqi: [15000, 9000, 0, 0] }) })
-    expect(screen.queryByTestId('route-bar-3')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('route-class-4')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('route-bar-fair')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('route-class-poor')).not.toBeInTheDocument()
   })
 
   it('shows the length-weighted average as a label', () => {
     renderCard()
     expect(screen.getByTestId('route-mean')).toHaveTextContent(
-      'Átlagos minőség: Jó (1,9, hosszal súlyozva)',
+      `Átlagos minőség: Jó (${formatScore(sv(1.9))}, hosszal súlyozva)`,
     )
   })
 
-  it('colours the average badge like its label (2,4 is "Jó", so green)', () => {
-    renderCard({ quality: quality({ meanScore: 2.4 }) })
+  it('colours the average badge like its label (Jó + 0,4 is still "Jó")', () => {
+    renderCard({ quality: quality({ meanScore: sv(2.4) }) })
     const badge = screen.getByTestId('route-mean-badge')
     expect(badge).toHaveTextContent('Jó')
-    expect(badge.style.getPropertyValue('--road-color')).toBe('#4ade80')
+    expect(badge.style.getPropertyValue('--road-color')).toBe(rqiLevel(rqiValue('good'))!.color)
   })
 
   it('lists the worst segments and reports a click', () => {

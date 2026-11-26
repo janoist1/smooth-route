@@ -3,21 +3,12 @@
   "segment_length_m": 200,
   "aggregator": "median_score",
   "trim_fraction": 0.0,
-  "thresholds": [
-    1.577,
-    2.496,
-    3.052
-  ],
+  "thresholds": [2.948, 3.504, 4.423],
   "p_bad_threshold": 0.5,
   "min_images": 2,
   "scale": {
-    "classes": [
-      1,
-      2,
-      3,
-      4
-    ],
-    "higher_is_worse": true,
+    "classes": [2, 3, 4, 5],
+    "higher_is_worse": false,
     "bad_class": 3
   },
   "confidence": {
