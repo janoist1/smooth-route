@@ -45,3 +45,22 @@ def test_wilson_interval_brackets_the_rate():
 
 def test_haversine_roughly_one_km_per_0009_deg_lat():
     assert 990 < pp.haversine_m(47.0, 19.0, 47.009, 19.0) < 1010
+
+
+def test_nearest_cut_picks_the_closest_threshold():
+    cuts = [2.466, 3.175]
+    assert pp.nearest_cut(2.5, cuts) == (2.466, pytest_approx(0.034))
+    cut, dist = pp.nearest_cut(3.0, cuts)
+    assert cut == 3.175 and round(dist, 3) == 0.175
+
+
+def test_budapest_bbox_excludes_the_city_only():
+    assert pp.in_bbox(47.4979, 19.0402)  # Deák tér
+    assert not pp.in_bbox(46.9, 17.9)  # Balaton
+    assert not pp.in_bbox(47.19, 18.41)  # Székesfehérvár
+
+
+def pytest_approx(x):
+    import pytest
+
+    return pytest.approx(x, abs=1e-6)

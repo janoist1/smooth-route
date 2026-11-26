@@ -6,6 +6,17 @@ agree with the human order well enough to generate ranking labels at scale.
 
     .venv/bin/python ml/pairwise_pilot.py make  [--run run1] [--seed 20261126]
     .venv/bin/python ml/pairwise_pilot.py score [--run run1]
+    .venv/bin/python ml/pairwise_pilot.py make-unsure   [--run unsure1] [--n 300]
+    .venv/bin/python ml/pairwise_pilot.py export-unsure [--run unsure1]
+
+`make-unsure` (T-64) builds pairs of UNLABELLED usable frames outside Budapest
+where the champion is unsure: both severity scores within UNSURE_BAND of the
+same 2|3 or 3|4 cut-point and within MAX_SCORE_GAP of each other, >= 200 m
+apart, half within one ~25 km area cell and half across. Severity = 6 - the
+DB's dino_score (the DB is on the 5 = best scale since Alembic 0006); the
+cut-points are the live artifact's thresholds (severity numbering).
+`export-unsure` writes data/vlm/pairwise/unsure_pairs.csv with the confident
+(high/medium) judgments only.
 
 `make` samples ~120 pairs of labelled frames, stratified by the human grade
 difference (0 / 1 / 2+), half within one region and half across regions, at
@@ -43,6 +54,14 @@ OOF = REPO / "ml" / "cache" / "oof_spatial_champion.csv"
 VLM_ABS = REPO / "ml" / "cache" / "vlm_attributes.csv"
 
 PAIRS_PER_BATCH = 10
+# Unsure pairs (T-64).
+UNSURE_BAND = 0.25          # |severity - cut| for "the model is unsure"
+MAX_SCORE_GAP = 0.4         # |severity_a - severity_b|
+UNSURE_MIN_DISTANCE_M = 200.0
+AREA_CELL_DEG = 0.25        # ~25 km cells for "same area"
+# Budapest (and its agglomeration edge): the pilot was not reliable there.
+BUDAPEST_BBOX = (47.35, 18.90, 47.62, 19.35)  # min_lat, min_lng, max_lat, max_lng
+MODEL_ARTIFACT = REPO / "ml" / "cache" / "rqi_model.joblib"
 MIN_DISTANCE_M = 300.0
 # Pairs per human |grade difference|.
 STRATA = {0: 30, 1: 45, 2: 30, 3: 15}
@@ -249,16 +268,173 @@ def score(run: str) -> dict:
     return res
 
 
+# --------------------------------------------------------------------------
+# make-unsure / export-unsure (T-64)
+# --------------------------------------------------------------------------
+
+def nearest_cut(severity: float, cuts: list[float]) -> tuple[float, float]:
+    """(cut, |severity - cut|) for the closest cut-point."""
+    cut = min(cuts, key=lambda c: abs(severity - c))
+    return cut, abs(severity - cut)
+
+
+def in_bbox(lat: float, lng: float, bbox=BUDAPEST_BBOX) -> bool:
+    return bbox[0] <= lat <= bbox[2] and bbox[1] <= lng <= bbox[3]
+
+
+def _db_url() -> str:
+    url = os.environ.get("DATABASE_URL")
+    if url:
+        return url
+    env = REPO / ".env"
+    if env.exists():
+        for line in env.read_text().splitlines():
+            if line.startswith("DATABASE_URL="):
+                return line.split("=", 1)[1].strip().strip("'\"")
+    return "postgresql://postgres:postgres@localhost:5433/smooth_route"
+
+
+def load_unsure_frames(cuts: list[float]) -> pd.DataFrame:
+    import psycopg2
+
+    conn = psycopg2.connect(_db_url())
+    conn.set_session(readonly=True)
+    labelled = set(pd.read_csv(DATASET).image_filename)
+    cur = conn.cursor()
+    cur.execute("SELECT image_filename FROM training_data WHERE manual_rqi IS NOT NULL")
+    labelled |= {r[0] for r in cur.fetchall()}
+    cur.execute(
+        """SELECT id, image_url, latitude, longitude, (analysis_metadata->>'dino_score')::float
+           FROM street_view_images
+           WHERE image_url LIKE 'images/%%'
+             AND analysis_metadata->>'dino_score' IS NOT NULL
+             AND coalesce(analysis_metadata->'frame_quality'->>'usable', 'false') = 'true'"""
+    )
+    rows = []
+    for fid, url, lat, lng, score in cur.fetchall():
+        fname = url.split("/", 1)[1]
+        if fname in labelled or in_bbox(lat, lng) or not (IMAGES / fname).exists():
+            continue
+        severity = 6.0 - score
+        cut, dist = nearest_cut(severity, cuts)
+        if dist <= UNSURE_BAND:
+            rows.append({"id": fid, "file": fname, "lat": lat, "lng": lng, "severity": severity,
+                         "cut": cut, "area": f"{int(lat // AREA_CELL_DEG)}_{int(lng // AREA_CELL_DEG)}"})
+    conn.close()
+    return pd.DataFrame(rows)
+
+
+def make_unsure(run: str, n: int, seed: int) -> None:
+    import joblib
+
+    out = OUT_ROOT / run
+    if out.exists():
+        raise SystemExit(f"{out} exists — pick another --run")
+    thresholds = list(joblib.load(MODEL_ARTIFACT)["thresholds"])
+    cuts = thresholds[1:]  # 2|3 and 3|4 (severity numbering)
+    df = load_unsure_frames(cuts)
+    print(f"unsure unlabelled usable frames outside Budapest: {len(df)} "
+          f"(cuts {[round(c, 3) for c in cuts]}, areas {df.area.nunique()})")
+    rng = random.Random(seed)
+    order = list(df.index)
+    rng.shuffle(order)
+    used: set[int] = set()
+    pairs = []
+    for want_same in [i % 2 == 0 for i in range(n * 3)]:
+        if len(pairs) >= n:
+            break
+        for a in order:
+            if a in used:
+                continue
+            cands = [
+                b for b in order
+                if b not in used and b != a
+                and df.cut[b] == df.cut[a]
+                and abs(df.severity[a] - df.severity[b]) <= MAX_SCORE_GAP
+                and (df.area[b] == df.area[a]) == want_same
+                and haversine_m(df.lat[a], df.lng[a], df.lat[b], df.lng[b]) >= UNSURE_MIN_DISTANCE_M
+            ]
+            if not cands:
+                continue
+            b = rng.choice(cands)
+            used.update((a, b))
+            pairs.append((a, b, want_same))
+            break
+    rng.shuffle(pairs)
+    rows = []
+    for i, (a, b, same) in enumerate(pairs):
+        if rng.random() < 0.5:
+            a, b = b, a
+        pid = f"u{i + 1:03d}"
+        batch = f"b{i // PAIRS_PER_BATCH + 1:02d}"
+        bdir = out / batch
+        bdir.mkdir(parents=True, exist_ok=True)
+        for side, r in (("A", a), ("B", b)):
+            os.link(IMAGES / df.file[r], bdir / f"{pid}_{side}.jpg")
+        rows.append({
+            "pair": pid, "batch": batch, "same_area": same, "cut": round(df.cut[a], 3),
+            "id_a": int(df.id[a]), "id_b": int(df.id[b]), "file_a": df.file[a], "file_b": df.file[b],
+            "severity_a": round(df.severity[a], 3), "severity_b": round(df.severity[b], 3),
+            "area_a": df.area[a], "area_b": df.area[b],
+            "distance_m": round(haversine_m(df.lat[a], df.lng[a], df.lat[b], df.lng[b])),
+        })
+    (out / "answers").mkdir()
+    key = pd.DataFrame(rows)
+    key.to_csv(out / "key.csv", index=False)
+    print(f"{len(key)} pairs in {key.batch.nunique()} batches -> {out}")
+    print(key.groupby(["cut", "same_area"]).size().to_string())
+
+
+def export_unsure(run: str) -> Path:
+    out = OUT_ROOT / run
+    key = pd.read_csv(out / "key.csv")
+    answers = {}
+    for f in sorted((out / "answers").glob("b*.json")):
+        for a in json.loads(f.read_text()):
+            answers[a["pair"]] = a
+    rows = []
+    for r in key.to_dict("records"):
+        a = answers.get(r["pair"])
+        if a is None or a.get("confidence") not in ("high", "medium") or a.get("worse") not in ("A", "B"):
+            continue
+        worse_is_a = a["worse"] == "A"
+        rows.append({
+            "pair": r["pair"],
+            "worse_id": r["id_a"] if worse_is_a else r["id_b"],
+            "better_id": r["id_b"] if worse_is_a else r["id_a"],
+            "worse_file": r["file_a"] if worse_is_a else r["file_b"],
+            "better_file": r["file_b"] if worse_is_a else r["file_a"],
+            "confidence": a["confidence"],
+            "model_severity_worse": r["severity_a"] if worse_is_a else r["severity_b"],
+            "model_severity_better": r["severity_b"] if worse_is_a else r["severity_a"],
+            "cut": r["cut"], "same_area": r["same_area"], "note": a.get("note", ""),
+        })
+    path = OUT_ROOT / "unsure_pairs.csv"
+    res = pd.DataFrame(rows)
+    res.to_csv(path, index=False)
+    total = len(answers)
+    agree = int((res.model_severity_worse > res.model_severity_better).sum()) if len(res) else 0
+    print(f"answered {total}/{len(key)}; kept {len(res)} confident pairs -> {path}")
+    if len(res):
+        print(f"model already orders {agree}/{len(res)} ({agree / len(res):.0%}) of the kept pairs the same way")
+    return path
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("cmd", choices=["make", "score"])
+    ap.add_argument("cmd", choices=["make", "score", "make-unsure", "export-unsure"])
     ap.add_argument("--run", default="run1")
     ap.add_argument("--seed", type=int, default=20261126)
+    ap.add_argument("--n", type=int, default=300, help="make-unsure: number of pairs")
     args = ap.parse_args()
     if args.cmd == "make":
         make(args.run, args.seed)
-    else:
+    elif args.cmd == "score":
         score(args.run)
+    elif args.cmd == "make-unsure":
+        make_unsure(args.run, args.n, args.seed)
+    else:
+        export_unsure(args.run)
 
 
 if __name__ == "__main__":
