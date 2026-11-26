@@ -9,6 +9,9 @@ const config: CodegenConfig = {
       plugins: [],
       config: {
         enumsAsTypes: true,
+        // tsconfig has verbatimModuleSyntax: without this the generated files
+        // use value imports for types and `tsc -b` (typecheck/build) fails.
+        useTypeImports: true,
       },
       presetConfig: {
         gqlTagName: 'gql',
