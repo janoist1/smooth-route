@@ -8,7 +8,6 @@ from typing import List, Optional
 from app.core.auth import Identity, require_user
 from app.core.database import SessionLocal
 from app.models.models import StreetViewImage
-from app.core.config import settings
 from app.services.job_service import (
     JobStatus,
     create_job,
@@ -61,12 +60,6 @@ class PointDetailResponse(BaseModel):
     created_at: str
 
     model_config = ConfigDict(from_attributes=True)
-
-
-@router.get("/api/v1/config")
-async def get_config():
-    """Get frontend configuration (Google Maps API key)."""
-    return {"google_maps_api_key": settings.GOOGLE_MAPS_API_KEY or ""}
 
 
 @router.get("/api/v1/points/{point_id}", response_model=PointDetailResponse)

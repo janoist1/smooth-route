@@ -5,17 +5,33 @@
   "trim_fraction": 0.0,
   "thresholds": [
     1.577,
-    2.472,
-    3.007
+    2.496,
+    3.052
   ],
-  "p_bad_threshold": 0.49,
+  "p_bad_threshold": 0.5,
   "min_images": 2,
-  "recommended_frame_spacing_m": 50,
+  "recommended_frame_spacing_m": 30,
+  "sampling": {
+    "base_spacing_m": 50,
+    "dense_spacing_m": 30,
+    "densify_if": [
+      "low_confidence"
+    ],
+    "single_pass_spacing_m": 30
+  },
   "confidence": {
     "n_ref": 0.5,
-    "spread_ref": 1.5,
-    "margin_ref": 0.5,
-    "high": 0.7,
-    "medium": 0.6
+    "spread_ref": 2.0,
+    "margin_ref": 0.6,
+    "high": 0.8,
+    "medium": 0.55
+  },
+  "integer_class_fallback": {
+    "aggregator": "mean_class",
+    "thresholds": [
+      1.511,
+      2.52,
+      3.207
+    ]
   }
 }

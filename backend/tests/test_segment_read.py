@@ -8,6 +8,7 @@ import pytest
 from app.services.route_quality import ROUTE_BUFFER_M
 from app.services.segment_aggregation import config_from_dict
 from app.services.segment_read import (
+    MAX_PATH_LENGTH_M,
     MAX_PATH_POINTS,
     SEGMENTS_MIN_ZOOM,
     SegmentRecord,
@@ -80,6 +81,18 @@ def test_normalize_path_accepts_lat_lng_pairs():
 def test_normalize_path_rejects_garbage(bad):
     with pytest.raises(ValueError):
         normalize_path(bad)
+
+
+def test_normalize_path_caps_the_total_length():
+    # Cost is per 10 m of path, so a few points can still be expensive:
+    # 1000 points zig-zagging 0.5 degrees of latitude is ~55 000 km.
+    zigzag = [[47.0 + 0.5 * (i % 2), 19.0] for i in range(1000)]
+    with pytest.raises(ValueError, match="too long"):
+        normalize_path(zigzag)
+    # A real cross-country route stays well inside the cap.
+    budapest_to_szeged = [[47.4979, 19.0402], [46.2530, 20.1414]]
+    assert len(normalize_path(budapest_to_szeged)) == 2
+    assert MAX_PATH_LENGTH_M >= 1_000_000
 
 
 def test_normalize_path_caps_the_point_count():

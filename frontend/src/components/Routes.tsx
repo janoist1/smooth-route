@@ -6,6 +6,7 @@ import TrainingPage from './pages/TrainingPage'
 import TrainingDashboardPage from './pages/TrainingDashboardPage'
 import SettingsPage from './pages/SettingsPage'
 import AdminStatsPage from './pages/AdminStatsPage'
+import QuickLabelPage from './pages/QuickLabelPage'
 import { ROUTES } from '../routes'
 
 const Routes: React.FC = () => {
@@ -17,6 +18,14 @@ const Routes: React.FC = () => {
         element={
           <RequireAdmin>
             <TrainingDashboardPage />
+          </RequireAdmin>
+        }
+      />
+      <Route
+        path={ROUTES.QUICK_LABEL.path}
+        element={
+          <RequireAdmin>
+            <QuickLabelPage />
           </RequireAdmin>
         }
       />

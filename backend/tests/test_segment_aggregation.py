@@ -57,8 +57,8 @@ def test_shipped_config_is_valid_and_states_the_scale_explicitly():
     # Scale-independent part of the ML recipe (ml/segment_recipe.json).
     assert cfg.segment_length_m == 200
     assert cfg.aggregator == "median_score"
-    assert (cfg.p_bad_threshold, cfg.min_images) == (0.49, 2)
-    assert cfg.confidence == ConfidenceConfig(0.5, 1.5, 0.5, 0.7, 0.6)
+    assert (cfg.p_bad_threshold, cfg.min_images) == (0.5, 2)
+    assert cfg.confidence == ConfidenceConfig(0.5, 2.0, 0.6, 0.8, 0.55)
     assert cfg.age == AgeConfig(3, 5)
 
 

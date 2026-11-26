@@ -1,38 +1,37 @@
-# API-felület leltár
+# API surface inventory
 
-*Frissítve: 2026-11-26 (road-segment layer: `roadSegments` / `routeQuality`).*
+*Updated: 2026-11-26 (road-segment layer: `roadSegments` / `routeQuality`; `/api/v1/config` removed).*
 
-## Elsődleges termék-API: GraphQL
+## Primary product API: GraphQL
 
-A Vite/React frontend a `/graphql` felületet használja a pontokhoz,
-útvonal-feldolgozáshoz, beállításokhoz, tanításhoz és review-műveletekhez.
-Az automatikus YOLO-jelölés a `performReviewAction(action_type:
-"auto_detect")` mutáción keresztül fut; a közvetlen `detectObjects` mutáció
-megmarad programozott GraphQL-fogyasztóknak.
+The Vite/React frontend uses `/graphql` for points, route processing,
+settings, training and review actions. Automatic YOLO marking runs through the
+`performReviewAction(action_type: "auto_detect")` mutation; the direct
+`detectObjects` mutation stays for programmatic GraphQL consumers.
 
-Read-only RQI-diagnosztika (D3): a `Point` típus a nyers DINO-becslést és a
-kalibrált rossz-út valószínűséget is kiadja (`dinoScore`, `dinoPBad`,
-az `analysisMetadata`-ból származtatva); a `rqiModelInfo` query az éles
-artifact modellkártyáját adja (verzió, recept, tanítóméret, CV-metrikák) a
-beállítások felülethez.
+Read-only RQI diagnostics (D3): the `Point` type also exposes the raw DINO
+estimate and the calibrated bad-road probability (`dinoScore`, `dinoPBad`,
+derived from `analysisMetadata`); the `rqiModelInfo` query returns the live
+artifact's model card (version, recipe, training size, CV metrics) for the
+settings UI.
 
-Képkor: a `Point.captureDate` (`String`, `"ÉÉÉÉ-HH"`, `null` = ismeretlen) a
-Street View-panoráma **készítési hónapja** a Metadata API `date` mezőjéből —
-az RQI ennek a hónapnak az útállapotát írja le, nem a `createdAt`-ét (az a mi
-letöltésünk ideje). Anonim és a read-only deployon is olvasható (`point`,
-`points`, `trainingPoints`). DB-ben `street_view_images.capture_date` (`DATE`,
-a hónap 1-je; Alembic `0004`). Új pontoknál a gyűjtés (`route_collector`) és a
-letöltés (`image_downloader`) tölti; a meglévőket a
-`backend/scripts/backfill_capture_date.py` (rate-limitelt, újrafuttatható,
-csak a `NULL`-okat nézi). `pano_id` nélküli pontnál csak akkor ír dátumot, ha
-a ma élő panoráma a letöltésünk hónapjánál korábbi — különben a Google azóta
-lecserélte a képet, és a dátum nem a mi képünké. A `publish.py` átviszi a
-mezőt a Neonba. A frontend 4 évnél régebbi képnél figyelmeztet, és a térképen
-opcionálisan halványítja ezeket a pontokat.
+Image age: `Point.captureDate` (`String`, `"YYYY-MM"`, `null` = unknown) is the
+Street View panorama's **capture month** from the Metadata API `date` field —
+the RQI describes the road as of that month, not as of `createdAt` (our
+download time). Readable anonymously and on the read-only deploy (`point`,
+`points`, `trainingPoints`). Stored as `street_view_images.capture_date`
+(`DATE`, 1st of the month; Alembic `0004`). New points get it from collection
+(`route_collector`) and download (`image_downloader`); existing ones from
+`backend/scripts/backfill_capture_date.py` (rate-limited, re-runnable, only
+looks at `NULL`s). For a point without `pano_id` it only writes a date when the
+panorama live today predates our download month — otherwise Google has
+replaced the imagery since, and the date is not our image's. `publish.py`
+carries the field to Neon. The frontend warns for images older than 4 years
+and can optionally dim those points on the map.
 
 ## Road-segment layer (`roadSegments`, `routeQuality`, `segmentFrames`)
 
-*Added 2026-11-26. New sections of this file are written in English.*
+*Added 2026-11-26.*
 
 Quality aggregated on real road geometry: OpenStreetMap ways, stitched into
 roads and cut into pieces of about 200 m, each piece summarising the Street
@@ -89,7 +88,8 @@ are in practice never null; the types stay nullable as the contract says.
   at the middle of the unsimplified piece, heading along the road. Free link,
   no API call. (It is a viewpoint link: Google picks the nearest panorama.)
 
-**`routeQuality`** — `path` = `[[lat, lng], ...]` (at most 20 000 points). The
+**`routeQuality`** — `path` = `[[lat, lng], ...]` (at most 20 000 points and
+2 000 km: the cost grows with the length, sampled every 10 m). The
 path is sampled every 10 m; a sample belongs to the nearest segment within
 **15 m** whose direction is within **45°** of the route's (modulo 180°, so
 both travel directions count). Samples more than 5 m past a segment's end do
@@ -200,22 +200,56 @@ ODbL. Any map that draws `RoadSegment.path` must show
 "© OpenStreetMap contributors" (link: `https://www.openstreetmap.org/copyright`),
 whichever base map is selected.
 
-## Megtartott REST-végpontok
+## Retained REST endpoints
 
-| Végpont | Indok |
+## Label queue / quick-rate screen (admin-only, 2026-11-26)
+
+Labelling at scale: `labelQueue` picks the unlabelled frames (image on disk,
+no `manual_rqi`) whose label helps the model most, and `/training/quick`
+("Gyors címkézés") rates them one tap at a time. Own resolver module
+(`app/graphql/label_queue.py`), merged into the full schema in `schema.py`; it
+is **not** on the public read schema.
+
+| Operation | Purpose |
 |---|---|
-| `GET /api/v1/config` | A beépített statikus térkép Google Maps konfigurációja |
-| `GET /api/v1/points`, `GET /api/v1/points/{id}` | A statikus térkép és a README-ben dokumentált egyszerű API |
-| `POST /api/v1/process-route` | A statikus térkép útvonal-feldolgozása |
-| `GET /api/v1/job/{id}` | A statikus térkép állapotlekérdezése |
-| `GET /api/v1/job/{id}/stream` | A React frontend SSE állapotcsatornája |
-| `POST /api/v1/job/{id}/stop`, `GET /api/v1/jobs/active` | Job-életciklus és visszacsatlakozás |
+| `labelQueue(strategy: MIXED\|UNCERTAIN\|DIVERSE, limit, excludeIds)` | next frames + why (`reason`, `area`, `boundary`, `uncertainty`, `cellLabels`) + the model guess (`modelScore/modelRqi/modelPBad`, hidden in the UI until rated) + `stats` |
+| `labelExamples(perClass)` | rubric thumbnails for every scale level: integer-labelled frames whose out-of-fold prediction agrees best with the label (`ml/cache/oof_table.csv`); levels without OOF rows (Nagyon rossz) fall back to the live model score |
+| `quickLabel(input: {pointId, rqi, strategy, reason, revealedModel, elapsedMs})` — `rqi` is any level of `shared/rqi_scale.json` (1 = Kiváló … 5 = Nagyon rossz today) | upserts `training_data.manual_rqi` (same row shape as `saveTrainingData`; annotations/tags/comment kept); context in `meta_data.quick_label` |
+| `undoQuickLabel(pointId)` | reverts a quick label: deletes a row it created (if nobody annotated it), else restores the previous `manual_rqi`; never touches review-page labels |
 
-A `/images`, `/previews` és `/api/v1/exports` fájlkiszolgáló végpont, nem
-üzleti API-duplikáció.
+Selection (pure logic, `app/services/label_queue.py`, tested in
+`tests/test_label_queue.py`): frames < 50 m from a labelled frame and repeat
+panoramas are excluded; no two served frames are < 50 m apart (incl. the
+`excludeIds` the client holds). **uncertain** = model score closest to an
+ordinal cut-point, round-robin over the 1|2, 2|3, 3|4 boundaries, near-ties
+Budapest first. **diverse** = ≥ 150 m thinning, one frame per 1 km cell per
+round (the spatial-CV grid of `ml/spatial_cv.py`), emptiest cell first,
+Budapest first, then areas with the fewest labels. **mixed** (default)
+interleaves the two. Model outputs (`modelScore`, `modelRqi`, `boundary`) are
+converted from the model's severity orientation to the canonical scale direction
+(`app.core.rqi_scale`); the model only predicts the scale's `model_levels` (1–4),
+which is why the queue is also how Nagyon rossz labels get collected. Scores: `analysis_metadata.dino_score` when present,
+else `data/cache/frame_scores.csv` (`backend/scripts/score_frames.py`, same
+v2 artifact, DB untouched).
 
-## Kivezetett duplikáció
+| Endpoint | Reason |
+|---|---|
+| `GET /api/v1/points`, `GET /api/v1/points/{id}` | Simple API documented in the README (the static map that also used it is gone) |
+| `POST /api/v1/process-route` | Route processing (formerly for the static map) |
+| `GET /api/v1/job/{id}` | Job status lookup (formerly for the static map) |
+| `GET /api/v1/job/{id}/stream` | SSE status channel of the React frontend |
+| `POST /api/v1/job/{id}/stop`, `GET /api/v1/jobs/active` | Job lifecycle and reconnect |
 
-`POST /api/v1/inference/detect` megszűnt: nem volt hívója, és ugyanazt a
-funkciót a GraphQL `detectObjects`, illetve a termékben használt
-`performReviewAction` már lefedi. Külön REST annotációs végpont nincs.
+`/images`, `/previews` and `/api/v1/exports` are file-serving endpoints, not
+business-API duplicates.
+
+## Removed
+
+`POST /api/v1/inference/detect` is gone: it had no caller, and the GraphQL
+`detectObjects` and the product's `performReviewAction` already cover it. There
+is no separate REST annotation endpoint.
+
+`GET /api/v1/config` is gone (2026-11-26) and the GraphQL `config` field is
+admin-only: both handed the server-side Google Maps key to anonymous callers
+(also on the public read-only deploy), and their only consumer, the static
+`map.html`, no longer exists.

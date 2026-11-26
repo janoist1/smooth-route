@@ -421,6 +421,497 @@ Reprodukálás:
 .venv/bin/python ml/evaluate_artifact.py     # kapu (PASS a bajnokra)
 ```
 
+## Era 7 — Segment-level aggregation (2026-11-26)
+
+> **TL;DR:** the map shows road segments, not single frames, so we measured
+> the model at segment level, under the same spatial protocol as Era 6.
+> Taking the **median frame score over a ~200 m segment** (with cut-points
+> re-tuned for the aggregated score) lifts agreement with the human segment
+> label from **QWK 0.78 → 0.84, MAE 0.40 → 0.29, exact class 61% → 71%,
+> bad-road AUC 0.94 → 0.97**. The gain is real but modest, because
+> neighbouring frames share most of their error: averaging cannot remove an
+> error that the whole segment has in common. Two useful consequences:
+> **(1)** a few frames per segment are as good as twenty: a frame every
+> **50 m, plus a second pass at 30 m on the low-confidence fifth of the
+> road**, gives the same segment quality as today's 10 m with **26% of the
+> frames** (a plain 30 m spacing: 33%); **(2)** how sure we are about a
+> segment depends on how far its score is from the nearest cut-point, hardly
+> on the number of frames or their spread. One limit: in **Budapest**, the region the model
+> already reads worst, aggregation does not help. The recipe for the backend
+> is `ml/segment_recipe.json`. No model was changed.
+
+### What was measured
+
+Everything comes from `ml/segment_eval.py` (one command, prints every table
+below).
+
+- **Frame predictions:** the champion's out-of-fold predictions under the
+  official protocol (1 km cells, StratifiedGroupKFold 5, seed 42, nested
+  cut-points): QWK 0.774 / MAE 0.405 / AUC 0.934, identical to the gate.
+  Saved to `ml/cache/oof_spatial_champion.csv` (score, class, P(bad), fold).
+  P(bad) is an isotonic calibrator fitted inside each fold.
+- **Chains:** frames in capture order; a chain breaks at a gap > 40 m, at a
+  turn > 45°, and at a 1 km cell border. The last rule guarantees that a
+  segment never straddles train and test. Result: 91 chains, 19.5 km, frames
+  ~10 m apart.
+- **Segments:** every chain is cut into equal pieces of about L metres,
+  L ∈ {1 frame, 50, 100, 150, 200, 300 m}. **Segment truth = the median human
+  label** of its frames.
+- **Honest tuning:** aggregation shrinks the spread of the scores, so the
+  score → class cut-points are re-tuned for every aggregator and length, on
+  the training folds only (their inner out-of-fold frame scores, aggregated
+  the same way). Test labels never touch a cut-point.
+- **Metrics** are weighted by segment length. Confidence intervals resample
+  whole cells (1000 times). Every length is also cut three ways (cuts shifted
+  by 0, ⅓ and ⅔ of a segment); the "mean of 3 segmentations" is the steadier
+  number, because a single segmentation moves QWK by ±0.01–0.02.
+
+Single-frame numbers in this section are length-weighted (QWK 0.780), so they
+differ slightly from the official per-image 0.774.
+
+### How homogeneous are real segments?
+
+Human labels inside one segment (shares of road length):
+
+| segment length | segments | frames / segment | all labels identical | good and bad frames mixed | frames equal to the segment label |
+|---|---|---|---|---|---|
+| 50 m | 412 | 5 | 57% | 24% | 86% |
+| 100 m | 225 | 10 | 40% | 35% | 82% |
+| 150 m | 169 | 14 | 29% | 40% | 80% |
+| **200 m** | 143 | 18 | 25% | 46% | 79% |
+| 300 m | 118 | 26 | 18% | 51% | 77% |
+
+Road quality changes slowly: even in a 200 m segment four of five frames
+carry the segment's label. But a longer segment does hide short bad patches:
+at 200 m almost half of the road lies in segments that contain both good
+(1–2) and bad (3–4) frames.
+
+### Why averaging helps less than expected
+
+If frame errors were independent, 18 frames would cut the noise by a factor
+of four. They are not independent:
+
+| distance between two frames of one chain | 10 m | 20 m | 30 m | 50 m | 100 m | 200 m |
+|---|---|---|---|---|---|---|
+| correlation of the model's error | 0.65 | 0.54 | 0.50 | 0.42 | 0.32 | 0.19 |
+
+The model is wrong about a *stretch of road*, not about a frame. The share of
+the frame-error variance that all frames of a segment have in common, and
+that no aggregator can remove, is 65% at 50 m, 55% at 100 m and still 46% at
+200 m.
+
+### Aggregators × segment length
+
+QWK / MAE, mean of the 3 segmentations (single frame: **0.780 / 0.404**):
+
+| aggregator | 50 m | 100 m | 150 m | 200 m | 300 m |
+|---|---|---|---|---|---|
+| **median score** | 0.790 / 0.387 | 0.819 / 0.328 | 0.834 / 0.320 | **0.843 / 0.292** | 0.848 / 0.281 |
+| mean score | 0.812 / 0.353 | 0.824 / 0.325 | 0.833 / 0.307 | 0.852 / 0.272 | 0.867 / 0.248 |
+| trimmed mean (20% per side) | 0.802 / 0.365 | 0.809 / 0.355 | 0.816 / 0.334 | 0.866 / 0.245 | 0.856 / 0.241 |
+| mean P(bad) | 0.809 / 0.363 | 0.826 / 0.328 | 0.840 / 0.302 | 0.881 / 0.223 | 0.847 / 0.259 |
+| majority vote of frame classes | 0.792 / 0.385 | 0.802 / 0.363 | 0.810 / 0.360 | 0.811 / 0.358 | 0.807 / 0.357 |
+| mean of integer frame classes | 0.806 / 0.356 | 0.823 / 0.331 | 0.824 / 0.327 | 0.842 / 0.295 | 0.840 / 0.280 |
+
+- **Length matters more than the aggregator.** Agreement rises steadily with
+  length and flattens around 200 m. Median, mean, trimmed mean and mean
+  P(bad) stay within ±0.02 of each other, which is the noise of one
+  segmentation; in a paired test none of them is measurably better than the
+  median at 100–300 m (the largest gap, mean P(bad) at 200 m, is +0.026
+  [−0.007, +0.074]). **Majority vote is the one clear loser** (−0.047
+  [−0.093, −0.005] at 200 m): it throws away how far each frame is from a
+  class border.
+- **The paired gain over the single frame** (median score, cell bootstrap):
+  50 m +0.015 [−0.005, +0.034], 100 m +0.026 [−0.015, +0.060], 150 m +0.037
+  [−0.020, +0.074], **200 m +0.079 [+0.029, +0.119]**, 300 m +0.093 [+0.063,
+  +0.125]. Up to 150 m the gain cannot be told from zero; at 200 m it can.
+- **Re-tuning the cut-points pays off from 150 m up**: at 200 m QWK 0.843
+  with re-tuned cut-points vs 0.821 with the single-frame cut-points (MAE
+  0.292 vs 0.339). At 50–100 m it makes no difference.
+
+The recommended recipe against the single frame:
+
+| metric | single frame | 200 m median, one segmentation [95% CI] | mean of 3 segmentations | paired gain [95% CI] |
+|---|---|---|---|---|
+| QWK | 0.780 [0.70, 0.84] | 0.859 [0.76, 0.92] | **0.843** | +0.079 [+0.029, +0.119] |
+| MAE | 0.404 [0.33, 0.46] | 0.264 [0.18, 0.35] | **0.292** | −0.139 [−0.214, −0.061] |
+| exact class | 61.1% | 73.6% | **70.8%** | |
+| within ±1 | 98.6% | 100% | | |
+| bad-road (RQI ≥ 3) AUC | 0.940 [0.90, 0.97] | 0.968 [0.91, 1.00] | **0.968** | +0.028 [−0.001, +0.054] |
+| good/bad accuracy | 86.7% | 90.4% | **89.4%** | |
+
+Confusion at 200 m (unshifted segmentation), in km of road (rows = human
+segment label):
+
+| truth \ predicted | 1 | 2 | 3 | 4 | recall |
+|---|---|---|---|---|---|
+| 1 | 4.88 | 0.83 | 0 | 0 | 0.85 |
+| 2 | 2.05 | 4.97 | 1.10 | 0 | **0.61** |
+| 3 | 0 | 0.78 | 2.56 | 0.25 | 0.71 |
+| 4 | 0 | 0 | 0.13 | 1.90 | 0.94 |
+| precision | 0.70 | 0.76 | 0.68 | 0.88 | |
+
+Class 2 is still the weakest (recall 0.61, up from 0.43 per frame), but a
+predicted 4 is now right 88% of the time (63% per frame) and nothing is off
+by more than one class.
+
+**What aggregation does not do:** it does not make individual frames more
+accurate. If every frame simply shows its segment's class and is judged
+against its own label, QWK is 0.76–0.79 at every length (single frame
+0.780). Smoothing each frame with its neighbours (Gaussian, σ = 25–100 m)
+gives +0.014 to +0.018 QWK, not distinguishable from zero. A segment is a
+more reliable *statement about a stretch of road*, not a sharper picture of
+each spot.
+
+### Confidence
+
+The backend computes, per segment,
+
+`confidence = clamp((1 − exp(−n / n_ref)) · exp(−(iqr / spread_ref)²) · (0.5 + 0.5 · min(1, margin / margin_ref)), 0, 1)`
+
+with n = frames in the segment, iqr = interquartile range of the frame
+scores, margin = distance of the aggregated score from the nearest cut-point.
+What predicts that the segment class is right (200 m, median score, the 3
+segmentations pooled):
+
+| margin | 0–0.1 | 0.1–0.2 | 0.2–0.3 | 0.3–0.4 | 0.4–0.5 | 0.5–0.7 | > 0.7 |
+|---|---|---|---|---|---|---|---|
+| P(class correct) | 0.56 | 0.68 | 0.70 | 0.76 | 0.89 | 0.95 | 1.00 |
+| P(good/bad wrong) | 25% | 11% | 6% | 4% | 0% | 0% | 0% |
+
+| frames used (segment thinned at random) | 1 | 2 | 3 | 5 | 8 | all (~18) |
+|---|---|---|---|---|---|---|
+| P(class correct) | 0.64 | 0.67 | 0.68 | 0.68 | 0.68 | 0.71 |
+
+| IQR of frame scores | < 0.1 | 0.1–0.15 | 0.15–0.2 | 0.2–0.3 | 0.3–0.4 | > 0.4 |
+|---|---|---|---|---|---|---|
+| P(class correct) | 0.70 | 0.67 | 0.79 | 0.67 | 0.69 | 0.69 |
+
+- **The margin carries the signal.** A segment that sits on a cut-point is a
+  coin flip between two neighbouring classes; half a class away it is
+  almost always right.
+- **The number of frames barely matters** (one frame 0.64, eighteen 0.71),
+  which follows from the correlated errors above.
+- **The spread of the scores does not predict a wrong class.** It only goes
+  with more good/bad mistakes (0–2% below an IQR of 0.15, 11–15% above 0.2).
+
+Fitted parameters (least Brier score against "segment class correct"; among
+fits that cannot be told apart the more cautious one is taken):
+**n_ref = 0.5, spread_ref = 2.0, margin_ref = 0.6**. With these the formula
+is in practice a function of the margin: n only penalises a single-frame
+segment (×0.86), and the IQR term stays above 0.92 for 95% of segments. Fitting
+on four folds and checking on the fifth gives the same parameters (n_ref 0.5,
+spread_ref 1.5–2.0, margin_ref 0.6–0.7) and this calibration:
+
+| confidence | share of road | mean confidence | P(class correct) | P(good/bad wrong) |
+|---|---|---|---|---|
+| < 0.50 | 7% | 0.47 | 0.61 | 28% |
+| 0.50–0.55 | 18% | 0.53 | 0.57 | 21% |
+| 0.55–0.60 | 17% | 0.58 | 0.69 | 19% |
+| 0.60–0.65 | 12% | 0.62 | 0.68 | 0% |
+| 0.65–0.70 | 10% | 0.67 | 0.71 | 0% |
+| 0.70–0.75 | 10% | 0.72 | 0.75 | 12% |
+| 0.75–0.80 | 6% | 0.78 | 0.60 | 4% |
+| 0.80–0.90 | 12% | 0.84 | 0.90 | 0% |
+| 0.90–1.00 | 8% | 0.96 | 0.97 | 0% |
+
+The confidence is roughly the probability that the class is right. The
+single bins are noisy (27–73 pooled segments each), so the map should use
+three levels:
+
+| level | rule | share of road | P(class correct) | P(good/bad wrong) | off by 2 classes |
+|---|---|---|---|---|---|
+| **high** | confidence ≥ 0.80 | 19% | **0.93** | 0% | 0% |
+| **medium** | 0.55 – 0.80 | 56% | **0.69** | 9% | 0% |
+| **low** | < 0.55 | 25% | **0.58** | 23% | 0% |
+
+(Cross-fold parameters, full segments. With the final parameters: 0.93 / 0.70
+/ 0.53. With thinned segments included: 0.88 / 0.67 / 0.53.) "High" is
+reliable in every region (0.87–1.00); "low" and "medium" are not equally well
+separated everywhere (see the regions below). A predicted 3 never reaches
+"high": its score band is only ~0.55 wide, so it is always close to a
+cut-point. That matches reality (precision of class 3 is 0.68).
+
+**A simpler signal for the good/bad call.** If the map mainly says "good" or
+"bad", the distance of the segment score from the good|bad cut-point (t23)
+alone is the cleanest indicator: P(good/bad wrong) is 64% within 0.1 of it,
+22% at 0.1–0.2, 16% at 0.2–0.3, 5–6% at 0.3–0.8 and 0% beyond 0.8 (46% of
+the road). A second, good/bad-specific confidence built on this distance
+would be more informative than the n and IQR terms of the current formula.
+
+### How dense must the frames be?
+
+The collector takes a frame every ~10 m (`route_collector.py`,
+`interval_meters=10`), and every frame costs Street View quota. We thinned the
+labelled runs and re-measured the 200 m recipe: same segments, same truth
+(the median of *all* human labels), same cut-points; only the frames the
+model may use change. Every number is the mean of the 3 segmentations and of
+all offsets of the thinning; intervals resample cells; Δ is the paired
+difference to the dense result on the same segments. Bad-segment recall =
+share of the truly bad segment length that is predicted bad.
+
+**(a) Uniform spacing**
+
+| spacing | frames used | QWK | MAE | exact | bad AUC | bad-segment recall |
+|---|---|---|---|---|---|---|
+| 10 m (today) | 100% | 0.843 [0.74, 0.91] | 0.292 [0.21, 0.37] | 70.8% | 0.968 [0.91, 1.00] | 0.81 [0.60, 0.95] |
+| 20 m | 50% | 0.845 [0.75, 0.91] | 0.282 [0.21, 0.35] | 72.1% | 0.965 [0.91, 0.99] | 0.85 [0.69, 0.95] |
+| 30 m | 33% | 0.848 [0.75, 0.91] | 0.276 [0.20, 0.34] | 72.6% | 0.965 [0.91, 1.00] | 0.85 [0.67, 0.95] |
+| 50 m | 20% | 0.824 [0.71, 0.89] | 0.315 [0.24, 0.39] | 68.9% | 0.962 [0.91, 0.99] | 0.82 [0.66, 0.94] |
+| 100 m | 10% | 0.808 [0.68, 0.88] | 0.329 [0.26, 0.40] | 67.9% | 0.952 [0.89, 0.99] | 0.82 [0.64, 0.94] |
+
+| paired difference to 10 m | ΔQWK | ΔMAE | ΔAUC | Δ bad-segment recall |
+|---|---|---|---|---|
+| 20 m | +0.004 [−0.017, +0.026] | −0.012 [−0.046, +0.019] | −0.002 [−0.007, +0.002] | +0.042 [−0.026, +0.123] |
+| 30 m | +0.008 [−0.010, +0.030] | −0.019 [−0.052, +0.011] | −0.002 [−0.006, +0.002] | +0.037 [−0.013, +0.102] |
+| 50 m | −0.014 [−0.039, +0.010] | +0.020 [−0.020, +0.057] | −0.005 [−0.012, +0.001] | +0.015 [−0.049, +0.093] |
+| 100 m | −0.023 [−0.050, +0.006] | +0.034 [−0.012, +0.073] | −0.012 [−0.026, −0.002] | +0.025 [−0.041, +0.105] |
+
+- **50 m is not measurably worse than 10 m.** Every interval contains zero,
+  and bad segments are found as often as with dense frames.
+- **It is not proven equal either.** The interval still allows a loss of 0.04
+  QWK. 20 m and 30 m are safely within 0.02 of dense. At 100 m a loss shows
+  in the AUC.
+- The two-pass results below settle it: frames added only on the unsure
+  fifth of the road improve on the 50 m pass by +0.019 [+0.007, +0.034]. So
+  uniform 50 m does leave about 0.02 QWK on the table; the direct comparison
+  to 10 m is just too noisy to show it.
+
+**(b) Two-pass collection.** A sparse first pass, then a denser second pass
+only on the segments the first pass is unsure about. Triggers, all computed
+from the first-pass frames: *low* = confidence < 0.55 (the formula above),
+*near a cut-point* = margin < 0.15, *bad* = class ≥ 3.
+
+| strategy | frames used | road re-visited | QWK | ΔQWK vs 10 m | ΔQWK vs its first pass alone | Δ bad-segment recall vs 10 m | bad frames photographed |
+|---|---|---|---|---|---|---|---|
+| 50 → 10 m if low, near a cut-point or bad (the proposed rule) | 60% | 52% | 0.838 | +0.001 [−0.004, +0.006] | +0.014 [−0.007, +0.038] | −0.002 [−0.005, 0.000] | 84% |
+| 50 → 10 m if low or bad | 53% | 42% | 0.840 | +0.003 [−0.002, +0.010] | +0.016 [−0.003, +0.040] | −0.003 [−0.009, 0.000] | 80% |
+| 50 → 10 m if bad | 43% | 29% | 0.832 | −0.005 [−0.020, +0.009] | +0.008 [−0.009, +0.025] | **−0.032 [−0.069, 0.000]** | 75% |
+| 50 → 10 m if low | 36% | 21% | 0.840 | +0.003 [−0.007, +0.015] | +0.016 [+0.001, +0.037] | +0.020 [−0.006, +0.055] | 38% |
+| **50 → 30 m if low** | **26%** | 21% | 0.843 | +0.005 [−0.012, +0.029] | **+0.019 [+0.007, +0.034]** | +0.028 [−0.038, +0.099] | 27% |
+| 100 → 30 m if low | 17% | 25% | 0.833 | +0.002 [−0.016, +0.028] | +0.025 [+0.013, +0.041] | +0.018 [−0.055, +0.093] | 18% |
+| uniform 30 m | 33% | – | 0.848 | +0.008 [−0.010, +0.030] | – | +0.037 [−0.013, +0.102] | 33% |
+| uniform 50 m | 20% | – | 0.824 | −0.014 [−0.039, +0.010] | – | +0.015 [−0.049, +0.093] | 20% |
+
+- **The second pass works, and "low confidence" is the trigger that does the
+  work.** It provably improves on the first pass alone and brings the result
+  back to the dense one.
+- **Adding "near a cut-point" and "bad" to the trigger buys nothing for
+  segment quality.** The re-visited share of the road goes from 21% to 52%
+  and the frames from 36% to 60%, for the same result. Re-visiting *only* the
+  bad segments is harmful: bad-segment recall drops by 3 points, because a
+  one-sided re-check can only take bad flags away.
+- **30 m is dense enough for the second pass.** Going down to 10 m costs 36%
+  instead of 26% of the frames and changes nothing.
+- **Per frame spent.** Call a strategy proven if the lower end of its ΔQWK
+  interval is above −0.02. The cheapest proven ones are 100 → 30 m if low
+  (17% of the frames), 50 → 30 m if low (26%) and uniform 30 m (33%).
+  Uniform 50 m and 100 m are not proven. The differences among the proven
+  ones are within noise.
+
+**Recommendation: 50 m everywhere, then 30 m on the low-confidence
+segments.** It needs 26% of today's frames (about 4× the road per quota), is
+provably better than 50 m alone and cannot be told from 10 m. If a second
+pass is not worth building, **uniform 30 m** (33%) is the single-pass
+equivalent. A 100 m first pass is cheaper still and passes the same test, but
+we do not recommend it: two frames per segment leave the median no protection
+against a junk frame (non-road and unusable views are not yet filtered in
+production, and the labelled set contains none), and it sees the fewest short
+defects.
+
+**Short defects.** A defect visible in only one or two frames is a different
+question from segment quality. Runs of consecutive human-bad frames:
+
+| run of bad frames | runs | share of all bad road | the model calls such a frame bad | its 200 m segment is painted bad (dense frames) | run photographed at 30 / 50 / 100 m |
+|---|---|---|---|---|---|
+| 1 frame (~10 m) | 46 | 8% | 69% | 49% | 33% / 20% / 10% |
+| 2 frames | 21 | 7% | 91% | 64% | 67% / 40% / 20% |
+| 3–4 frames | 25 | 16% | 81% | 62% | 100% / 68% / 34% |
+| 5–9 frames | 25 | 28% | 96% | 84% | 100% / 100% / 62% |
+| 10+ frames (100 m+) | 11 | 41% | 87% | 81% | 100% / 100% / 100% |
+
+- 85% of the bad road is in runs of at least 30 m. That is what a segment
+  colour can show, and it is found equally well at every spacing up to 50 m.
+- Defects one or two frames long are 15% of the bad road. **A 200 m segment
+  hides a third to a half of them even with dense frames**, because its class
+  is the median. Sparse sampling is not what loses them at segment level.
+- Showing them needs a separate frame-level defect layer, and that layer does
+  need the frames: at 30 m a third of the single-frame defects are
+  photographed, at 50 m a fifth. The proposed rule (50 → 10 m if low, near a
+  cut-point or bad) photographs 84% of all bad frames and 55% of the isolated
+  ones for 60% of the frames; the rest lie in segments that look confidently
+  good. If single defects must be on the map, that is the strategy to use.
+  For segment quality alone it spends more than twice the frames for nothing.
+
+The confidence levels keep their meaning with fewer frames (P(class correct)
+for high / medium / low: 0.89 / 0.71 / 0.61 at 30 m, 0.88 / 0.69 / 0.51 at
+50 m). The picture is the same for shorter segments (100 m: QWK 0.819 → 0.809
+at 30 m → 0.774 at 100 m). Caveat: this is thinning of dense, hand-checked
+runs; real sparse collection also meets frames the labelled set does not
+contain (junk views, occlusions), which is why the recipe uses the median and
+asks for at least 2 frames.
+
+### Regions: does the bias survive aggregation?
+
+Single frame → 200 m segments (mean of the 3 segmentations):
+
+| region | frames → segments | QWK | MAE | bad AUC | good/bad acc. | class bias | score bias |
+|---|---|---|---|---|---|---|---|
+| Budapest (VII–VIII.) | 229 → 13 | 0.44 → **0.34** | 0.37 → 0.37 | 0.79 → 0.83 | 70% → **65%** | +0.10 → −0.20 | +0.02 → 0.00 |
+| Törökbálint–Budaörs | 665 → 40 | 0.58 → 0.63 | 0.45 → 0.35 | 0.93 → 0.97 | 92% → 97% | −0.14 → −0.11 | 0.00 → −0.01 |
+| Székesfehérvár | 359 → 26 | 0.53 → 0.60 | 0.33 → 0.21 | 0.93 → n/a¹ | 94% → 96% | −0.10 → +0.02 | +0.06 → +0.03 |
+| Tapolca area | 650 → 64 | 0.71 → 0.84 | 0.41 → 0.25 | 0.92 → 0.95 | 83% → 87% | −0.01 → +0.01 | −0.18 → −0.19 |
+
+Bias = model − human, in classes (class bias) and on the continuous score
+(score bias); + means the model says worse than the human.
+¹ no bad segment is left in Székesfehérvár at 200 m.
+
+- **A regional score offset survives aggregation untouched**, as it must: it
+  is the same for every frame of a segment. Around Tapolca the model's score
+  is 0.18 better than the human label before and 0.19 after.
+- **Budapest does not benefit.** Outside Budapest every region improves; in
+  Budapest QWK falls from 0.44 to 0.34 and the good/bad accuracy from 70% to
+  65%. Its frame-level "too severe" (+0.10 class) turns into "too lenient"
+  (−0.20) with the segment cut-points, while its score bias is ~0: the
+  problem there is the good|bad decision itself, not an offset, and
+  aggregation cannot repair it. This rests on 13 segments (2.3 km); one of
+  the three segmentations alone shows 76%, so the size of the effect is very
+  uncertain, but there is no evidence of a gain.
+- **Confidence per region:** "high" holds everywhere (class right in 87–100%).
+  "Low" and "medium" are clearly apart in Budapest (16% vs 88%) and
+  Törökbálint (44% vs 62%), but not in Székesfehérvár (71% vs 66%) and
+  Tapolca (72% vs 72%). In Budapest the low-confidence third of the road
+  holds about five in six of the good/bad mistakes, so at least the weak
+  spots are flagged. Per-region numbers rest on 13–64 segments.
+
+### Image age
+
+A "this image is old" penalty cannot be fitted from our data today
+(`ml/segment_eval.py --age-check`, read-only on the local DB).
+`street_view_images.capture_date` is filled for 17,442 of 17,607 frames (a
+backfill was running on the day of writing). The frames are young: median
+age 1.2 years, 12% older than 3 years, 2% older than 5.
+
+- **Labels cannot tell.** A label describes the image, not today's road, so
+  the labelled set says nothing about how a road changes after capture,
+  whatever the capture dates are.
+- **Repeat captures are the right evidence, but too thin.** 342 pairs of
+  captures of the same spot (within 15 m, same street direction) on different
+  dates exist. The model's class differs by ≥ 1 in 39% of the pairs less than
+  a year apart, 31% at 1–2 years, 38% at 2–4 years and 44% beyond 4 years
+  (103 pairs); the mean drift (later − earlier) is 0.00, −0.03, +0.05 and
+  +0.11 class. Pairs taken months apart already disagree almost as often as
+  pairs taken years apart, so no age effect can be measured.
+
+Until labelled spots are re-collected after a known time, age can only be a
+product rule: show the capture date, and if a penalty is wanted apply it only
+beyond ~5 years (2% of the frames). It should not be a term of the measured
+confidence.
+
+### Verdict and recipe
+
+**Aggregate to ~200 m segments with the median frame score.** 200 m is where
+the gain over a single frame becomes clearly measurable and where it
+flattens; the median is as good as any other sensible aggregator and is the
+one that still protects against a junk frame when a segment has only three.
+`ml/segment_recipe.json`:
+
+```json
+{
+  "version": 1,
+  "segment_length_m": 200,
+  "aggregator": "median_score",
+  "trim_fraction": 0.0,
+  "thresholds": [1.577, 2.496, 3.052],
+  "p_bad_threshold": 0.5,
+  "min_images": 2,
+  "recommended_frame_spacing_m": 30,
+  "sampling": {"base_spacing_m": 50, "dense_spacing_m": 30, "densify_if": ["low_confidence"], "single_pass_spacing_m": 30},
+  "confidence": {"n_ref": 0.5, "spread_ref": 2.0, "margin_ref": 0.6, "high": 0.8, "medium": 0.55},
+  "integer_class_fallback": {"aggregator": "mean_class", "thresholds": [1.511, 2.52, 3.207]}
+}
+```
+
+How the backend should read it:
+
+1. **Input** is the continuous frame score (`analysis_metadata.dino_score`),
+   not the integer class. Segment score = median of the frame scores. The
+   whole recipe works on the model's native scale (1 = excellent … 4 = poor,
+   higher score = worse road); if the displayed scale is ever flipped or
+   renamed, convert *after* applying the cut-points.
+2. **Class** = 1 + the number of `thresholds` that are ≤ the segment score.
+   The cut-points were tuned on all spatial out-of-fold segments (the 3
+   segmentations pooled). They differ from the single-frame cut-points in the
+   artifact and must not be swapped with them.
+3. **Confidence** uses n, the IQR of the frame scores (quartiles with linear
+   interpolation, 0 for a single frame) and the margin, then the two level
+   thresholds.
+4. **`min_images`**: with one frame the class is right in 64% instead of 71%
+   and there is no spread; show such segments as "low" or not at all.
+5. **`p_bad_threshold`** (optional good/bad flag): mean `dino_p_bad` ≥ 0.5,
+   tuned through the live artifact's calibrator. In the nested measurement
+   the mean-P(bad) flag reaches 91.6% good/bad accuracy against 89.4% for
+   "class ≥ 3". The two can disagree on a segment, so use one of them
+   consistently.
+6. **`integer_class_fallback`**: when this was measured only 3,346 of the
+   17,607 frames in the local DB stored `dino_score` (a re-score was under
+   way); the rest had just the integer `dino_rqi_score`. For those,
+   the mean of the integer classes with its own cut-points is as good for the
+   class (QWK 0.842 / MAE 0.295 at 200 m), but the margin-based confidence is
+   not calibrated for it. Backfilling `dino_score` is the proper fix.
+7. **`sampling`**: collect a frame every `base_spacing_m`; compute the
+   segments and their confidence; on segments whose confidence is "low"
+   (< `confidence.medium`) add frames every `dense_spacing_m` and recompute.
+   With a single pass, use `single_pass_spacing_m`
+   (= `recommended_frame_spacing_m`).
+8. Where the cuts fall does not matter (QWK ±0.015 between segmentations),
+   so the backend can segment along routes or streets as is convenient;
+   chains should break at gaps > 40 m and at sharp turns.
+
+Other lengths, same recipe (use these if a finer map is wanted):
+
+| length | cut-points | n_ref / spread_ref / margin_ref | QWK / MAE | high: share, P(correct) | medium | low |
+|---|---|---|---|---|---|---|
+| 100 m | 1.48, 2.39, 2.98 | 0.5 / 1.0 / 0.6 | 0.819 / 0.328 | 13%, 0.92 | 56%, 0.69 | 31%, 0.56 |
+| 150 m | 1.58, 2.50, 3.05 | 0.5 / 2.0 / 0.7 | 0.834 / 0.320 | 15%, 0.99 | 59%, 0.65 | 26%, 0.59 |
+| **200 m** | 1.58, 2.50, 3.05 | 0.5 / 2.0 / 0.6 | 0.843 / 0.292 | 20%, 0.93 | 58%, 0.70 | 22%, 0.53 |
+
+### What it means for the map
+
+- **Colour segments, not frames.** A 200 m segment's class is right 7 times
+  out of 10 and never off by more than one; its good/bad call is right 9
+  times out of 10. Frames can still be shown on zoom-in, but they are not
+  more accurate than their segment.
+- **Show three confidence levels.** One fifth of the road is "high" (class
+  right in 93%, good/bad never wrong in our data). A quarter is "low": there
+  the class is little better than a coin flip between two neighbours and the
+  good/bad call is wrong one time in four, so it should look uncertain.
+- **Collect sparsely, then look again where unsure.** A frame every 50 m and
+  a second pass at 30 m on low-confidence segments gives the same segment
+  quality with a quarter of the frames (uniform 30 m: a third). Single
+  defects are a separate layer and need dense frames where they matter.
+- **What aggregation cannot fix:** a whole stretch judged wrongly, a region
+  the model reads differently (a constant offset around Tapolca, the good|bad
+  decision in Budapest), and old images. Those need more varied labels and a
+  holdout region (the Era 6 recommendations), not more frames of the same
+  road. In inner Budapest the segment colours deserve the least trust.
+
+Limits of this measurement: 19.5 km of road in 35 cells and 4 regions, so
+the intervals are wide (QWK ±0.08). The segment truth is the median of one
+annotator's frame labels. The segment length, the aggregator and the two
+level thresholds were chosen after looking at these tables (the parameters
+themselves were checked across folds), so expect slightly lower numbers on
+new roads.
+
+Reproduce:
+
+```bash
+.venv/bin/python ml/segment_eval.py                 # all tables above (~5 min)
+.venv/bin/python ml/segment_eval.py --write-recipe  # also rewrites ml/segment_recipe.json
+.venv/bin/python ml/segment_eval.py --length 100    # confidence / spacing / regions for another length
+.venv/bin/python ml/segment_eval.py --age-check     # optional: image age in the local DB
+```
+
 ---
 
 ## Mi él most, és mi halott?
@@ -454,3 +945,204 @@ Reprodukálás:
 5. **A kalibrált valószínűség többet ér, mint a nyers osztályzat** — a
    "92%-ban helyes jó/rossz döntés + megmondja, mennyire biztos" a termék
    valódi ígérete.
+
+---
+
+## Era 9 — VLM attributes as features (2026-11-26)
+
+> **TL;DR:** Fable (Claude VLM) subagents described all 1903 labelled frames
+> with 15 fixed, structured pavement attributes. Fed to a ridge stacker **next
+> to the champion's score**, they give the first challenger that is
+> **measurably better** on the official spatial CV: **QWK 0.805 / MAE 0.344 /
+> bad-AUC 0.940** vs 0.774 / 0.405 / 0.934. ΔQWK is +0.031 [+0.006, +0.056],
+> positive on all 5 shifted grids and with its CI above 0 on 4 of 5. Class-2
+> recall rises from 0.43 to 0.56. Most of the gain is on cracked motorways,
+> rural lanes and dappled shadow. **Budapest does not improve** (QWK 0.40 →
+> 0.42). The gain **needs a VLM call per frame**: distilling the attributes
+> into DINO heads keeps none of it. The gate PASSes and the candidate is
+> saved as `ml/cache/rqi_model_vlm_candidate.joblib`, but it is **not
+> promoted**, because the backend cannot produce the attributes.
+
+### Setup
+
+- **Schema** (`ml/vlm_attribute_prompt.md`, the same text for every worker,
+  one JSON line per frame): road_visible, road_type, surface, cracks
+  (none … alligator_extensive), patches, potholes, ravelling, edge_damage,
+  rutting, markings, lighting, wet, obstruction_pct, rqi_guess (pilot
+  rubric), confidence, plus a ≤12-word note. Workers judge the camera's own
+  road, mainly the lower 40% of the frame. `ml/vlm_attributes.py` encodes
+  these into 30 columns: ordinal severities plus one-hot levels, with levels
+  under 1% dropped (`MODEL_COLUMNS`).
+- **Blinding:** frames were hard-linked under random ids into 16 shuffled
+  batches of about 118. Each worker could open only its own images, the 12
+  calibration anchors (`anchor_<RQI>_<k>.jpg`, as in the pilot) and its own
+  output file. Outputs are in `data/vlm/attributes/out/*.jsonl` (resumable)
+  and the merge is in `ml/cache/vlm_attributes.csv` (committed).
+- **Anchor leakage, found and fixed during the run.** Consecutive frames
+  about 10 m apart are often the *same panorama*: the 1903 frames contain 70
+  pixel-identical pairs. One worker recognised an anchor's twin in its batch.
+  So all 100 frames within 50 m of an anchor, plus the anchors themselves,
+  were re-rated by a worker that saw no anchors (batch b00), and that row is
+  the one used. The check shows why this mattered. On those 100 frames, the
+  anchored rating matched the expert 61% of the time (QWK 0.78), the
+  anchor-free rating only 41% (QWK 0.54). Part of the gap is calibration:
+  anchor-free guesses run about 0.3 lower.
+- **Consistency:** two independent workers on the same 30 pilot frames agreed
+  on 83–100% of attribute values, and their rqi_guess values agreed at QWK
+  0.85. A pilot worker and a full-run worker on the same frames agreed on
+  0.73 (cracks, patches) to 1.00.
+- **Cost:** 19 Fable workers, 2.7 M subagent tokens (~1.26 k per frame
+  including the anchors), about 6.5 min per 118-frame worker, about 25 min
+  wall-clock in two waves of 8.
+- **What the VLM saw:** motorway 764, rural road 402, urban main 378,
+  residential 234, rural lane 123. Surface was asphalt in 1899 of 1903 frames,
+  so **no cobblestone in this dataset**. Dappled shadow 186, wet 7. The
+  rqi_guess distribution was 430 / 951 / 496 / 26 against the human
+  540 / 780 / 381 / 202, so like the pilot it under-calls 4.
+
+### Results (official spatial CV, paired cell bootstrap vs the champion)
+
+`ml/vlm_feature_eval.py`. Every stacker, blend weight and distillation head is
+fit inside the training folds only. The champion score fed to a stacker is
+inner-OOF, and the cut-points are nested.
+
+| candidate | QWK | MAE | AUC | ΔQWK [95% CI] | Budapest QWK | class-2 recall |
+|---|---|---|---|---|---|---|
+| champion: DINO cls+patch → SVR | 0.774 | 0.405 | 0.934 | – | 0.404 | 0.43 |
+| (0) VLM rqi_guess used as the label | 0.613 | 0.490 | 0.796 | −0.161 [−0.231, −0.093] | 0.262 | 0.67 |
+| (a) attributes alone → ridge | 0.777 | 0.377 | 0.919 | +0.002 [−0.035, +0.039] | 0.291 | 0.52 |
+| (a) attributes without rqi_guess → ridge | 0.774 | 0.377 | 0.918 | −0.001 [−0.039, +0.040] | 0.343 | 0.54 |
+| (b) DINO + attributes (block ×5.1) → SVR | 0.797 | 0.362 | 0.933 | +0.022 [−0.004, +0.047] | 0.411 | 0.51 |
+| (b) DINO + attributes → ordinal logit | 0.783 | 0.394 | 0.941 | +0.009 [−0.009, +0.028] | 0.520 | 0.47 |
+| (c) champion score + attributes → ridge | 0.802 | 0.347 | 0.941 | **+0.028 [+0.005, +0.056]** | 0.417 | 0.54 |
+| (c) champion score + attributes → HistGB | 0.797 | 0.345 | 0.940 | +0.023 [−0.004, +0.056] | 0.442 | 0.57 |
+| (d) blend champion + rqi_guess (α ≈ 0.26) | 0.788 | 0.378 | 0.941 | +0.014 [−0.010, +0.038] | 0.454 | 0.52 |
+| **(c) as gate artifact** (`StackedVLMHead`) | **0.805** | **0.344** | **0.940** | **+0.031 [+0.006, +0.056]** | 0.424 | 0.56 |
+
+- **Robustness of the artifact head on 5 shifted 1 km grids:** ΔQWK +0.024,
+  +0.033, +0.009, +0.022, +0.027, with the CI above 0 on 4 of 5; ΔMAE −0.03
+  to −0.08, with the CI below 0 on 4 of 5; ΔAUC +0.001 to +0.008 (not
+  significant). The evaluation-script stacker (c) gave ΔQWK +0.018, +0.033,
+  −0.001, +0.013, +0.032. For comparison, Era 6's best challenger had its CI
+  above 0 on 1 of 6 grids.
+- **The 1–4 decision improves more than the good/bad decision.** AUC moves
+  only +0.006. The candidate's confusion matrix gives recall
+  0.83 / 0.56 / 0.63 / 0.70 for classes 1–4 (champion 0.83 / 0.43 / 0.67 /
+  0.60).
+- **Attributes alone match DINO** (QWK 0.777). That is an independent view
+  with equal skill, but its errors correlate with the champion's, so only
+  stacking helps. The VLM's own rqi_guess is a weak labeller (QWK 0.61), as
+  in the pilot.
+
+### Where the gain comes from (do the attributes explain the errors?)
+
+Champion OOF error by VLM attribute, next to the stacked model's (official
+folds; bias = predicted − true):
+
+| subgroup | n | champion MAE / bias | stacked MAE / bias |
+|---|---|---|---|
+| motorway with cracks | 473 | 0.52 / −0.30 | 0.40 / −0.11 |
+| many longitudinal cracks | 328 | 0.51 / −0.25 | 0.43 / +0.02 |
+| many transverse cracks | 60 | 0.55 / −0.42 | 0.42 / +0.05 |
+| dappled shadow | 186 | 0.49 / +0.04 | 0.39 / +0.15 |
+| rural lane | 123 | 0.43 / −0.12 | 0.37 / −0.01 |
+| residential street | 234 | 0.42 / +0.32 | 0.38 / +0.29 |
+| urban main road | 378 | 0.44 / +0.09 | 0.44 / +0.10 |
+| Budapest | 229 | 0.40 / +0.13 | 0.39 / +0.04 |
+| human class 2 | 780 | 0.59 / −0.06 | 0.48 / +0.05 |
+| human class 4 | 202 | 0.44 / −0.44 | 0.40 / −0.40 |
+
+- **Sealed-crack motorways are the champion's biggest systematic miss.** The
+  expert calls them 2; DINO sees a smooth motorway and says 1. The VLM's
+  crack pattern fixes most of this. The stacker's standardised weights are
+  champion score +0.42, patches +0.15, rural_lane +0.10, rqi_guess +0.09,
+  motorway −0.07, ravelling +0.07.
+- **Dappled shadow:** the champion's MAE on these frames is ~20% above
+  average (0.49). The attributes bring it down to the champion's own
+  normal-lighting level (0.39).
+- **Cobblestone** cannot be tested here, because no frame has it.
+- **Still unsolved:** residential streets are over-predicted (+0.29), and
+  urban main roads and Budapest do not improve. Class 4 is still under-called,
+  and the VLM shares that bias.
+
+### Distillation (the production path without a VLM)
+
+Ridge heads on DINO cls+patch, trained on the training fold's VLM attributes,
+predict many attributes well. Spatial OOF r: road_type=motorway 0.87,
+edge_damage 0.86, dappled shadow 0.82, rqi_guess 0.75, patches 0.74,
+ravelling 0.73; fine crack patterns only 0.2–0.4. But **none of the gain
+survives** when the predicted attributes replace the VLM ones:
+
+| distilled variant (no VLM at inference) | QWK | MAE | ΔQWK [95% CI] |
+|---|---|---|---|
+| distilled attributes alone → ridge | 0.753 | 0.440 | −0.022 [−0.072, +0.023] |
+| DINO + distilled attributes → SVR | 0.787 | 0.391 | +0.012 [−0.002, +0.028] |
+| champion score + distilled → ridge / HistGB | 0.758 / 0.772 | 0.415 / 0.383 | −0.016 / −0.002 |
+| blend champion + distilled rqi_guess | 0.783 | 0.396 | +0.009 [−0.008, +0.026] |
+| *control:* DINO + ridge-distilled **human** label → SVR | 0.775 | 0.407 | +0.001 [−0.006, +0.007] |
+
+The stacking gain goes from +0.028 to between −0.016 and −0.002, so **0%
+survives**. The best distilled variant (+0.012, not significant) is barely
+above the control, which pushes the human label through the same ridge
+channel. The useful VLM information is the part that DINO features do not
+encode. A function of DINO cannot carry it, however well it imitates the
+attributes. A distilled student would need a stronger image model and many
+more VLM-rated frames (for example the ~15 k unlabelled frames under
+`data/images`). That has not been tested.
+
+### Label audit (by-product, no labels changed)
+
+`data/vlm/label_audit.csv` has 60 rows for the owner to re-check:
+
+- 5 frames where the VLM and the model are both ≥ 2 off the human label.
+- 12 where a high-confidence VLM and the model agree against the human. These
+  are mostly smooth motorway frames labelled 2 that both call 1.
+- **9 pairs of pixel-identical frames (same panorama ~10 m apart) with
+  different human labels** (18 frames). These are the cheapest fixes, and
+  label noise the CV counts as model error.
+- 25 rows to fill the list: medium-confidence VLM = model ≠ human, ranked by
+  how far the model's score is from the label.
+
+### Verdict and production implication
+
+- **Measurably better, gate PASS:**
+  `evaluate_artifact.py ml/cache/rqi_model_vlm_candidate.joblib` → PASS,
+  "measurably better: YES". This is the first such result on the spatial
+  protocol. **Not promoted:** `rqi_model.joblib` is unchanged, and
+  `dino_service` cannot build the `vlm` key of the `cls+patch+vlm` recipe.
+- **What inference would need:**
+  1. For each new frame, one VLM request with `ml/vlm_attribute_prompt.md`
+     plus the 12 anchor images (a cacheable prefix) and the frame.
+  2. Validate the JSON (`vlm_attributes.validate`) and encode it
+     (`MODEL_COLUMNS`).
+  3. Call `pipeline.predict` on `[cls+patch | attributes]` (head
+     `ml/vlm_heads.py`, which must be importable).
+  4. Fall back to the champion when the VLM is unavailable, and cache
+     results per `pano_id`, since neighbouring frames often share a
+     panorama.
+
+  The cost is about 1.3 k tokens per frame. The attributes come from one
+  model and one prompt, so changing either means re-rating the training set.
+- **Cheaper options worth testing next:**
+  - Run the VLM only on frames where the champion is unsure (P(bad) near
+    0.5, the 1|2 and 2|3 bands).
+  - Run it on 1–2 frames per 100–200 m segment.
+  - Use the VLM offline to rate unlabelled frames for a stronger student
+    (the open distillation question above).
+  - Average two VLM passes per frame to cut rater noise (retest agreement on
+    cracks and patches is only ~0.75).
+
+Reproduce:
+
+```bash
+.venv/bin/python ml/vlm_attributes.py prepare        # blinded batches + prompts
+.venv/bin/python ml/vlm_attributes.py anchor_free    # anchor twins -> anchor-free batch b00
+# ... run one Fable worker per data/vlm/attributes/prompts/<batch>.md ...
+.venv/bin/python ml/vlm_attributes.py merge          # -> ml/cache/vlm_attributes.csv
+.venv/bin/python ml/vlm_attributes.py pilot          # A-vs-B consistency
+.venv/bin/python ml/vlm_attributes.py anchor_check   # leakage + retest
+.venv/bin/python ml/vlm_feature_eval.py              # table above + label audit
+.venv/bin/python ml/vlm_feature_eval.py --shift "(c) champion score + attrs -> ridge" --grid 0
+.venv/bin/python ml/save_model_v2.py --recipe cls+patch+vlm --head stack-vlm --out rqi_model_vlm_candidate.joblib
+.venv/bin/python ml/evaluate_artifact.py ml/cache/rqi_model_vlm_candidate.joblib
+```

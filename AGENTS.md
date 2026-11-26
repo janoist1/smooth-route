@@ -23,10 +23,12 @@ public site is read-only (Vercel + Neon); analysis runs locally.
 | **Frontend UI** | [frontend/ARCHITECTURE.md](frontend/ARCHITECTURE.md) | `ml/**` |
 | **Backend API / GraphQL** | [docs/API_SURFACE.md](docs/API_SURFACE.md); config, tables, deps: [DEVELOPMENT.md](DEVELOPMENT.md) | `ml/**`, `frontend/**` |
 | **Publishing / deploy / auth / queue / quotas** | [docs/PUBLISH_PLAN.md](docs/PUBLISH_PLAN.md) — strategy + your phase only | other phases |
+| **Public API limits / security / cost abuse** | [docs/SECURITY.md](docs/SECURITY.md); code: `backend/app/graphql/limits.py` | `ml/**` |
 | **Labelling** | [docs/TrainingGuide.md](docs/TrainingGuide.md) | — |
 | **"Why is it like this?" / model history** | [docs/MODEL_EXPERIMENTS.md](docs/MODEL_EXPERIMENTS.md) | — |
 | **Unclear term** (QWK, MAE, spatial CV…) | [docs/GLOSSARY.md](docs/GLOSSARY.md) | — |
 | **Team, briefs, merge/push flow** | [docs/TEAM.md](docs/TEAM.md) | — |
+| **Ticket board** (what's in progress, your ticket) | `python3 tools/board.py list` — rules in [docs/TEAM.md](docs/TEAM.md#ticket-board) | — |
 | **Launch copy / name / checklist** | [docs/LAUNCH.md](docs/LAUNCH.md) | — |
 
 Never load `docs/archive/**`, `ml/legacy/`, `scripts/legacy/` — history only.
@@ -72,6 +74,8 @@ runs the build on push, so run it locally too. **Not green = not done.**
 
 - **One review screen, two panels:** labelling is `/training/:id/review` (score +
   polygons). The web UI never trains the RQI model; `ml/` does.
+  Fast mobile RQI labelling: `/training/quick` (label queue, see
+  [docs/API_SURFACE.md](docs/API_SURFACE.md)); it writes the same `training_data`.
 - **Two backend dependency lists:** `backend/pyproject.toml` (full, with torch) and
   `backend/requirements.txt` (torch-free, Vercel only). A new runtime dependency on the
   read-only path goes into both. **SQLAlchemy `<2.1`** (2.1 maps `postgresql://` to
