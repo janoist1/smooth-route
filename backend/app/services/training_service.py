@@ -3,7 +3,7 @@ import shutil
 import json
 import yaml
 import random
-from typing import Dict
+from typing import Any, Dict
 
 from app.core.config import settings
 from app.core.database import SessionLocal
@@ -119,6 +119,7 @@ class TrainingService:
 
             processed_count = 0
             
+            item: Any  # ORM row: legacy Column models type as Column[...] (see DEVELOPMENT.md)
             for item in items:
                 split = "train" if random.random() < 0.8 else "val"
                 

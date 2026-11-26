@@ -4,7 +4,7 @@ Job service for tracking background tasks.
 
 import uuid
 from app.core.timeutil import utcnow
-from typing import Optional
+from typing import Any, Optional
 from enum import Enum
 
 
@@ -45,7 +45,7 @@ from app.models.models import Job as JobModel
 
 class JobDTO:
     """Data Transfer Object for Job model to decouple from DB session."""
-    def __init__(self, model: JobModel):
+    def __init__(self, model: Any):  # a Job row: legacy Column models type as Column[...] (see DEVELOPMENT.md)
         self.job_id = model.job_id
         self.status = JobStatus(model.status) if model.status else JobStatus.PENDING
         self.current_step = JobStep(model.current_step) if model.current_step else None

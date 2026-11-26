@@ -4,7 +4,7 @@ rewrite their image_url to the local path.
 """
 import os
 import uuid
-from typing import Optional
+from typing import Any, Optional
 
 from app.core.config import settings
 from app.core.database import SessionLocal
@@ -15,7 +15,7 @@ from app.services.sv_client import StreetViewError, StreetViewFatal, default_cli
 from app.services.sv_quota import DEFAULT_JOB_CAP, JobBudget, QuotaExceeded, cap_from_env
 
 
-def fill_capture_metadata(img: StreetViewImage, lookup=None) -> None:
+def fill_capture_metadata(img: Any, lookup=None) -> None:  # a StreetViewImage: legacy Column models type as Column[...] (see DEVELOPMENT.md)
     """Fill pano_id / capture_date right after the image was fetched.
 
     Points collected by the current route_collector already carry both; this

@@ -15,7 +15,7 @@ import uuid
 from collections import defaultdict
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Iterable, Sequence
+from typing import Any, Iterable, Sequence
 
 from sqlalchemy import text
 
@@ -63,7 +63,7 @@ class DbFrameStore:
     def save(self, frame: NewFrame, jpeg: bytes) -> int:
         from app.models.models import StreetViewImage
 
-        row = StreetViewImage(
+        row: Any = StreetViewImage(  # ORM row: legacy Column models type as Column[...] (see DEVELOPMENT.md)
             latitude=frame.lat, longitude=frame.lon, heading=frame.heading, pitch=frame.pitch,
             pano_id=frame.pano_id, capture_date=frame.capture_date,
             image_url=None, rqi_score=None,       # pending analysis

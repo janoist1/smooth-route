@@ -6,7 +6,7 @@ analysis — and orchestrates the per-point analysis pass. Kept as the single
 `road_quality_service` entry point used by tasks.py and cli.py.
 """
 from app.core.timeutil import utcnow
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from app.core.database import SessionLocal
 from app.core.paths import resolve_stored_image
@@ -70,6 +70,7 @@ class RoadQualityService:
                 update_job(job_id, current_step=JobStep.ANALYZING, progress=0, total=total,
                            message=f"Elemzés futtatása ({strategy})...")
 
+            img: Any  # ORM row: legacy Column models type as Column[...] (see DEVELOPMENT.md)
             for i, img in enumerate(images):
                 if job_id and i % 5 == 0:
                     update_job(job_id, progress=i, total=total, message=f"Elemzés: {i}/{total}")
