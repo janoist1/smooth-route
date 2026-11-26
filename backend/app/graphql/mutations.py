@@ -1,18 +1,13 @@
 import strawberry
 from typing import List, Optional
-from sqlalchemy.orm import Session
-from sqlalchemy import func
-import threading
-import json
 from app.core.timeutil import utcnow
 
-from app.core.database import SessionLocal
-from app.models.models import StreetViewImage, TrainingData as TrainingDataModel, Job as JobModel
+from app.models.models import StreetViewImage, TrainingData as TrainingDataModel
 from app.core.paths import image_path
-from app.services.job_service import create_job, get_job
+from app.services.job_service import create_job
 from app.core.settings_manager import settings_manager
 
-from .types import Point, Job, TrainingData, ProcessRouteInput, TrainingDataInput, RunAnalysisInput, TrainingStats, TrainingPointsResponse, FilterMode, Setting, UpdateSettingInput, DetectInput, DetectPrediction, ReviewActionInput, ReviewActionResult
+from .types import Job, ProcessRouteInput, TrainingDataInput, RunAnalysisInput, Setting, UpdateSettingInput, DetectInput, DetectPrediction, ReviewActionInput, ReviewActionResult
 
 from app.graphql.resolver_helpers import get_db_session
 from app.graphql.permissions import IsAdmin, IsAuthenticated
@@ -22,7 +17,6 @@ from app.graphql.permissions import IsAdmin, IsAuthenticated
 class Mutation:
     @strawberry.mutation(permission_classes=[IsAdmin])
     def update_setting(self, input: UpdateSettingInput) -> Setting:
-        from app.core.settings_manager import settings_manager
         updated = settings_manager.update_setting(input.key, input.value)
         if not updated:
             raise Exception(f"Setting {input.key} not found")
@@ -37,7 +31,6 @@ class Mutation:
 
     @strawberry.mutation(permission_classes=[IsAdmin])
     def apply_preset(self, values: strawberry.scalars.JSON) -> List[Setting]:
-        from app.core.settings_manager import settings_manager
         updated_settings = []
         for key, value in values.items():
             updated = settings_manager.update_setting(key, value)

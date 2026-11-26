@@ -4,7 +4,6 @@ from fastapi.responses import FileResponse
 from app.core.config import settings
 from app.core.paths import data_path, image_path
 import os
-from pathlib import Path
 
 # The public read-only deploy publishes no OpenAPI schema / Swagger UI: it
 # serves only /graphql (+ /health), and the docs would advertise local-only
@@ -119,7 +118,6 @@ async def get_image(filename: str):
 
 async def get_export_file(filename: str):
     """Serve exported files (notebooks, datasets) from the data/exports directory."""
-    import os
     from fastapi import HTTPException
     
     data_dir = settings.resolve_data_dir()

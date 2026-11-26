@@ -186,9 +186,12 @@ Other `make` targets: `retrain` ([ml/README.md](ml/README.md#one-command-retrain
 `reimport-images`, `purge-data`, `clean-orphans`, `clear-jobs`, `list-jobs`, `clean`.
 
 `.github/workflows/ci.yml` runs the backend tests on Python 3.12 with a minimal,
-**torch-free** dependency set (plus `ruff --select F821`), and the frontend
-typecheck/lint/test on Node 22. Torch-dependent tests skip themselves there. The
-production build (`npm run build`) is not in CI — Vercel runs it on push.
+**torch-free** dependency set, after `ruff check .` (rules in `backend/pyproject.toml`:
+pyflakes `F` + syntax `E9`), and prints coverage (`pytest-cov`). The frontend job runs
+typecheck/lint/test and the production build (`npm run build`) on Node 22.
+Torch-dependent tests skip themselves there. When a test needs a new package,
+add it to the `pip install` line in `ci.yml` too (simulate the CI env locally:
+`uv run --no-project --python 3.12 --with pytest --with <each package in ci.yml> python -m pytest`).
 
 **E2E smoke (local only, not in CI yet):** `cd frontend && npm run test:e2e`
 (Playwright, `frontend/e2e/`). It checks that the map loads, the grid → road segments

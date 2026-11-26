@@ -166,7 +166,7 @@ class RoadPreprocessor:
                 # Fallback Strategy:
                 # If AI fails to find road at seed (e.g. glare, occlusion) OR validation failed,
                 # do NOT black out the image. Fallback to Geometric ROI.
-                print(f"RoadPreprocessor: FastSAM failed or rejected. Falling back to Geometric ROI.")
+                print("RoadPreprocessor: FastSAM failed or rejected. Falling back to Geometric ROI.")
                 
                 # Create default trapezoid fallback
                 fallback_mask = np.zeros((h, w), dtype=np.uint8)

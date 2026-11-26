@@ -7,7 +7,7 @@ on:
 
 jobs:
   frontend:
-    name: Frontend (typecheck / lint / test)
+    name: Frontend (typecheck / lint / test / build)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -23,9 +23,11 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
+      # Vercel builds on push; build here too so a broken build fails the PR.
+      - run: npm run build
 
   backend:
-    name: Backend (pytest)
+    name: Backend (ruff / pytest + coverage)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -41,11 +43,15 @@ jobs:
       # permission tests import the real FastAPI app pieces and GraphQL
       # schema, so the web/DB layer packages are required; psycopg2 is only
       # loaded as a dialect, no server is contacted. sqlalchemy<2.1: 2.1 maps
-      # `postgresql://` to psycopg v3 (see backend/requirements.txt).
+      # `postgresql://` to psycopg v3 (see backend/requirements.txt). numpy +
+      # pillow: the hi-res view tests skip without them; torch stays out (the
+      # DINO tests skip).
       - run: >
-          pip install pytest ruff pydantic pydantic-settings httpx
+          pip install pytest pytest-cov ruff pydantic pydantic-settings httpx
           fastapi "sqlalchemy<2.1" geoalchemy2 psycopg2-binary
           strawberry-graphql sse-starlette alembic "PyJWT[crypto]"
-          requests googlemaps numpy
-      - run: ruff check --select F821 .
-      - run: pytest
+          requests googlemaps numpy pillow
+      # Rules live in backend/pyproject.toml ([tool.ruff.lint]: F + E9).
+      - run: ruff check .
+      # Floor a few points under today's 64% (T-18): catches a big untested drop.
+      - run: pytest --cov=app --cov-report=term-missing:skip-covered --cov-fail-under=60

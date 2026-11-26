@@ -1,6 +1,5 @@
 """Tests for the single canonical data directory."""
 
-from pathlib import Path
 
 import pytest
 

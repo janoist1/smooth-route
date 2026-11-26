@@ -4,7 +4,7 @@ Job service for tracking background tasks.
 
 import uuid
 from app.core.timeutil import utcnow
-from typing import Dict, Optional
+from typing import Optional
 from enum import Enum
 
 

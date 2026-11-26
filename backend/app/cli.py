@@ -1,15 +1,12 @@
 import typer
 import os
 from typing import Optional
-from app.services.google_maps import google_maps_service
 from app.core.database import SessionLocal, engine
 from app.models.models import StreetViewImage, Base
 from app.core.config import settings
-from datetime import datetime
 from rich.console import Console
 from rich.table import Table
-from geoalchemy2 import Geometry
-from sqlalchemy import func, or_, and_, not_
+from sqlalchemy import or_
 
 app = typer.Typer()
 console = Console()
@@ -47,12 +44,12 @@ def collect_points(origin: str, destination: str):
     from app.services.processing_service import processing_service
     
     console.print(f"[bold green]Collecting points from '{origin}' to '{destination}'...[/bold green]")
-    console.print(f"[dim]Note: Route is only a tool - points are stored point-based, not route-based.[/dim]")
+    console.print("[dim]Note: Route is only a tool - points are stored point-based, not route-based.[/dim]")
     
     try:
         result = processing_service.collect_points(origin, destination)
         
-        console.print(f"[bold green]Success! Points collected.[/bold green]")
+        console.print("[bold green]Success! Points collected.[/bold green]")
         console.print(f"Total points along route: {result['total']}")
         console.print(f"New points created: {result['new']} | Reused existing: {result['reused']}")
 
@@ -129,12 +126,12 @@ def download_images(
     from app.services.processing_service import processing_service
     
     try:
-        console.print(f"[bold blue]Checking for pending downloads...[/bold blue]")
+        console.print("[bold blue]Checking for pending downloads...[/bold blue]")
         
         result = processing_service.download_images(output_dir, limit)
         
         if result['downloaded'] == 0 and result['skipped'] == 0 and result['errors'] == 0:
-            console.print(f"[bold yellow]No points found that need downloading[/bold yellow]")
+            console.print("[bold yellow]No points found that need downloading[/bold yellow]")
         else:
             console.print(f"[bold green]Downloaded {result['downloaded']} new images. Skipped {result['skipped']} (already exist). Errors: {result['errors']}[/bold green]")
             
@@ -162,11 +159,11 @@ def fetch_missing_images(
     from app.services.processing_service import processing_service
     
     try:
-        console.print(f"[bold blue]Checking for missing images on disk...[/bold blue]")
+        console.print("[bold blue]Checking for missing images on disk...[/bold blue]")
         
         result = processing_service.download_missing_images(output_dir, limit)
         
-        console.print(f"[bold green]Sync complete![/bold green]")
+        console.print("[bold green]Sync complete![/bold green]")
         console.print(f"Downloaded: {result['downloaded']} | Healthy (Skipped): {result['skipped']} | Errors: {result['errors']}")
         
     except Exception as e:
@@ -253,7 +250,7 @@ def analyze_points(
             reanalyze=reanalyze
         )
         
-        console.print(f"[bold green]Analysis complete.[/bold green]")
+        console.print("[bold green]Analysis complete.[/bold green]")
         console.print(f"Analyzed: {result['analyzed']} | Errors: {result['errors']} | Total candidates: {result['total']}")
         
     except Exception as e:

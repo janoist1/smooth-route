@@ -479,8 +479,6 @@ def test_reason_names_the_single_factor_that_was_pushed_down():
 from app.services.segment_aggregation import (  # noqa: E402
     REASON_UNLABELLED_AREA,
     apply_unlabelled_area,
-    confidence_reason,
-    confidence_level,
     unlabelled_cap,
 )
 

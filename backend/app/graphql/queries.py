@@ -1,25 +1,21 @@
 import strawberry
 from typing import List, Optional
-from sqlalchemy.orm import Session
 from sqlalchemy import func, text
-import threading
-import json
 import datetime
 
 from app.core.timeutil import utcnow
 from app.core.rqi_scale import SCALE
 
-from app.core.database import SessionLocal
 from app.models.models import StreetViewImage, TrainingData as TrainingDataModel, Job as JobModel, User
 from app.core.config import settings
-from app.services.job_service import create_job, get_job
+from app.services.job_service import get_job
 from app.services.map_aggregation import grid_cell_size_for_zoom
 from app.core.settings_manager import settings_manager
 
-from .types import Point, Job, TrainingData, ProcessRouteInput, TrainingDataInput, RunAnalysisInput, TrainingStats, TrainingPointsResponse, FilterMode, Setting, UpdateSettingInput, DetectInput, DetectPrediction, ReviewActionInput, ReviewActionResult, RqiModelInfo, RoadSegment, RouteQuality
+from .types import Point, Job, TrainingStats, TrainingPointsResponse, FilterMode, Setting, RqiModelInfo, RoadSegment, RouteQuality
 
 from app.graphql.resolver_helpers import get_db_session, image_filename_from_url as get_filename
-from app.graphql.permissions import IsAdmin, IsAuthenticated, IsAuthenticatedUnlessPublicRead
+from app.graphql.permissions import IsAdmin, IsAuthenticatedUnlessPublicRead
 
 @strawberry.type
 class RouteStep:
@@ -558,7 +554,6 @@ class Query:
             query = db.query(StreetViewImage)
             
             # --- FILTERING LOGIC ---
-            from sqlalchemy import or_
             # --- FILTERING LOGIC ---
             # Optimization: Avoid JOIN with OR/CONCAT which kills performance.
             # Instead, fetch relevant filenames first and use IN/NOT IN.
@@ -651,7 +646,6 @@ class Query:
     def training_stats(self, mode: FilterMode = FilterMode.ALL, is_dino: bool = False) -> TrainingStats:
         db = get_db_session()
         try:
-            import os
 
             # 1. Fetch training data (manual ground truth)
             training_entries = db.query(TrainingDataModel).all()
@@ -791,7 +785,6 @@ class Query:
     def next_training_point(self, current_id: int, mode: FilterMode = FilterMode.ALL, model: str = "yolo") -> Optional[int]:
         db = get_db_session()
         try:
-            import os
             from app.models.models import StreetViewImage
             
 
