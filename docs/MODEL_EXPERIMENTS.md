@@ -421,6 +421,395 @@ Reprodukálás:
 .venv/bin/python ml/evaluate_artifact.py     # kapu (PASS a bajnokra)
 ```
 
+## Era 7 — Segment-level aggregation (2026-11-26)
+
+> **TL;DR:** the map shows road segments, not single frames, so we measured
+> the model at segment level, under the same spatial protocol as Era 6.
+> Taking the **median frame score over a ~200 m segment** (with cut-points
+> re-tuned for the aggregated score) lifts agreement with the human segment
+> label from **QWK 0.78 → 0.84, MAE 0.40 → 0.29, exact class 61% → 71%,
+> bad-road AUC 0.94 → 0.97**. The gain is real but modest, because
+> neighbouring frames share most of their error: averaging cannot remove an
+> error that the whole segment has in common. Two useful consequences:
+> **(1)** a few frames per segment are as good as twenty, so frames can be
+> collected every **~30 m instead of ~10 m** with no measurable loss (3× map
+> coverage per image quota); **(2)** how sure we are about a segment depends
+> on how far its score is from the nearest cut-point, hardly on the number of
+> frames or their spread. One limit: in **Budapest**, the region the model
+> already reads worst, aggregation does not help. The recipe for the backend
+> is `ml/segment_recipe.json`. No model was changed.
+
+### What was measured
+
+Everything comes from `ml/segment_eval.py` (one command, prints every table
+below).
+
+- **Frame predictions:** the champion's out-of-fold predictions under the
+  official protocol (1 km cells, StratifiedGroupKFold 5, seed 42, nested
+  cut-points): QWK 0.774 / MAE 0.405 / AUC 0.934, identical to the gate.
+  Saved to `ml/cache/oof_spatial_champion.csv` (score, class, P(bad), fold).
+  P(bad) is an isotonic calibrator fitted inside each fold.
+- **Chains:** frames in capture order; a chain breaks at a gap > 40 m, at a
+  turn > 45°, and at a 1 km cell border. The last rule guarantees that a
+  segment never straddles train and test. Result: 91 chains, 19.5 km, frames
+  ~10 m apart.
+- **Segments:** every chain is cut into equal pieces of about L metres,
+  L ∈ {1 frame, 50, 100, 150, 200, 300 m}. **Segment truth = the median human
+  label** of its frames.
+- **Honest tuning:** aggregation shrinks the spread of the scores, so the
+  score → class cut-points are re-tuned for every aggregator and length, on
+  the training folds only (their inner out-of-fold frame scores, aggregated
+  the same way). Test labels never touch a cut-point.
+- **Metrics** are weighted by segment length. Confidence intervals resample
+  whole cells (1000 times). Every length is also cut three ways (cuts shifted
+  by 0, ⅓ and ⅔ of a segment); the "mean of 3 segmentations" is the steadier
+  number, because a single segmentation moves QWK by ±0.01–0.02.
+
+Single-frame numbers in this section are length-weighted (QWK 0.780), so they
+differ slightly from the official per-image 0.774.
+
+### How homogeneous are real segments?
+
+Human labels inside one segment (shares of road length):
+
+| segment length | segments | frames / segment | all labels identical | good and bad frames mixed | frames equal to the segment label |
+|---|---|---|---|---|---|
+| 50 m | 412 | 5 | 57% | 24% | 86% |
+| 100 m | 225 | 10 | 40% | 35% | 82% |
+| 150 m | 169 | 14 | 29% | 40% | 80% |
+| **200 m** | 143 | 18 | 25% | 46% | 79% |
+| 300 m | 118 | 26 | 18% | 51% | 77% |
+
+Road quality changes slowly: even in a 200 m segment four of five frames
+carry the segment's label. But a longer segment does hide short bad patches:
+at 200 m almost half of the road lies in segments that contain both good
+(1–2) and bad (3–4) frames.
+
+### Why averaging helps less than expected
+
+If frame errors were independent, 18 frames would cut the noise by a factor
+of four. They are not independent:
+
+| distance between two frames of one chain | 10 m | 20 m | 30 m | 50 m | 100 m | 200 m |
+|---|---|---|---|---|---|---|
+| correlation of the model's error | 0.65 | 0.54 | 0.50 | 0.42 | 0.32 | 0.19 |
+
+The model is wrong about a *stretch of road*, not about a frame. The share of
+the frame-error variance that all frames of a segment have in common, and
+that no aggregator can remove, is 65% at 50 m, 55% at 100 m and still 46% at
+200 m.
+
+### Aggregators × segment length
+
+QWK / MAE, mean of the 3 segmentations (single frame: **0.780 / 0.404**):
+
+| aggregator | 50 m | 100 m | 150 m | 200 m | 300 m |
+|---|---|---|---|---|---|
+| **median score** | 0.790 / 0.387 | 0.819 / 0.328 | 0.834 / 0.320 | **0.843 / 0.292** | 0.848 / 0.281 |
+| mean score | 0.812 / 0.353 | 0.824 / 0.325 | 0.833 / 0.307 | 0.852 / 0.272 | 0.867 / 0.248 |
+| trimmed mean (20% per side) | 0.802 / 0.365 | 0.809 / 0.355 | 0.816 / 0.334 | 0.866 / 0.245 | 0.856 / 0.241 |
+| mean P(bad) | 0.809 / 0.363 | 0.826 / 0.328 | 0.840 / 0.302 | 0.881 / 0.223 | 0.847 / 0.259 |
+| majority vote of frame classes | 0.792 / 0.385 | 0.802 / 0.363 | 0.810 / 0.360 | 0.811 / 0.358 | 0.807 / 0.357 |
+| mean of integer frame classes | 0.806 / 0.356 | 0.823 / 0.331 | 0.824 / 0.327 | 0.842 / 0.295 | 0.840 / 0.280 |
+
+- **Length matters more than the aggregator.** Agreement rises steadily with
+  length and flattens around 200 m. Median, mean, trimmed mean and mean
+  P(bad) stay within ±0.02 of each other, which is the noise of one
+  segmentation. **Majority vote is the one clear loser**: it throws away how
+  far each frame is from a class border.
+- **The paired gain over the single frame** (median score, cell bootstrap):
+  50 m +0.015 [−0.005, +0.034], 100 m +0.026 [−0.015, +0.060], 150 m +0.037
+  [−0.020, +0.074], **200 m +0.079 [+0.029, +0.119]**, 300 m +0.093 [+0.063,
+  +0.125]. Up to 150 m the gain cannot be told from zero; at 200 m it can.
+- **Re-tuning the cut-points pays off from 150 m up**: at 200 m QWK 0.843
+  with re-tuned cut-points vs 0.821 with the single-frame cut-points (MAE
+  0.292 vs 0.339). At 50–100 m it makes no difference.
+
+The recommended recipe against the single frame:
+
+| metric | single frame | 200 m median, one segmentation [95% CI] | mean of 3 segmentations | paired gain [95% CI] |
+|---|---|---|---|---|
+| QWK | 0.780 [0.70, 0.84] | 0.859 [0.76, 0.92] | **0.843** | +0.079 [+0.029, +0.119] |
+| MAE | 0.404 [0.33, 0.46] | 0.264 [0.18, 0.35] | **0.292** | −0.139 [−0.214, −0.061] |
+| exact class | 61.1% | 73.6% | **70.8%** | |
+| within ±1 | 98.6% | 100% | | |
+| bad-road (RQI ≥ 3) AUC | 0.940 [0.90, 0.97] | 0.968 [0.91, 1.00] | **0.968** | +0.028 [−0.001, +0.054] |
+| good/bad accuracy | 86.7% | 90.4% | **89.4%** | |
+
+Confusion at 200 m (unshifted segmentation), in km of road (rows = human
+segment label):
+
+| truth \ predicted | 1 | 2 | 3 | 4 | recall |
+|---|---|---|---|---|---|
+| 1 | 4.88 | 0.83 | 0 | 0 | 0.85 |
+| 2 | 2.05 | 4.97 | 1.10 | 0 | **0.61** |
+| 3 | 0 | 0.78 | 2.56 | 0.25 | 0.71 |
+| 4 | 0 | 0 | 0.13 | 1.90 | 0.94 |
+| precision | 0.70 | 0.76 | 0.68 | 0.88 | |
+
+Class 2 is still the weakest (recall 0.61, up from 0.43 per frame), but a
+predicted 4 is now right 88% of the time (63% per frame) and nothing is off
+by more than one class.
+
+**What aggregation does not do:** it does not make individual frames more
+accurate. If every frame simply shows its segment's class and is judged
+against its own label, QWK is 0.76–0.79 at every length (single frame
+0.780). Smoothing each frame with its neighbours (Gaussian, σ = 25–100 m)
+gives +0.014 to +0.018 QWK, not distinguishable from zero. A segment is a
+more reliable *statement about a stretch of road*, not a sharper picture of
+each spot.
+
+### Confidence
+
+The backend computes, per segment,
+
+`confidence = clamp((1 − exp(−n / n_ref)) · exp(−(iqr / spread_ref)²) · (0.5 + 0.5 · min(1, margin / margin_ref)), 0, 1)`
+
+with n = frames in the segment, iqr = interquartile range of the frame
+scores, margin = distance of the aggregated score from the nearest cut-point.
+What predicts that the segment class is right (200 m, median score, the 3
+segmentations pooled):
+
+| margin | 0–0.1 | 0.1–0.2 | 0.2–0.3 | 0.3–0.4 | 0.4–0.5 | 0.5–0.7 | > 0.7 |
+|---|---|---|---|---|---|---|---|
+| P(class correct) | 0.56 | 0.68 | 0.70 | 0.76 | 0.89 | 0.95 | 1.00 |
+| P(good/bad wrong) | 25% | 11% | 6% | 4% | 0% | 0% | 0% |
+
+| frames used (segment thinned at random) | 1 | 2 | 3 | 5 | 8 | all (~18) |
+|---|---|---|---|---|---|---|
+| P(class correct) | 0.64 | 0.67 | 0.68 | 0.68 | 0.68 | 0.71 |
+
+| IQR of frame scores | < 0.1 | 0.1–0.15 | 0.15–0.2 | 0.2–0.3 | 0.3–0.4 | > 0.4 |
+|---|---|---|---|---|---|---|
+| P(class correct) | 0.70 | 0.67 | 0.79 | 0.67 | 0.69 | 0.69 |
+
+- **The margin carries the signal.** A segment that sits on a cut-point is a
+  coin flip between two neighbouring classes; half a class away it is
+  almost always right.
+- **The number of frames barely matters** (one frame 0.64, eighteen 0.71),
+  which follows from the correlated errors above.
+- **The spread of the scores does not predict a wrong class.** It only goes
+  with more good/bad mistakes (0–2% below an IQR of 0.15, 11–15% above 0.2).
+
+Fitted parameters (least Brier score against "segment class correct"; among
+fits that cannot be told apart the more cautious one is taken):
+**n_ref = 0.5, spread_ref = 2.0, margin_ref = 0.6**. With these the formula
+is in practice a function of the margin: n only penalises a single-frame
+segment (×0.86), and the IQR term stays above 0.92 for 95% of segments. Fitting
+on four folds and checking on the fifth gives the same parameters (n_ref 0.5,
+spread_ref 1.5–2.0, margin_ref 0.6–0.7) and this calibration:
+
+| confidence | share of road | mean confidence | P(class correct) | P(good/bad wrong) |
+|---|---|---|---|---|
+| < 0.50 | 7% | 0.47 | 0.61 | 28% |
+| 0.50–0.55 | 18% | 0.53 | 0.57 | 21% |
+| 0.55–0.60 | 17% | 0.58 | 0.69 | 19% |
+| 0.60–0.65 | 12% | 0.62 | 0.68 | 0% |
+| 0.65–0.70 | 10% | 0.67 | 0.71 | 0% |
+| 0.70–0.75 | 10% | 0.72 | 0.75 | 12% |
+| 0.75–0.80 | 6% | 0.78 | 0.60 | 4% |
+| 0.80–0.90 | 12% | 0.84 | 0.90 | 0% |
+| 0.90–1.00 | 8% | 0.96 | 0.97 | 0% |
+
+The confidence is roughly the probability that the class is right. The
+single bins are noisy (27–73 pooled segments each), so the map should use
+three levels:
+
+| level | rule | share of road | P(class correct) | P(good/bad wrong) | off by 2 classes |
+|---|---|---|---|---|---|
+| **high** | confidence ≥ 0.80 | 19% | **0.93** | 0% | 0% |
+| **medium** | 0.55 – 0.80 | 56% | **0.69** | 9% | 0% |
+| **low** | < 0.55 | 25% | **0.58** | 23% | 0% |
+
+(Cross-fold parameters, full segments. With the final parameters: 0.93 / 0.70
+/ 0.53. With thinned segments included: 0.88 / 0.67 / 0.53.) "High" is
+reliable in every region (0.87–1.00); "low" and "medium" are not equally well
+separated everywhere (see the regions below). A predicted 3 never reaches
+"high": its score band is only ~0.55 wide, so it is always close to a
+cut-point. That matches reality (precision of class 3 is 0.68).
+
+**A simpler signal for the good/bad call.** If the map mainly says "good" or
+"bad", the distance of the segment score from the good|bad cut-point (t23)
+alone is the cleanest indicator: P(good/bad wrong) is 64% within 0.1 of it,
+22% at 0.1–0.2, 16% at 0.2–0.3, 5–6% at 0.3–0.8 and 0% beyond 0.8 (46% of
+the road). A second, good/bad-specific confidence built on this distance
+would be more informative than the n and IQR terms of the current formula.
+
+### How dense must the frames be?
+
+The collector takes a frame every ~10 m, and every frame costs Street View
+quota. Keeping only every k-th labelled frame (same 200 m segments, same
+truth, same cut-points):
+
+| frames kept | ≈ spacing | frames / segment | QWK | MAE | exact | bad AUC | good/bad acc. | ΔQWK vs dense [95% CI] |
+|---|---|---|---|---|---|---|---|---|
+| all | 10 m | 18.8 | 0.843 | 0.292 | 70.8% | 0.968 | 89.4% | – |
+| every 2nd | 20 m | 9.4 | 0.845 | 0.282 | 72.1% | 0.965 | 90.6% | −0.005 [−0.027, +0.015] |
+| **every 3rd** | **30 m** | 6.3 | **0.848** | 0.276 | 72.6% | 0.965 | 91.0% | **+0.005 [−0.010, +0.025]** |
+| every 5th | 50 m | 3.8 | 0.824 | 0.315 | 68.9% | 0.962 | 89.2% | −0.027 [−0.058, −0.003] |
+| every 10th | 100 m | 2.0 | 0.808 | 0.329 | 67.9% | 0.952 | 88.2% | −0.043 [−0.093, −0.014] |
+
+(Main columns: mean of the 3 segmentations. Δ: paired bootstrap on the
+unshifted segmentation.) **30 m spacing loses nothing measurable** and
+triples the road covered per image. At 50 m a small loss appears (about
+−0.02 QWK), at 100 m it is clear (−0.04) and a segment holds only two frames.
+The confidence levels keep their meaning at 30 m (P(class correct) 0.89 /
+0.71 / 0.61 for high / medium / low). The picture is the same for shorter
+segments (100 m: QWK 0.819 → 0.809 at 30 m → 0.774 at 100 m). Caveat: this
+is thinning of dense, hand-checked runs; real sparse collection also meets
+frames the labelled set does not contain (junk views, occlusions), which is
+why the recipe uses the median and asks for at least 2 frames.
+
+### Regions: does the bias survive aggregation?
+
+Single frame → 200 m segments (mean of the 3 segmentations):
+
+| region | frames → segments | QWK | MAE | bad AUC | good/bad acc. | class bias | score bias |
+|---|---|---|---|---|---|---|---|
+| Budapest (VII–VIII.) | 229 → 13 | 0.44 → **0.34** | 0.37 → 0.37 | 0.79 → 0.83 | 70% → **65%** | +0.10 → −0.20 | +0.02 → 0.00 |
+| Törökbálint–Budaörs | 665 → 40 | 0.58 → 0.63 | 0.45 → 0.35 | 0.93 → 0.97 | 92% → 97% | −0.14 → −0.11 | 0.00 → −0.01 |
+| Székesfehérvár | 359 → 26 | 0.53 → 0.60 | 0.33 → 0.21 | 0.93 → n/a¹ | 94% → 96% | −0.10 → +0.02 | +0.06 → +0.03 |
+| Tapolca area | 650 → 64 | 0.71 → 0.84 | 0.41 → 0.25 | 0.92 → 0.95 | 83% → 87% | −0.01 → +0.01 | −0.18 → −0.19 |
+
+Bias = model − human, in classes (class bias) and on the continuous score
+(score bias); + means the model says worse than the human.
+¹ no bad segment is left in Székesfehérvár at 200 m.
+
+- **A regional score offset survives aggregation untouched**, as it must: it
+  is the same for every frame of a segment. Around Tapolca the model's score
+  is 0.18 better than the human label before and 0.19 after.
+- **Budapest does not benefit.** Outside Budapest every region improves; in
+  Budapest QWK falls from 0.44 to 0.34 and the good/bad accuracy from 70% to
+  65%. Its frame-level "too severe" (+0.10 class) turns into "too lenient"
+  (−0.20) with the segment cut-points, while its score bias is ~0: the
+  problem there is the good|bad decision itself, not an offset, and
+  aggregation cannot repair it. This rests on 13 segments (2.3 km); one of
+  the three segmentations alone shows 76%, so the size of the effect is very
+  uncertain, but there is no evidence of a gain.
+- **Confidence per region:** "high" holds everywhere (class right in 87–100%).
+  "Low" and "medium" are clearly apart in Budapest (16% vs 88%) and
+  Törökbálint (44% vs 62%), but not in Székesfehérvár (71% vs 66%) and
+  Tapolca (72% vs 72%). In Budapest the low-confidence third of the road
+  holds about five in six of the good/bad mistakes, so at least the weak
+  spots are flagged. Per-region numbers rest on 13–64 segments.
+
+### Image age
+
+A "this image is old" penalty cannot be fitted from our data today
+(`ml/segment_eval.py --age-check`, read-only on the local DB).
+`street_view_images.capture_date` is filled for 17,442 of 17,607 frames (a
+backfill was running on the day of writing). The frames are young: median
+age 1.2 years, 12% older than 3 years, 2% older than 5.
+
+- **Labels cannot tell.** A label describes the image, not today's road, so
+  the labelled set says nothing about how a road changes after capture,
+  whatever the capture dates are.
+- **Repeat captures are the right evidence, but too thin.** 342 pairs of
+  captures of the same spot (within 15 m, same street direction) on different
+  dates exist. The model's class differs by ≥ 1 in 39% of the pairs less than
+  a year apart, 31% at 1–2 years, 38% at 2–4 years and 44% beyond 4 years
+  (103 pairs); the mean drift (later − earlier) is 0.00, −0.03, +0.05 and
+  +0.11 class. Pairs taken months apart already disagree almost as often as
+  pairs taken years apart, so no age effect can be measured.
+
+Until labelled spots are re-collected after a known time, age can only be a
+product rule: show the capture date, and if a penalty is wanted apply it only
+beyond ~5 years (2% of the frames). It should not be a term of the measured
+confidence.
+
+### Verdict and recipe
+
+**Aggregate to ~200 m segments with the median frame score.** 200 m is where
+the gain over a single frame becomes clearly measurable and where it
+flattens; the median is as good as any other sensible aggregator and is the
+one that still protects against a junk frame when a segment has only three.
+`ml/segment_recipe.json`:
+
+```json
+{
+  "version": 1,
+  "segment_length_m": 200,
+  "aggregator": "median_score",
+  "trim_fraction": 0.0,
+  "thresholds": [1.577, 2.496, 3.052],
+  "p_bad_threshold": 0.5,
+  "min_images": 2,
+  "recommended_frame_spacing_m": 30,
+  "confidence": {"n_ref": 0.5, "spread_ref": 2.0, "margin_ref": 0.6, "high": 0.8, "medium": 0.55},
+  "integer_class_fallback": {"aggregator": "mean_class", "thresholds": [1.511, 2.52, 3.207]}
+}
+```
+
+How the backend should read it:
+
+1. **Input** is the continuous frame score (`analysis_metadata.dino_score`),
+   not the integer class. Segment score = median of the frame scores.
+2. **Class** = 1 + the number of `thresholds` that are ≤ the segment score.
+   The cut-points were tuned on all spatial out-of-fold segments (the 3
+   segmentations pooled). They differ from the single-frame cut-points in the
+   artifact and must not be swapped with them.
+3. **Confidence** uses n, the IQR of the frame scores (quartiles with linear
+   interpolation, 0 for a single frame) and the margin, then the two level
+   thresholds.
+4. **`min_images`**: with one frame the class is right in 64% instead of 71%
+   and there is no spread; show such segments as "low" or not at all.
+5. **`p_bad_threshold`** (optional good/bad flag): mean `dino_p_bad` ≥ 0.5,
+   tuned through the live artifact's calibrator. In the nested measurement
+   the mean-P(bad) flag reaches 91.6% good/bad accuracy against 89.4% for
+   "class ≥ 3". The two can disagree on a segment, so use one of them
+   consistently.
+6. **`integer_class_fallback`**: at the time of writing only 3,346 of the
+   17,607 frames in the local DB store `dino_score`; the rest have just the
+   integer `dino_rqi_score`. For those,
+   the mean of the integer classes with its own cut-points is as good for the
+   class (QWK 0.842 / MAE 0.295 at 200 m), but the margin-based confidence is
+   not calibrated for it. Backfilling `dino_score` is the proper fix.
+7. Where the cuts fall does not matter (QWK ±0.015 between segmentations),
+   so the backend can segment along routes or streets as is convenient;
+   chains should break at gaps > 40 m and at sharp turns.
+
+Other lengths, same recipe (use these if a finer map is wanted):
+
+| length | cut-points | n_ref / spread_ref / margin_ref | QWK / MAE | high: share, P(correct) | medium | low |
+|---|---|---|---|---|---|---|
+| 100 m | 1.48, 2.39, 2.98 | 0.5 / 1.0 / 0.6 | 0.819 / 0.328 | 13%, 0.92 | 56%, 0.69 | 31%, 0.56 |
+| 150 m | 1.58, 2.50, 3.05 | 0.5 / 2.0 / 0.7 | 0.834 / 0.320 | 15%, 0.99 | 59%, 0.65 | 26%, 0.59 |
+| **200 m** | 1.58, 2.50, 3.05 | 0.5 / 2.0 / 0.6 | 0.843 / 0.292 | 20%, 0.93 | 58%, 0.70 | 22%, 0.53 |
+
+### What it means for the map
+
+- **Colour segments, not frames.** A 200 m segment's class is right 7 times
+  out of 10 and never off by more than one; its good/bad call is right 9
+  times out of 10. Frames can still be shown on zoom-in, but they are not
+  more accurate than their segment.
+- **Show three confidence levels.** One fifth of the road is "high" (class
+  right in 93%, good/bad never wrong in our data). A quarter is "low": there
+  the class is little better than a coin flip between two neighbours and the
+  good/bad call is wrong one time in four, so it should look uncertain.
+- **Collect every ~30 m.** Same segment quality, three times the coverage per
+  quota.
+- **What aggregation cannot fix:** a whole stretch judged wrongly, a region
+  the model reads differently (a constant offset around Tapolca, the good|bad
+  decision in Budapest), and old images. Those need more varied labels and a
+  holdout region (the Era 6 recommendations), not more frames of the same
+  road. In inner Budapest the segment colours deserve the least trust.
+
+Limits of this measurement: 19.5 km of road in 35 cells and 4 regions, so
+the intervals are wide (QWK ±0.08). The segment truth is the median of one
+annotator's frame labels. The segment length, the aggregator and the two
+level thresholds were chosen after looking at these tables (the parameters
+themselves were checked across folds), so expect slightly lower numbers on
+new roads.
+
+Reproduce:
+
+```bash
+.venv/bin/python ml/segment_eval.py                 # all tables above (~5 min)
+.venv/bin/python ml/segment_eval.py --write-recipe  # also rewrites ml/segment_recipe.json
+.venv/bin/python ml/segment_eval.py --length 100    # confidence / spacing / regions for another length
+.venv/bin/python ml/segment_eval.py --age-check     # optional: image age in the local DB
+```
+
 ---
 
 ## Mi él most, és mi halott?
