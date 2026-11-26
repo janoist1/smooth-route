@@ -37,3 +37,20 @@ class IsAuthenticatedUnlessPublicRead(IsAuthenticated):
         if settings.PUBLIC_READ_ONLY:
             return True
         return super().has_permission(source, info, **kwargs)
+
+
+def admin_only_field(default: Any = None) -> Any:
+    """A type field that resolves to null ([] for lists) for non-admins
+    instead of failing the whole query.
+
+    For admin data on publicly readable types, e.g. the labeller fields on
+    Point (manual_rqi / manual_tags / manual_annotations / manual_comment):
+        manual_comment: Optional[str] = admin_only_field()
+    """
+    import strawberry
+    from strawberry.permission import PermissionExtension
+
+    return strawberry.field(
+        default=default,
+        extensions=[PermissionExtension(permissions=[IsAdmin()], fail_silently=True)],
+    )
