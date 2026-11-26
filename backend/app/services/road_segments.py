@@ -59,6 +59,7 @@ from app.services.osm_overpass import (
     pad_bounds,
     tiles_for_points,
 )
+from app.core.rqi_scale import SCALE
 from app.services.segment_aggregation import (
     FrameObs,
     SegmentConfig,
@@ -143,7 +144,7 @@ class BuildStats:
             f"  unmatched:         {self.frames_unmatched}",
             "class distribution:",
         ]
-        for rqi in (1, 2, 3, 4):
+        for rqi in SCALE.model_levels:  # best first
             n = self.class_counts.get(rqi, 0)
             share = 100.0 * n / self.segments if self.segments else 0.0
             out.append(

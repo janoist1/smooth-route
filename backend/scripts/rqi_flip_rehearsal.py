@@ -5,8 +5,8 @@ Never writes to the source database. Steps:
   2. build the schema up to the migration's parent revision (alembic);
   3. copy training_data + street_view_images from the source via pg_dump
      (a read-only snapshot, run inside the source's docker container);
-  4. check the guard (upgrade must refuse while the scale is still 1 = best);
-  5. upgrade with a mirrored scale -> every RQI value is 6 - x, nothing else
+  4. check the guard (upgrade must refuse while the scale says 1 = best);
+  5. upgrade with the 5 = best scale -> every RQI value is 6 - x, nothing else
      changed, P(bad) untouched, and the ML export of the flipped DB equals
      today's export (so ml/labels.csv, the caches and the gate are identical);
   6. downgrade -> every row equals the original again;
@@ -90,7 +90,7 @@ def script_dir_with_pending(tmp, M):
     return dst
 
 
-TABLES = ("training_data", "street_view_images")
+TABLES = ("training_data", "street_view_images", "road_segments")
 
 
 def align_columns(source_container, source_db):
@@ -99,7 +99,8 @@ def align_columns(source_container, source_db):
     def cols(container, db):
         out = sh("docker", "exec", container, "psql", "-At", "-U", "postgres", "-d", db, "-c",
                  "SELECT table_name, column_name, data_type FROM information_schema.columns "
-                 "WHERE table_schema='public' AND table_name IN ('training_data','street_view_images')")
+                 "WHERE table_schema='public' AND table_name IN "
+                 "('training_data','street_view_images','road_segments')")
         return {(t, c): ty for t, c, ty in (ln.split("|") for ln in out.stdout.splitlines()
                                              if ln.count("|") == 2)}
     src, dst = cols(source_container, source_db), cols(NAME, "smooth_route")
@@ -110,11 +111,19 @@ def align_columns(source_container, source_db):
             print(f"  (added legacy column {t}.{c} {ty} to the scratch schema)")
 
 
+def present_tables(container, db):
+    out = sh("docker", "exec", container, "psql", "-At", "-U", "postgres", "-d", db, "-c",
+             "SELECT table_name FROM information_schema.tables WHERE table_schema='public'")
+    have = set(out.stdout.split())
+    return [t for t in TABLES if t in have]
+
+
 def copy_data(source_container, source_db):
     align_columns(source_container, source_db)
     dump = subprocess.run(
         ["docker", "exec", source_container, "pg_dump", "-U", "postgres", "-d", source_db,
-         "--data-only", "--no-owner", "-t", "training_data", "-t", "street_view_images"],
+         "--data-only", "--no-owner"] + [a for t in present_tables(source_container, source_db)
+                                         for a in ("-t", t)],
         check=True, capture_output=True)
     subprocess.run(["docker", "exec", "-i", NAME, "psql", "-q", "-v", "ON_ERROR_STOP=1",
                     "-U", "postgres", "-d", "smooth_route"],
@@ -136,7 +145,20 @@ def snapshot(conn):
         "analysis_metadata::jsonb - 'dino_score' AS meta_rest, "
         "to_jsonb(s) - 'rqi_score' - 'dino_rqi_score' - 'analysis_metadata' AS rest "
         "FROM street_view_images s"))}
-    return td, svi
+    rs = {}
+    if "road_segments" in sa.inspect(conn).get_table_names():
+        rs = {r.id: (r.score, r.rqi, r.rest) for r in conn.execute(sa.text(
+            "SELECT id, score, rqi, to_jsonb(s) - 'score' - 'rqi' AS rest FROM road_segments s"))}
+    return td, svi, rs
+
+
+def scale_with(direction):
+    """The deployed scale forced to ``direction`` (the guard reads it)."""
+    base = ORIG_LOAD()
+    return base if base.direction == direction else core.RqiScale(base.mirrored_data())
+
+
+ORIG_LOAD = core.load_scale
 
 
 def export_rows(conn, expr):
@@ -180,29 +202,32 @@ def main(argv=None):
         copy_data(args.source_container, args.source_db)
         engine = sa.create_engine(URL)
         with engine.connect() as c:
-            td0, svi0 = snapshot(c)
+            td0, svi0, rs0 = snapshot(c)
             export0 = export_rows(c, "manual_rqi")
-        print(f"copied {len(td0)} training_data + {len(svi0)} street_view_images rows")
+        print(f"copied {len(td0)} training_data + {len(svi0)} street_view_images "
+              f"+ {len(rs0)} road_segments rows")
 
-        print("\n1) guard: upgrade with the scale still 1 = best must refuse")
+        print("\n1) guard: upgrade with a 1 = best scale must refuse")
+        core.load_scale = lambda path=core.SCALE_PATH: scale_with("lower_is_better")
         try:
             command.upgrade(cfg, M.revision)
             check(False, "upgrade refused while direction=lower_is_better")
         except RuntimeError as e:
             check("RQI flip refused" in str(e), "upgrade refused while direction=lower_is_better")
+        finally:
+            core.load_scale = ORIG_LOAD
         with engine.connect() as c:
-            check(snapshot(c) == (td0, svi0), "refused upgrade left every row unchanged")
+            check(snapshot(c) == (td0, svi0, rs0), "refused upgrade left every row unchanged")
 
-        print("\n2) upgrade with the flipped scale (5 = best)")
-        orig_load = core.load_scale
-        core.load_scale = lambda path=core.SCALE_PATH: core.RqiScale(orig_load(path).mirrored_data())
+        print("\n2) upgrade with the 5 = best scale")
+        core.load_scale = lambda path=core.SCALE_PATH: scale_with("higher_is_better")
         try:
             command.upgrade(cfg, M.revision)
         finally:
-            core.load_scale = orig_load
+            core.load_scale = ORIG_LOAD
         with engine.connect() as c:
-            td1, svi1 = snapshot(c)
-            flipped_scale = core.RqiScale(core.SCALE.mirrored_data())
+            td1, svi1, rs1 = snapshot(c)
+            flipped_scale = scale_with("higher_is_better")
             ml_expr = ("manual_rqi" if flipped_scale.direction == core.SEVERITY
                        else f"({flipped_scale.min_value + flipped_scale.max_value} - manual_rqi)")
             export1 = export_rows(c, ml_expr)
@@ -219,6 +244,9 @@ def main(argv=None):
         check(export1 == export0,
               f"ML export of the flipped DB ({ml_expr}) == today's export "
               f"({len(export0)} rows): labels.csv, caches and gate stay identical")
+        check(all(rs1[k][1] == mirror(v[1]) and abs((rs1[k][0] or 0) - (mirror(v[0]) or 0)) < 1e-9
+                  and rs1[k][2] == v[2] for k, v in rs0.items()),
+              f"road_segments.rqi / score = 6 - x, p_bad / confidence / rest unchanged ({len(rs0)} rows)")
         bad0 = sum(1 for v in td0.values() if v[0] is not None and v[0] >= 3)
         bad1 = sum(1 for v in td1.values() if v[0] is not None and flipped_scale.is_bad(v[0]))
         check(bad0 == bad1, f"bad-road labels unchanged ({bad0})")
@@ -226,7 +254,11 @@ def main(argv=None):
         print("\n3) downgrade")
         command.downgrade(cfg, M.down_revision)
         with engine.connect() as c:
-            check(snapshot(c) == (td0, svi0), "every row equals the original again")
+            td2, svi2, rs2 = snapshot(c)
+            check((td2, svi2) == (td0, svi0), "every training_data / street_view_images row equals the original")
+            check(all(rs2[k][1] == v[1] and rs2[k][2] == v[2]
+                      and abs((rs2[k][0] or 0) - (v[0] or 0)) < 1e-9 for k, v in rs0.items()),
+                  "road_segments back to the original (score within 1e-9: float rounding)")
         engine.dispose()
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

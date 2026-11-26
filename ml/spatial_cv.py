@@ -32,7 +32,7 @@ from sklearn.model_selection import StratifiedGroupKFold
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
-import rqi_scale as R  # canonical scale, ML severity view (shared/rqi_scale.json)
+import rqi_scale as R  # noqa: F401  canonical scale, ML severity view (shared/rqi_scale.json)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 COORDS = os.path.join(ROOT, "ml", "image_coords.csv")

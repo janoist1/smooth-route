@@ -30,13 +30,20 @@ def test_backend_copy_matches_shared_source():
 
 
 def test_current_direction_pin():
-    # THE direction pin. Phase 1 keeps today's numbering: 1 = Kiváló (best).
-    # A deliberate flip changes exactly these lines.
-    assert SCALE.direction == LOWER_IS_BETTER
-    assert SCALE.best == 1 and SCALE.worst == 5
-    assert SCALE.model_levels == (1, 2, 3, 4)
-    assert SCALE.bad_from == 3
-    assert [SCALE.to_severity(x) for x in (1, 1.5, 2.48, 4, 5)] == [1, 1.5, 2.48, 4, 5]
+    # THE direction pin. Owner's decision 2026-11-26 ("5 kiváló mehet"):
+    # 5 = Kiváló (best) ... 1 = Nagyon rossz; new = 6 - old. Stored data is
+    # converted by alembic rqi_flip_direction. A deliberate flip changes exactly these lines.
+    assert SCALE.direction == HIGHER_IS_BETTER
+    assert SCALE.best == 5 and SCALE.worst == 1
+    assert SCALE.model_levels == (5, 4, 3, 2)
+    assert SCALE.bad_from == 3  # bad road = Közepes or worse = value <= 3
+    assert [SCALE.to_severity(x) for x in (5, 4.5, 3.52, 2, 1)] == [1, 1.5, 2.48, 4, 5]
+
+
+def test_five_distinct_colours_good_to_bad():
+    colours = [lv.color.lower() for lv in SCALE.levels]
+    assert colours == ["#1f5fa8", "#3d9ad6", "#e0a400", "#e8632b", "#b3172c"]
+    assert len(set(colours)) == 5 and SCALE.unknown_color.lower() not in colours
 
 
 def test_five_levels_with_hungarian_labels_best_first():

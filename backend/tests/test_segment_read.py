@@ -19,9 +19,15 @@ from app.services.segment_read import (
 from geo_helpers import at
 
 
+from app.core.rqi_scale import SCALE  # noqa: E402
+
+sv = SCALE.from_severity
+
+
 def record(id, x0, x1, rqi, score, level="high", **kw):
+    """rqi / score in severity (1 = Kiváló); stored canonically via sv()."""
     return SegmentRecord(
-        id=id, path=[at(x0, 0), at(x1, 0)], rqi=rqi, score=score, p_bad=kw.get("p_bad"),
+        id=id, path=[at(x0, 0), at(x1, 0)], rqi=sv(rqi), score=sv(score), p_bad=kw.get("p_bad"),
         confidence=kw.get("confidence", 0.8), confidence_level=level, n_images=kw.get("n", 10),
         length_m=abs(x1 - x0), road_name="Teszt utca", highway="residential",
         capture_date_min=dt.date(2021, 5, 1), capture_date_max=dt.date(2023, 8, 1),
@@ -121,7 +127,7 @@ def test_summarize_route_excludes_low_confidence_from_worst():
     assert result.covered_length_m == pytest.approx(600, abs=12)
     # The low-confidence segment still counts for coverage and class lengths…
     assert result.length_by_rqi[3] == pytest.approx(300, abs=12)
-    assert result.mean_score == pytest.approx((1.3 + 3.7 + 3.9 + 2.9) / 4, abs=0.05)
+    assert result.mean_score == pytest.approx(sv((1.3 + 3.7 + 3.9 + 2.9) / 4), abs=0.05)
     # …but is not listed among the worst.
     assert [r.id for r in result.worst_segments] == ["bad", "fair", "good"]
 
@@ -199,7 +205,7 @@ def test_resolvers_are_anonymous_and_map_records(monkeypatch):
     (seg,) = result.data["roadSegments"]
     assert seg["id"] == "42:1"
     assert seg["path"] == [list(p) for p in rec.path]
-    assert (seg["rqi"], seg["score"], seg["pBad"], seg["confidence"]) == (3, 2.718, 0.612, 0.704)
+    assert (seg["rqi"], seg["score"], seg["pBad"], seg["confidence"]) == (sv(3), round(sv(2.71828), 3), 0.612, 0.704)
     assert (seg["confidenceLevel"], seg["nImages"], seg["lengthM"]) == ("high", 12, 150.0)
     assert (seg["roadName"], seg["highway"]) == ("Teszt utca", "residential")
     assert (seg["captureDateMin"], seg["captureDateMax"]) == ("2021-05", "2023-08")
@@ -216,8 +222,8 @@ def test_resolvers_are_anonymous_and_map_records(monkeypatch):
     assert rq["totalLengthM"] == pytest.approx(150, abs=0.5)
     assert rq["coveredLengthM"] == pytest.approx(150, abs=6)
     assert rq["lengthByRqi"][2] == rq["coveredLengthM"] and len(rq["lengthByRqi"]) == 4
-    assert rq["meanScore"] == 2.718
-    assert rq["worstSegments"] == [{"id": "42:1", "rqi": 3}]
+    assert rq["meanScore"] == round(sv(2.71828), 3)
+    assert rq["worstSegments"] == [{"id": "42:1", "rqi": sv(3)}]
 
 
 def test_route_quality_rejects_a_malformed_path():

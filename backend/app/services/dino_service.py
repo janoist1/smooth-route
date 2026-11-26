@@ -10,7 +10,7 @@ does not require code changes here.
 
 v2 model (2026-07-03, 1903 images). Honest spatial CV (1 km grid cells,
 re-measured 2026-11-18, ml/spatial_cv.py): QWK 0.774, MAE 0.405, exact 61%,
-+-1 acc 98.5%, bad-road (RQI>=3) accuracy 86%, AUC 0.934. (The originally
++-1 acc 98.5%, bad-road (Közepes or worse) accuracy 86%, AUC 0.934. (The originally
 reported QWK 0.889 / MAE 0.195 came from a random 5-fold that leaked
 neighbouring Street View frames between train and test.)
 

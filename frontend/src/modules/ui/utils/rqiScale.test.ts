@@ -7,12 +7,14 @@ import {
   RQI_LEVELS,
   RQI_MODEL_LEVELS,
   RQI_SCALE,
+  RQI_UNKNOWN,
   compareWorstFirst,
   fromSeverity as sv,
   isBadRqi,
   nearestRqiLevel,
   rqiLevel,
   rqiScoreLabelHu,
+  rqiTextColor,
   rqiValue,
   toSeverity,
   towardWorseRqiLevel,
@@ -34,11 +36,22 @@ describe('canonical RQI scale definition', () => {
     expect(RQI_LEVELS.map(l => toSeverity(l.value))).toEqual([1, 2, 3, 4, 5])
   })
 
-  it('direction pin: today 1 = Kiváló (changes only on a deliberate flip)', () => {
-    expect(RQI_SCALE.direction).toBe('lower_is_better')
-    expect(RQI_LEVELS.map(l => l.value)).toEqual([1, 2, 3, 4, 5])
-    expect(RQI_MODEL_LEVELS).toEqual([1, 2, 3, 4])
+  it('direction pin: 5 = Kiváló since the owner flip (changes only on a deliberate flip)', () => {
+    expect(RQI_SCALE.direction).toBe('higher_is_better')
+    expect(RQI_LEVELS.map(l => l.value)).toEqual([5, 4, 3, 2, 1])
+    expect(RQI_MODEL_LEVELS).toEqual([5, 4, 3, 2])
     expect(RQI_BAD_FROM).toBe(3)
+  })
+
+  it('every level has its own colour, distinct from "no data"', () => {
+    const colours = RQI_LEVELS.map(l => l.color.toLowerCase())
+    expect(new Set([...colours, RQI_UNKNOWN.color.toLowerCase()]).size).toBe(RQI_LEVELS.length + 1)
+  })
+
+  it('picks readable badge text on each level colour', () => {
+    expect(rqiTextColor(rqiLevel(rqiValue('excellent'))!.color)).toBe('#fff') // dark blue
+    expect(rqiTextColor(rqiLevel(rqiValue('fair'))!.color)).toBe('#111') // amber
+    expect(rqiTextColor(rqiLevel(rqiValue('very_poor'))!.color)).toBe('#fff') // dark red
   })
 
   it('model contract: Nagyon rossz is never predicted; bad road from Közepes', () => {
@@ -77,12 +90,15 @@ describe('helpers', () => {
   })
 })
 
-// The pre-centralisation implementations, verbatim, to prove no behaviour change.
-const legacyColor = (score: number): string => {
-  if (score <= 2.0) return '#4ade80'
-  if (score <= 3.0) return '#facc15'
-  if (score <= 4.0) return '#f87171'
-  return '#ef4444'
+// The pre-centralisation rules, in severity (1 = best). Colour: the legacy
+// whole-number bands (2.0 stays, 2.01 is the next level), plus the 1|2 cut now
+// that Kiváló and Jó have different colours. Label: verbatim.
+const legacyColorBand = (score: number): number => {
+  if (score <= 1.0) return 1
+  if (score <= 2.0) return 2
+  if (score <= 3.0) return 3
+  if (score <= 4.0) return 4
+  return 5
 }
 const legacyLabel = (score: number): string => {
   if (score <= 1.5) return 'Excellent'
@@ -97,8 +113,10 @@ describe('getRQIColor / getRQILabel are unchanged', () => {
   const samples: number[] = []
   for (let s = -1; s <= 7.0001; s += 0.01) samples.push(Math.round(s * 100) / 100)
 
-  it('colour matches the legacy bands on a 0.01 grid', () => {
-    for (const s of samples) expect(getRQIColor(sv(s)), `severity ${s}`).toBe(legacyColor(s))
+  it('colour follows the legacy bands on a 0.01 grid', () => {
+    for (const s of samples) {
+      expect(getRQIColor(sv(s)), `severity ${s}`).toBe(rqiLevel(sv(legacyColorBand(s)))!.color)
+    }
   })
 
   it('label matches the legacy bands on a 0.01 grid', () => {

@@ -1,6 +1,7 @@
 // Deterministic mock data for the segment API — ONLY for visual checks while
 // the backend is not there yet (see segmentMocksEnabled in ./api.ts). Loaded
 // with a dynamic import, so it never ends up in the main production chunk.
+import { compareWorstFirst, fromSeverity, toSeverity } from '../../ui'
 import { haversineM, pathLengthM } from './geometry'
 import { SEGMENT_MIN_ZOOM } from './style'
 import type { LatLng, RoadSegment, RouteQuality } from './types'
@@ -30,7 +31,8 @@ const month = (year: number, r: number) => `${year}-${String(1 + Math.floor(r * 
 
 const makeSegment = (id: string, path: LatLng[], i: number, j: number, salt: number): RoadSegment => {
   const quality = rand(i, j, salt + 10)
-  const rqi = quality < 0.38 ? 1 : quality < 0.68 ? 2 : quality < 0.88 ? 3 : 4
+  // Generated in severity (1 = best … 4), then put on the canonical scale.
+  const severity = quality < 0.38 ? 1 : quality < 0.68 ? 2 : quality < 0.88 ? 3 : 4
   const confidence = Math.round((0.15 + 0.85 * rand(i, j, salt + 20)) * 100) / 100
   const confidenceLevel = confidence >= 0.7 ? 'high' : confidence >= 0.4 ? 'medium' : 'low'
   const lengthM = pathLengthM(path)
@@ -41,9 +43,11 @@ const makeSegment = (id: string, path: LatLng[], i: number, j: number, salt: num
   return {
     id,
     path,
-    rqi,
-    score: Math.round(Math.max(1, Math.min(4, rqi + (rand(i, j, salt + 60) - 0.5) * 0.9)) * 100) / 100,
-    pBad: Math.round(Math.max(0.01, Math.min(0.99, (rqi - 1) / 3 + (rand(i, j, salt + 70) - 0.5) * 0.3)) * 100) / 100,
+    rqi: fromSeverity(severity),
+    score: fromSeverity(
+      Math.round(Math.max(1, Math.min(4, severity + (rand(i, j, salt + 60) - 0.5) * 0.9)) * 100) / 100,
+    ),
+    pBad: Math.round(Math.max(0.01, Math.min(0.99, (severity - 1) / 3 + (rand(i, j, salt + 70) - 0.5) * 0.3)) * 100) / 100,
     confidence,
     confidenceLevel,
     nImages: Math.max(1, Math.round((lengthM / 15) * (0.2 + confidence))),
@@ -96,14 +100,14 @@ export const mockRouteQuality = (path: LatLng[]): RouteQuality => {
   }
   if (current.length > 1) pieces.push(current)
 
-  const lengthByRqi = [0, 0, 0, 0]
+  const lengthByRqi = [0, 0, 0, 0] // best first, like the API
   const measured: RoadSegment[] = []
   let scoreLength = 0
   pieces.forEach((piece, k) => {
     if (noData || rand(k, 7, 5) > 0.7) return
     const segment = makeSegment(`mock-route-${k}`, piece, k, 7, 900)
     measured.push(segment)
-    lengthByRqi[(segment.rqi ?? 1) - 1] += segment.lengthM
+    lengthByRqi[toSeverity(segment.rqi ?? fromSeverity(1)) - 1] += segment.lengthM
     scoreLength += (segment.score ?? 0) * segment.lengthM
   })
   const coveredLengthM = lengthByRqi.reduce((sum, metres) => sum + metres, 0)
@@ -113,6 +117,8 @@ export const mockRouteQuality = (path: LatLng[]): RouteQuality => {
     coveredLengthM: Math.min(totalLengthM, coveredLengthM),
     lengthByRqi,
     meanScore: coveredLengthM > 0 ? scoreLength / coveredLengthM : null,
-    worstSegments: [...measured].sort((a, b) => (b.score ?? 0) - (a.score ?? 0)).slice(0, 5),
+    worstSegments: [...measured]
+      .sort((a, b) => compareWorstFirst(a.score ?? fromSeverity(1), b.score ?? fromSeverity(1)))
+      .slice(0, 5),
   }
 }

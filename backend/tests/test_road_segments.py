@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.core.rqi_scale import SCALE
 from app.services.osm_chains import merge_ways
 from app.services.osm_overpass import Way
 from app.services.road_segments import (
@@ -29,9 +30,14 @@ FAR = Way(id=300, coords=(at(0, 500), at(300, 500)), name="Far", highway="reside
 WAYS = {w.id: w for w in (MAIN, SIDE, FAR)}
 
 
+# Scores below are written in severity (1 = Kiváló); sv() puts them on the
+# canonical scale the DB and the builder use.
+sv = SCALE.from_severity
+
+
 def frame(id, east, north, heading, score, **kw):
     lat, lon = at(east, north)
-    return Frame(id=id, lat=lat, lon=lon, heading=heading, score=score, **kw)
+    return Frame(id=id, lat=lat, lon=lon, heading=heading, score=sv(score), **kw)
 
 
 def main_frames():
@@ -47,8 +53,11 @@ def test_frames_are_split_between_pieces_by_linear_reference():
     assert set(by_id) == {"100:0", "100:1"}          # lines without frames are not stored
 
     first, second = by_id["100:0"], by_id["100:1"]
-    assert (first["n_images"], first["rqi"], first["score"]) == (8, 2, 1.8)
-    assert (second["n_images"], second["rqi"], second["score"]) == (4, 4, 3.5)
+    # rows are canonical; the fixtures' frames are written in severity (sv)
+    assert (first["n_images"], first["rqi"]) == (8, sv(2))
+    assert first["score"] == pytest.approx(sv(1.8))
+    assert (second["n_images"], second["rqi"]) == (4, sv(4))
+    assert second["score"] == pytest.approx(sv(3.5))
     assert first["p_bad"] is None                     # frames carried no P(bad)
     assert first["length_m"] == pytest.approx(150, abs=0.2)
     assert first["road_name"] == "Main" and first["highway"] == "secondary"
@@ -97,7 +106,7 @@ def test_junction_frames_follow_their_heading():
         by_way[r["osm_way_id"]] = by_way.get(r["osm_way_id"], 0) + r["n_images"]
     assert by_way == {100: 1, 200: 3}
     side = next(r for r in rows if r["osm_way_id"] == 200)
-    assert side["id"] == "200:0" and side["rqi"] == 4
+    assert side["id"] == "200:0" and side["rqi"] == sv(4)
     assert side["coords"] == list(SIDE.coords)        # short way stays one piece
 
 

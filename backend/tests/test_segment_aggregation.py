@@ -5,6 +5,7 @@ import math
 
 import pytest
 
+from app.core.rqi_scale import SCALE
 from app.services.segment_aggregation import (
     CONFIG_PATH,
     DEFAULT_CONFIG,
@@ -33,8 +34,18 @@ TODAY = dt.date(2026, 11, 26)
 CFG = DEFAULT_CONFIG
 
 
+# Frame scores and expected classes are written in SEVERITY (1 = Kiváló … 4 =
+# Rossz, the numbering the thresholds are tuned in); sv() maps them onto the
+# canonical scale the module reads and returns, so the tests hold either way.
+sv = SCALE.from_severity
+
+
+def obs(score, p_bad=None, capture=None):
+    return FrameObs(sv(score), p_bad, capture)
+
+
 def frames(scores, p_bad=None, capture=None):
-    return [FrameObs(s, p_bad, capture) for s in scores]
+    return [obs(s, p_bad, capture) for s in scores]
 
 
 # ---- config ---------------------------------------------------------------
@@ -43,7 +54,8 @@ def test_shipped_config_file_equals_the_documented_defaults():
     data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
     assert data == {
         "version": 1, "segment_length_m": 150, "aggregator": "median_score",
-        "trim_fraction": 0.1, "thresholds": [1.51, 2.47, 3.18],
+        "trim_fraction": 0.1, "scale_direction": "lower_is_better",
+        "thresholds": [1.51, 2.47, 3.18],
         "p_bad_threshold": 0.5, "min_images": 3,
         "confidence": {"n_ref": 8, "spread_ref": 0.6, "margin_ref": 0.3,
                        "high": 0.66, "medium": 0.33},
@@ -124,9 +136,9 @@ def test_frame_score_prefers_the_continuous_estimate():
 def test_frame_p_bad_falls_back_to_the_ordinal_class():
     assert frame_p_bad(2.0, {"dino_p_bad": 0.83}) == 0.83
     assert frame_p_bad(2.0, {"dino_p_bad": 1.7}) == 1.0          # clamped
-    assert frame_p_bad(3.0, None) == 1.0                          # RQI >= 3 is bad
-    assert frame_p_bad(4.0, {}) == 1.0
-    assert frame_p_bad(2.0, None) == 0.0
+    assert frame_p_bad(sv(3.0), None) == 1.0                      # Közepes or worse is bad
+    assert frame_p_bad(sv(4.0), {}) == 1.0
+    assert frame_p_bad(sv(2.0), None) == 0.0
     assert frame_p_bad(None, None) is None
 
 
@@ -182,44 +194,44 @@ SKEWED = [2.0, 2.0, 2.0, 2.0, 4.0]      # median 2.0, mean 2.4, one outlier
 def test_median_score_aggregator():
     agg = aggregate_frames(frames(SKEWED), CFG, TODAY)
     assert agg.n_images == 5
-    assert agg.score == 2.0
-    assert agg.rqi == 2
+    assert agg.score == pytest.approx(sv(2.0))
+    assert agg.rqi == sv(2)
 
 
 def test_mean_score_aggregator():
     agg = aggregate_frames(frames(SKEWED + [4.0]), with_overrides(CFG, aggregator="mean_score"), TODAY)
-    assert agg.score == pytest.approx(16 / 6)
-    assert agg.rqi == 3
+    assert agg.score == pytest.approx(sv(16 / 6))
+    assert agg.rqi == sv(3)
 
 
 def test_trimmed_mean_score_aggregator():
     cfg = with_overrides(CFG, aggregator="trimmed_mean_score", trim_fraction=0.2)
     agg = aggregate_frames(frames(SKEWED), cfg, TODAY)     # drops one 2.0 and the 4.0
-    assert agg.score == 2.0
-    assert agg.rqi == 2
+    assert agg.score == pytest.approx(sv(2.0))
+    assert agg.rqi == sv(2)
 
 
 def test_mean_p_bad_gates_the_bad_boundary():
     cfg = with_overrides(CFG, aggregator="mean_p_bad")
     # Median score says "good" (class 2) but the frames are mostly judged bad.
-    bad = aggregate_frames([FrameObs(2.3, 0.7), FrameObs(2.4, 0.8), FrameObs(2.2, 0.6)], cfg, TODAY)
-    assert bad.score == 2.3
+    bad = aggregate_frames([obs(2.3, 0.7), obs(2.4, 0.8), obs(2.2, 0.6)], cfg, TODAY)
+    assert bad.score == pytest.approx(sv(2.3))
     assert bad.p_bad == pytest.approx(0.7)
-    assert bad.rqi == 3
+    assert bad.rqi == sv(3)
     # Median score says "bad" (class 3) but P(bad) is low → capped at 2.
-    good = aggregate_frames([FrameObs(2.6, 0.2), FrameObs(2.5, 0.3), FrameObs(2.7, 0.1)], cfg, TODAY)
-    assert good.rqi == 2
+    good = aggregate_frames([obs(2.6, 0.2), obs(2.5, 0.3), obs(2.7, 0.1)], cfg, TODAY)
+    assert good.rqi == sv(2)
     # A clear class 4 stays 4; a clear class 1 stays 1.
-    assert aggregate_frames(frames([3.6, 3.7, 3.8], p_bad=0.95), cfg, TODAY).rqi == 4
-    assert aggregate_frames(frames([1.1, 1.2, 1.0], p_bad=0.02), cfg, TODAY).rqi == 1
+    assert aggregate_frames(frames([3.6, 3.7, 3.8], p_bad=0.95), cfg, TODAY).rqi == sv(4)
+    assert aggregate_frames(frames([1.1, 1.2, 1.0], p_bad=0.02), cfg, TODAY).rqi == sv(1)
     # Without any P(bad) the gate cannot apply: plain median class.
-    assert aggregate_frames(frames([2.6, 2.5, 2.7]), cfg, TODAY).rqi == 3
+    assert aggregate_frames(frames([2.6, 2.5, 2.7]), cfg, TODAY).rqi == sv(3)
 
 
 def test_p_bad_is_reported_for_every_aggregator():
-    agg = aggregate_frames([FrameObs(2.0, 0.1), FrameObs(2.0, 0.3), FrameObs(2.0, None)], CFG, TODAY)
+    agg = aggregate_frames([obs(2.0, 0.1), obs(2.0, 0.3), obs(2.0, None)], CFG, TODAY)
     assert agg.p_bad == pytest.approx(0.2)      # mean of the known values
-    assert agg.rqi == 2                           # ...and it does not gate median_score
+    assert agg.rqi == sv(2)                           # ...and it does not gate median_score
 
 
 def test_empty_segment_has_no_class():
@@ -283,7 +295,7 @@ def test_confidence_uses_the_newest_capture_date():
     assert old.confidence == pytest.approx(0.5 * (1 - math.exp(-1)))
 
     # One recent pass over an otherwise old segment: the NEWEST date counts.
-    mixed = [FrameObs(2.0, None, dt.date(2012, 5, 1))] * 7 + [FrameObs(2.0, None, dt.date(2025, 1, 1))]
+    mixed = [obs(2.0, None, dt.date(2012, 5, 1))] * 7 + [obs(2.0, None, dt.date(2025, 1, 1))]
     agg = aggregate_frames(mixed, CFG, TODAY)
     assert agg.confidence == pytest.approx(fresh.confidence)
     assert agg.capture_date_min == dt.date(2012, 5, 1)
@@ -298,8 +310,8 @@ def test_confidence_full_formula_on_a_spread_segment():
         * math.exp(-((0.5 / 0.6) ** 2))
         * (0.5 + 0.5 * min(1.0, 0.03 / 0.3))         # 0.03 from the 2.47 boundary
     )
-    assert agg.score == pytest.approx(2.5)
-    assert agg.rqi == 3
+    assert agg.score == pytest.approx(sv(2.5))
+    assert agg.rqi == sv(3)
     assert agg.confidence == pytest.approx(expected)
 
 
@@ -315,6 +327,6 @@ def test_confidence_level_bands_and_min_images():
 
 def test_segment_below_min_images_still_gets_a_class():
     agg = aggregate_frames(frames([3.5, 3.6]), CFG, TODAY)
-    assert agg.rqi == 4
+    assert agg.rqi == sv(4)
     assert agg.n_images == 2
     assert confidence_level(agg.confidence, agg.n_images, CFG) == "low"

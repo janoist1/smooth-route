@@ -7,7 +7,8 @@ stands for a known number of metres, so the summary is plain bookkeeping:
 
 - ``total_length_m``    the whole path
 - ``covered_length_m``  metres whose sample matched a segment WITH data
-- ``length_by_rqi``     those metres split by the segment's class (1–4)
+- ``length_by_rqi``     those metres split by the segment's class: 4 numbers,
+                         BEST FIRST (Kiváló, Jó, Közepes, Rossz = SCALE.model_levels)
 - ``mean_score``        length-weighted mean of the segments' scores
 - ``matched_m``         metres matched per segment id (for the worst-list)
 
@@ -19,6 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Hashable, Optional, Sequence
 
+from app.core.rqi_scale import SCALE
 from app.services.map_matching import LineIndex
 from app.services.segment_geometry import LatLon, densify
 
@@ -87,7 +89,9 @@ def compute_route_stats(
             continue
         seg = by_id[match.line_id]
         stats.covered_length_m += length
-        stats.length_by_rqi[min(4, max(1, int(seg.rqi))) - 1] += length
+        # slot = severity - 1 (0 = Kiváló … 3 = Rossz), whatever the numbering
+        slot = min(len(stats.length_by_rqi), max(1, int(SCALE.to_severity(seg.rqi)))) - 1
+        stats.length_by_rqi[slot] += length
         weighted_score += seg.score * length
         stats.matched_m[seg.id] = stats.matched_m.get(seg.id, 0.0) + length
 
@@ -102,7 +106,7 @@ def worst_segment_ids(
     eligible: Optional[set] = None,
     limit: int = WORST_SEGMENTS_LIMIT,
 ) -> list[Hashable]:
-    """Ids of the worst segments actually driven, worst (highest score) first.
+    """Ids of the worst segments actually driven, worst score first.
 
     ``eligible`` restricts the list (the resolver passes the ids whose
     confidence is not "low"). A segment qualifies when the route covers at
@@ -121,6 +125,6 @@ def worst_segment_ids(
             needed = min(MIN_MATCHED_M, MIN_MATCHED_FRACTION * seg.length_m)
         if metres + 1e-9 < needed:
             continue
-        candidates.append((-seg.score, -metres, str(seg_id), seg_id))
+        candidates.append((SCALE.worst_first_key(seg.score), -metres, str(seg_id), seg_id))
     candidates.sort()
     return [c[3] for c in candidates[:limit]]

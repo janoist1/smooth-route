@@ -5,8 +5,8 @@ startup nor publish.py (both run `upgrade head`) can pick it up. Activation is
 phase 2 of the RQI scale work; runbook: shared/README.md ("Flipping the
 direction"). Dry-run on a DB (read-only): backend/scripts/rqi_flip_dry_run.py.
 
-Revision ID: rqi_flip
-Revises: 0004   <- ACTIVATE: set to the then-current head (e.g. 0005_road_segments)
+Revision ID: 0006
+Revises: 0005   <- ACTIVATE: re-check it is still the head of alembic/versions
 
 Mirrored (every stored value on the 1-5 RQI scale, continuous ones too):
   training_data.manual_rqi                         human labels (1.5 -> 4.5 ...)
@@ -35,8 +35,8 @@ from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
 
-revision: str = "rqi_flip"
-down_revision: Union[str, None] = "0004"
+revision: str = "0006"
+down_revision: Union[str, None] = "0005"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

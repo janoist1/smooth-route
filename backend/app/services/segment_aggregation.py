@@ -12,9 +12,14 @@ retuned without touching code:
                     "high": 0.66, "medium": 0.33},
      "age": {"grace_years": 3, "half_life_years": 5}}
 
-Scale reminder: RQI 1 = excellent … 4 = poor. A frame's score is the
-continuous DINO estimate (``analysis_metadata.dino_score``), falling back to
-the ordinal ``dino_rqi_score``.
+Scale: inputs and outputs are on the CANONICAL RQI scale (app.core.rqi_scale,
+shared/rqi_scale.json). A frame's score is the continuous DINO estimate
+(``analysis_metadata.dino_score``), falling back to the ordinal
+``dino_rqi_score``. The tuned ``thresholds`` (from ml/segment_eval.py) are in
+the SEVERITY numbering the model works in (1 = Kiváló … 4 = Rossz); the config
+says so with ``"scale_direction": "lower_is_better"``. ``aggregate_frames``
+converts frame scores to severity, cuts, and converts the result back, so the
+same config serves either canonical direction.
 
 Aggregators
 -----------
@@ -47,6 +52,8 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
+from app.core.rqi_scale import SCALE, SEVERITY
+
 logger = logging.getLogger(__name__)
 
 CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "segment_aggregation.json"
@@ -57,8 +64,9 @@ LEVEL_HIGH = "high"
 LEVEL_MEDIUM = "medium"
 LEVEL_LOW = "low"
 
-# RQI ≥ 3 is "bad" — the same definition the calibrated dino_p_bad uses.
-BAD_RQI = 3
+# "Bad" = Közepes or worse — the same event the calibrated dino_p_bad predicts.
+# Severity number of that boundary (3), used inside the severity computation.
+BAD_RQI = int(SCALE.to_severity(SCALE.bad_from))
 
 
 # --------------------------------------------------------------------------
@@ -114,6 +122,11 @@ def config_from_dict(data: Mapping[str, Any]) -> SegmentConfig:
     """
     if not isinstance(data, Mapping):
         raise ValueError("segment aggregation config must be a JSON object")
+    direction = data.get("scale_direction", SEVERITY)
+    if direction != SEVERITY:
+        raise ValueError(
+            f"segment aggregation thresholds must be tuned in the severity numbering "
+            f"(scale_direction {SEVERITY!r}), got {direction!r}")
     d = DEFAULT_CONFIG
     try:
         cfg = SegmentConfig(
@@ -213,7 +226,7 @@ def frame_score(dino_rqi_score: Any, analysis_metadata: Any) -> Optional[float]:
 
 def frame_p_bad(dino_rqi_score: Any, analysis_metadata: Any) -> Optional[float]:
     """P(bad) of one frame: calibrated ``dino_p_bad`` when the frame has it,
-    otherwise a hard 0/1 from the ordinal class (bad = RQI ≥ 3), so a segment's
+    otherwise a hard 0/1 from the ordinal class (bad = SCALE.is_bad), so a segment's
     mean degrades gracefully to "share of bad frames" for older analyses.
     """
     if isinstance(analysis_metadata, Mapping):
@@ -223,7 +236,7 @@ def frame_p_bad(dino_rqi_score: Any, analysis_metadata: Any) -> Optional[float]:
     rqi = _finite(dino_rqi_score)
     if rqi is None:
         return None
-    return 1.0 if rqi >= BAD_RQI else 0.0
+    return 1.0 if SCALE.is_bad(rqi) else 0.0
 
 
 @dataclass(frozen=True)
@@ -282,7 +295,8 @@ def aggregate_score(scores: Sequence[float], cfg: SegmentConfig) -> float:
 
 
 def classify(score: float, thresholds: Sequence[float]) -> int:
-    """RQI class 1–4: one more than the number of thresholds at or below it."""
+    """Severity class 1–4 of a severity score: one more than the number of
+    thresholds at or below it."""
     return 1 + sum(1 for t in thresholds if score >= t)
 
 
@@ -341,8 +355,8 @@ def confidence_level(confidence: float, n_images: int, cfg: SegmentConfig) -> st
 @dataclass(frozen=True)
 class SegmentAggregate:
     n_images: int
-    score: Optional[float]      # aggregated continuous score, 1–4 scale
-    rqi: Optional[int]          # 1–4, None without frames
+    score: Optional[float]      # aggregated continuous score, canonical scale
+    rqi: Optional[int]          # canonical level (one of SCALE.model_levels), None without frames
     p_bad: Optional[float]      # mean frame P(bad)
     confidence: float           # 0–1, after the age factor
     capture_date_min: Optional[dt.date]
@@ -360,7 +374,8 @@ def aggregate_frames(
         return EMPTY_AGGREGATE
     today = today or dt.date.today()
 
-    scores = [f.score for f in frames]
+    # Work in severity (the thresholds' numbering); convert back at the end.
+    scores = [SCALE.to_severity(f.score) for f in frames]
     score = aggregate_score(scores, cfg)
     rqi = classify(score, cfg.thresholds)
 
@@ -384,8 +399,8 @@ def aggregate_frames(
 
     return SegmentAggregate(
         n_images=len(scores),
-        score=score,
-        rqi=rqi,
+        score=SCALE.from_severity(score),
+        rqi=int(SCALE.from_severity(rqi)),
         p_bad=p_bad,
         confidence=max(0.0, min(1.0, conf)),
         capture_date_min=min(dates) if dates else None,

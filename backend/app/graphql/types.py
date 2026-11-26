@@ -82,12 +82,12 @@ class Point:
 
     @strawberry.field
     def dino_p_bad(self) -> Optional[float]:
-        """Calibrated P(road is bad, RQI>=3) written by the DINO pass."""
+        """Calibrated P(road is bad = Közepes or worse) written by the DINO pass."""
         return self._meta_float("dino_p_bad")
 
     @strawberry.field
     def dino_score(self) -> Optional[float]:
-        """Continuous DINO RQI estimate (1.0-4.0) before ordinal rounding."""
+        """Continuous DINO RQI estimate on the canonical scale, before cutting into levels."""
         return self._meta_float("dino_score")
 
 @strawberry.type
@@ -232,11 +232,12 @@ class RoadSegment:
     id: strawberry.ID
     # [[lat, lng], ...]
     path: List[List[float]]
-    # Class 1-4 (1 = excellent, 4 = poor); null if the piece has no frames.
+    # RQI level on the canonical scale (shared/rqi_scale.json; one of the model
+    # levels, Kiváló … Rossz); null if the piece has no frames.
     rqi: Optional[int]
-    # Aggregated continuous score on the same 1-4 scale.
+    # Aggregated continuous score on the same canonical scale.
     score: Optional[float]
-    # Mean P(road is bad, RQI >= 3) of the frames, 0-1.
+    # Mean P(road is bad = Közepes or worse) of the frames, 0-1.
     p_bad: Optional[float]
     # 0-1, after the image-age factor.
     confidence: float
@@ -257,9 +258,10 @@ class RouteQuality:
     total_length_m: float
     # Length of the path that runs along a segment with data.
     covered_length_m: float
-    # 4 numbers: metres in class 1, 2, 3, 4.
+    # 4 numbers, best first: metres in Kiváló, Jó, Közepes, Rossz
+    # (the scale's model levels, best -> worst).
     length_by_rqi: List[float]
     # Length-weighted mean segment score over the covered part; null if none.
     mean_score: Optional[float]
-    # Up to 5, by score descending; segments with "low" confidence excluded.
+    # Up to 5, worst first; segments with "low" confidence excluded.
     worst_segments: List[RoadSegment]

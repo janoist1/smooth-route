@@ -94,8 +94,8 @@ class RoadSegment(Base):
     highway = Column(String, nullable=True)  # OSM highway class
     # Aggregates; score/rqi/p_bad are NULL for a piece without frames.
     n_images = Column(Integer, nullable=False, default=0, server_default="0")
-    score = Column(Float, nullable=True)  # aggregated continuous score, 1–4
-    rqi = Column(Integer, nullable=True)  # class 1–4 (1 = excellent, 4 = poor)
+    score = Column(Float, nullable=True)  # aggregated continuous score, canonical RQI scale
+    rqi = Column(Integer, nullable=True)  # canonical RQI level (shared/rqi_scale.json)
     p_bad = Column(Float, nullable=True)
     confidence = Column(Float, nullable=False, default=0.0, server_default="0")
     capture_date_min = Column(Date, nullable=True)
@@ -132,7 +132,7 @@ class TrainingData(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     image_filename = Column(String, unique=True, index=True)  # Link to file on disk
-    manual_rqi = Column(Float, nullable=True)  # User's ground truth score (1.0 - 5.0)
+    manual_rqi = Column(Float, nullable=True)  # Human ground truth on the canonical RQI scale (shared/rqi_scale.json)
     
     # Annotations: List of {id, label, x, y, w, h} OR {id, label, points: [[x,y], ...]} for polygons
     annotations = Column(JSON, default=[]) 

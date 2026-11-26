@@ -44,8 +44,8 @@ read-only deploy (`PUBLIC_READ_ONLY`), and read only the pre-built
 type RoadSegment {
   id: ID!                   # "<osmWayId>:<pieceIndex>", stable across rebuilds
   path: [[Float!]!]!        # [[lat, lng], ...]
-  rqi: Int                  # 1–4 (1 = excellent, 4 = poor)
-  score: Float              # aggregated continuous score, 1–4 scale
+  rqi: Int                  # RQI level, 5 = Kiváló … 2 = Rossz (shared/rqi_scale.json)
+  score: Float              # aggregated continuous score, same scale
   pBad: Float               # 0–1, mean P(bad) of the frames
   confidence: Float!        # 0–1, after the image-age factor
   confidenceLevel: String!  # "high" | "medium" | "low"
@@ -59,7 +59,7 @@ type RoadSegment {
 type RouteQuality {
   totalLengthM: Float!
   coveredLengthM: Float!    # metres of the path that run along a segment with data
-  lengthByRqi: [Float!]!    # 4 numbers: metres in class 1, 2, 3, 4
+  lengthByRqi: [Float!]!    # 4 numbers, best first: metres in Kiváló, Jó, Közepes, Rossz
   meanScore: Float          # length-weighted over the covered part; null if none
   worstSegments: [RoadSegment!]!
 }
@@ -90,7 +90,7 @@ not count, so a data gap is not credited to its neighbours.
 `backend/app/services/segment_aggregation.py`):
 
 - Frame score = `analysis_metadata.dino_score`, else `dino_rqi_score`.
-  Frame P(bad) = `analysis_metadata.dino_p_bad`, else 1/0 for RQI ≥ 3 / < 3.
+  Frame P(bad) = `analysis_metadata.dino_p_bad`, else 1/0 for Közepes-or-worse (RQI ≤ 3) / better.
 - `aggregator`: `median_score` (default) | `mean_score` |
   `trimmed_mean_score` (`trim_fraction` from each end) | `mean_p_bad` (class
   from the median score, but mean P(bad) ≥ `p_bad_threshold` forces class ≥ 3

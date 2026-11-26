@@ -1,5 +1,5 @@
 import React from 'react'
-import { getRQIColor } from '../../ui'
+import { RQI_LEVELS, getRQIColor } from '../../ui'
 import { STALE_AFTER_YEARS } from '../captureDate'
 import type { RoadSegment } from '../segments/types'
 import { pathMidpoint, streetViewUrl } from '../segments/geometry'
@@ -16,6 +16,11 @@ import {
   segmentTitle,
 } from '../segments/labels'
 import './roadCards.css'
+
+// "5 = kiváló, 1 = nagyon rossz" — read from the canonical scale, best first.
+const SCALE_HINT = `${RQI_LEVELS[0].value} = ${RQI_LEVELS[0].label_hu.toLowerCase()}, ${
+  RQI_LEVELS[RQI_LEVELS.length - 1].value
+} = ${RQI_LEVELS[RQI_LEVELS.length - 1].label_hu.toLowerCase()}`
 
 interface SegmentDetailCardProps {
   segment: RoadSegment
@@ -67,7 +72,7 @@ const SegmentDetailCard: React.FC<SegmentDetailCardProps> = ({ segment, onClose,
           {segment.score != null && (
             <span className="road-card__dim">
               Pontszám: <span className="road-card__strong">{formatScore(segment.score)}</span>{' '}
-              (1 = kiváló, 4 = rossz)
+              ({SCALE_HINT})
             </span>
           )}
         </div>

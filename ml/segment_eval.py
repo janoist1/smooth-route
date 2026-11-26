@@ -93,7 +93,7 @@ def champion_oof():
     X_all = build_features(CHAMPION["recipe"], CHAMPION["backbone"])
     keep = df["is_road_prob"].values >= ROAD_PROB_MIN
     if DROP_RQI5:
-        keep &= df["rqi"].values != 5
+        keep &= ~np.isin(df["rqi"].values, S.DROPPED_LEVELS)
     X, df = X_all[keep], df[keep].reset_index(drop=True)
     y = df["manual_rqi"].values.astype(float)
     yc = df["rqi"].values.astype(int)
@@ -982,6 +982,8 @@ def main():
         "segment_length_m": Lr,
         "aggregator": kr,
         "trim_fraction": TRIM if kr == "trimmed_mean_score" else 0.0,
+        # ML works in severity (1 = Kiváló); the backend converts (shared/README.md)
+        "scale_direction": S.R.SCALE_DIRECTION,
         "thresholds": [round(t, 3) for t in th_all],
         "p_bad_threshold": round(p_thr, 2),
         "min_images": RECOMMENDED["min_images"],

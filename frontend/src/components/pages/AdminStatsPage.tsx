@@ -14,7 +14,7 @@ import MainLayout from '../MainLayout'
 
 // Distribution buckets as the backend's adminStats counts them (good = up to
 // Jó, fair = Közepes, poor = worse than Közepes); text and colours from the
-// canonical scale, e.g. "Jó (RQI ≤ 2)", "Közepes (2–3)", "Rossz (> 3)".
+// canonical scale, e.g. "Jó (RQI ≥ 4)", "Közepes (3–4)", "Rossz (< 3)" while 5 = Kiváló.
 const GOOD = rqiValue('good')
 const FAIR = rqiValue('fair')
 const RQI_BUCKETS = {

@@ -119,3 +119,18 @@ export const rqiScoreLabelHu = (score?: number | null): string => {
   if (score === undefined || score === null || !Number.isFinite(score)) return RQI_UNKNOWN.label_hu
   return rqiLevel(nearestRqiLevel(score))?.label_hu ?? RQI_UNKNOWN.label_hu
 }
+
+/**
+ * Readable text colour on top of an RQI fill (dark text on light levels such as
+ * Közepes amber, white on dark ones such as Kiváló blue). WCAG relative luminance.
+ */
+export const rqiTextColor = (background: string): string => {
+  const hex = background.replace('#', '')
+  const full = hex.length === 3 ? hex.split('').map(c => c + c).join('') : hex
+  const channel = (i: number) => {
+    const c = parseInt(full.slice(i, i + 2), 16) / 255
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+  }
+  const luminance = 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4)
+  return luminance > 0.3 ? '#111' : '#fff'
+}

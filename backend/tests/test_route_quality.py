@@ -1,6 +1,7 @@
 """Route summary: matching a path to segments and the length bookkeeping."""
 import pytest
 
+from app.core.rqi_scale import SCALE
 from app.services.route_quality import (
     SegmentRef,
     compute_route_stats,
@@ -9,10 +10,16 @@ from app.services.route_quality import (
 from geo_helpers import at
 
 
+# Classes and scores below are written in severity (1 = Kiváló … 4 = Rossz);
+# sv() puts them on the canonical scale the stored segments use.
+sv = SCALE.from_severity
+
+
 def seg(id, x0, x1, rqi, score, north=0.0):
     """An east-west segment from x0 to x1 metres, optionally shifted north."""
-    return SegmentRef(id=id, coords=[at(x0, north), at(x1, north)], rqi=rqi, score=score,
-                      length_m=abs(x1 - x0))
+    return SegmentRef(id=id, coords=[at(x0, north), at(x1, north)],
+                      rqi=None if rqi is None else sv(rqi),
+                      score=None if score is None else sv(score), length_m=abs(x1 - x0))
 
 
 # 600 m of road: good, then bad, then a 150 m gap, then fair.
@@ -35,14 +42,14 @@ def test_stats_along_a_partly_covered_route():
     assert stats.length_by_rqi[3] == pytest.approx(150, abs=12)
     assert sum(stats.length_by_rqi) == pytest.approx(stats.covered_length_m)
     # Length-weighted: three equal stretches.
-    assert stats.mean_score == pytest.approx((1.2 + 3.6 + 2.0) / 3, abs=0.05)
+    assert stats.mean_score == pytest.approx(sv((1.2 + 3.6 + 2.0) / 3), abs=0.05)
     assert set(stats.matched_m) == {"a", "b", "d"}
 
 
 def test_mean_score_is_length_weighted():
     segments = [seg("long", 0, 300, 2, 2.0), seg("short", 300, 400, 4, 4.0)]
     stats = compute_route_stats([at(0, 0), at(400, 0)], segments)
-    assert stats.mean_score == pytest.approx((300 * 2.0 + 100 * 4.0) / 400, abs=0.03)
+    assert stats.mean_score == pytest.approx(sv((300 * 2.0 + 100 * 4.0) / 400), abs=0.03)
 
 
 def test_route_outside_the_buffer_is_uncovered():
@@ -92,8 +99,8 @@ def test_empty_inputs():
 
 def test_route_with_a_bend_follows_both_legs():
     segments = [
-        SegmentRef("east", [at(0, 0), at(200, 0)], 2, 2.1, 200),
-        SegmentRef("north", [at(200, 0), at(200, 200)], 3, 2.9, 200),
+        SegmentRef("east", [at(0, 0), at(200, 0)], sv(2), sv(2.1), 200),
+        SegmentRef("north", [at(200, 0), at(200, 200)], sv(3), sv(2.9), 200),
     ]
     stats = compute_route_stats([at(0, 0), at(200, 0), at(200, 200)], segments)
     assert stats.covered_length_m == pytest.approx(400, abs=1)

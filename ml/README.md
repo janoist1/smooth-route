@@ -2,7 +2,8 @@
 
 Cél: egy Street View képről megbecsülni az út minőségét az RQI-skálán
 (5 szint, definíció: [../shared/rqi_scale.json](../shared/rqi_scale.json); a modell
-az 1–4 szinteket becsli).
+a Kiváló … Rossz szinteket becsli). **Az ebben a fájlban szereplő RQI-számok
+severity-számozásúak (1 = Kiváló … 4 = Rossz)** — lásd lent.
 Ez a `ml/` mappa a régi kísérletektől független, tiszta pipeline. Az itt
 tanított artifactot a backend `dino_service.py`-ja tölti be; a régi webes
 `train_dino_head.py` törölve, a v1 szkriptek az `ml/legacy/`-ban.
@@ -47,18 +48,20 @@ python ml/audit_labels.py
 ## RQI skála
 
 Egyetlen definíció: [../shared/rqi_scale.json](../shared/rqi_scale.json) (szabályok:
-[../shared/README.md](../shared/README.md)) — ma **1 = Kiváló, 2 = Jó, 3 = Közepes,
-4 = Rossz, 5 = Nagyon rossz**; rossz út = Közepes vagy rosszabb (`bad_from`). Az 5-ös
-szintnek 14, többnyire szemét címkéje van (előcsarnok, járda) — tanításnál
-eldobjuk (`R.DROPPED_LEVELS`), a modell az 1–4 szinteket (`model_levels`) adja.
+[../shared/README.md](../shared/README.md)). A termékben 2026-11-26 óta **5 = Kiváló,
+4 = Jó, 3 = Közepes, 2 = Rossz, 1 = Nagyon rossz** (nagyobb = jobb); rossz út =
+Közepes vagy rosszabb (`bad_from`). A Nagyon rossz szintnek 14, többnyire szemét
+címkéje van (előcsarnok, járda) — tanításnál eldobjuk (`R.DROPPED_LEVELS`), a
+modell a Kiváló … Rossz szinteket (`model_levels`) adja.
 
-**Az ML mindig „severity” számozásban dolgozik** (1 = legjobb, nagyobb = rosszabb —
-a mai számozás): `labels.csv`, a cache-ek, a célváltozó, a vágópontok, a P(bad)
-kalibrátor és a kapu is. A szkriptek a konstansokat az `ml/rqi_scale.py`-ból veszik
-(`spatial_cv.RQI_LABELS / BAD_FROM / DROPPED_LEVELS`); a kanonikus skálára csak az
-export (`export_labels.sh`) és a backend `dino_service` vált át (az artifact
-`scale_direction` kulcsa alapján). Ha a skála iránya egyszer megfordul (5 = legjobb),
-egyetlen ML-szám sem változik, a kapu ugyanazt méri.
+**Az ML mindig „severity” számozásban dolgozik** (1 = Kiváló, nagyobb = rosszabb —
+a 2026-11-26 előtti számozás): `labels.csv`, a cache-ek, a célváltozó, a vágópontok,
+a P(bad) kalibrátor, a kapu és ennek a fájlnak minden száma. A szkriptek a
+konstansokat az `ml/rqi_scale.py`-ból veszik (`spatial_cv.RQI_LABELS / BAD_FROM /
+DROPPED_LEVELS`); a kanonikus skálára csak az export (`export_labels.sh`:
+`6 - manual_rqi`) és a backend (`dino_service` az artifact `scale_direction` kulcsa
+alapján, `segment_aggregation` a recept `scale_direction` kulcsa alapján) vált át.
+A megfordítás egyetlen ML-számot sem változtatott: a kapu kimenete bájtra azonos.
 
 ## Eredmények
 

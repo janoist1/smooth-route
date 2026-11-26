@@ -12,8 +12,9 @@ linked below are the source of truth for their area.
   `DEDUPLICATION_RADIUS_METERS` (default 10 m) and `DEDUPLICATION_HEADING_TOLERANCE`
   (default 30°) is reused, so overlapping routes don't re-download images.
 - **RQI scale:** one definition in [shared/rqi_scale.json](shared/rqi_scale.json)
-  (rules + helpers: [shared/README.md](shared/README.md)); today 1 = Kiváló … 5 = Nagyon
-  rossz, lower is better, the model predicts 1–4. Never hard-code levels. The live
+  (rules + helpers: [shared/README.md](shared/README.md)); 5 = Kiváló … 1 = Nagyon
+  rossz, higher is better (flipped 2026-11-26), the model predicts 2–5. Never
+  hard-code levels. The live
   score comes from the **v2 model** in `ml/` (frozen DINOv2-small + SVR head,
   artifact `ml/cache/rqi_model.joblib`), loaded by `backend/app/services/dino_service.py`
   and run on the **raw** image. YOLO (`road_analyzer.py`) only produces damage

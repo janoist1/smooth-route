@@ -8,7 +8,7 @@ briefs: [docs/TEAM.md](docs/TEAM.md).
 
 Kátyúőr / smooth-route estimates road quality from Google Street View frames
 (RQI, **one 5-level scale defined in [shared/rqi_scale.json](shared/rqi_scale.json)**:
-today 1 = Kiváló … 5 = Nagyon rossz, the model predicts 1–4) and shows it on a map for route
+5 = Kiváló … 1 = Nagyon rossz, higher is better, the model predicts 2–5) and shows it on a map for route
 planning. The **live RQI engine** is the `ml/` v2 model (frozen DINOv2-small + SVR
 head + tuned cut-points, in the `ml/cache/rqi_model.joblib` artifact), loaded by the
 backend's `dino_service.py` and run on the **raw image**. YOLO (`road_analyzer.py`)

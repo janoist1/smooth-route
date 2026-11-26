@@ -1,8 +1,8 @@
 # Kátyúőr (smooth-route)
 
 A road-quality map for route planning. Google Street View frames are scored by a
-vision model on the RQI scale (Kiváló · Jó · Közepes · Rossz · Nagyon rossz, today
-1 … 5, defined in [shared/rqi_scale.json](shared/rqi_scale.json)) and shown on a map, so you can see —
+vision model on the RQI scale (5 Kiváló · 4 Jó · 3 Közepes · 2 Rossz · 1 Nagyon rossz,
+higher is better, defined in [shared/rqi_scale.json](shared/rqi_scale.json)) and shown on a map, so you can see —
 and avoid — bad roads. Data is **point-based** (location + heading); routes are
 only a tool to collect points.
 
