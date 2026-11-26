@@ -5,3 +5,5 @@ export * from './components' // Map components
 export { default as reducer, actions, initialState as mapInitialState } from './slice' // For Root Reducer
 export { default as sagas } from './sagas' // For Root Saga
 export * as selectors from './selectors' // For Sagas
+// Road segments sub-module (segment layer, detail card data, route quality)
+export * from './segments'

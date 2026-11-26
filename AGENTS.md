@@ -1,118 +1,97 @@
-# AGENTS.md — belépőpont AI-ágenseknek
+# AGENTS.md — router for AI agents (and humans)
 
-Ez a fájl bármely AI kódoló ágensnek szól (Claude, GPT, Codex, Cursor, Aider,
-stb.). **Vékony útválasztó:** ne olvass be mindent — a lenti táblából nyisd meg
-CSAK a feladatodhoz tartozó fájlokat. Így kicsi marad a kontextus és a zaj.
+For any AI coding agent (Claude, GPT, Codex, Cursor, …). **Thin router:** don't read
+everything — open only the files in your task's row below. Team roles, branches and
+briefs: [docs/TEAM.md](docs/TEAM.md).
 
-## Mi ez a projekt (egy bekezdés)
+## The project in one paragraph
 
-Kátyúőr / smooth-route: Google Street View képekről becsüli az út minőségét
-(RQI 1–5, ahol **1 = kiváló, 4 = rossz**; az 5-öt nem használjuk). Térképen
-mutatja, útvonaltervezéshez. Az **éles RQI-motor** a `ml/` pipeline v2 modellje
-(fagyasztott DINOv2-small + SVR-fej + hangolt vágópontok, az
-`ml/cache/rqi_model.joblib` artifactban); a backend a `dino_service.py`-n át
-tölti, **nyers képen** fut. A YOLO (`road_analyzer.py`) NEM konkurens: az
-hibapoligonokat ad a részletkártyához, nem az RQI-t.
+Kátyúőr / smooth-route estimates road quality from Google Street View frames
+(RQI 1–4, **1 = excellent, 4 = poor**; 5 is unused) and shows it on a map for route
+planning. The **live RQI engine** is the `ml/` v2 model (frozen DINOv2-small + SVR
+head + tuned cut-points, in the `ml/cache/rqi_model.joblib` artifact), loaded by the
+backend's `dino_service.py` and run on the **raw image**. YOLO (`road_analyzer.py`)
+is not a competitor: it draws damage polygons for the detail card, not the RQI. The
+public site is read-only (Vercel + Neon); analysis runs locally.
 
-## Útválasztó — mit nyiss meg, mit ne
+## Router — what to open, what not to
 
-| Ha ezen dolgozol… | Nyisd meg | NE olvasd |
+| If you work on… | Open | Don't read |
 |---|---|---|
-| **RQI-modell / `ml/`** | [ml/README.md](ml/README.md), [docs/GLOSSARY.md](docs/GLOSSARY.md) | `frontend/**` |
+| **RQI model / `ml/`** | [ml/README.md](ml/README.md), [docs/GLOSSARY.md](docs/GLOSSARY.md) | `frontend/**` |
+| **Road segments** *(in progress, 2026-11-26 — branches not merged yet)* | backend `road_segments` table, `roadSegments` / `routeQuality` GraphQL, `backend/config/segment_aggregation.json`; ML side `ml/segment_eval.py` + `ml/segment_recipe.json`. Docs land in [docs/API_SURFACE.md](docs/API_SURFACE.md) / [ml/README.md](ml/README.md) with the merge | — |
 | **Frontend UI** | [frontend/ARCHITECTURE.md](frontend/ARCHITECTURE.md) | `ml/**` |
-| **A javítási terv végrehajtása** | [docs/IMPROVEMENT_PLAN.md](docs/IMPROVEMENT_PLAN.md) — csak a saját fázisod | a többi fázis részletei |
-| **Backend API / GraphQL** | [docs/API_SURFACE.md](docs/API_SURFACE.md) | — |
-| **Publikálás: auth / queue / kvóták / deploy** | [docs/PUBLISH_PLAN.md](docs/PUBLISH_PLAN.md) — csak a saját fázisod (F0–F6) | a többi fázis részletei |
-| **„Miért így van?" / előzmények** | [docs/MODEL_EXPERIMENTS.md](docs/MODEL_EXPERIMENTS.md) | — |
-| **Szakszó nem világos** (QWK, MAE, 5-fold CV…) | [docs/GLOSSARY.md](docs/GLOSSARY.md) | — |
-| **Címkézési útmutató** | [docs/TrainingGuide.md](docs/TrainingGuide.md) | — |
+| **Backend API / GraphQL** | [docs/API_SURFACE.md](docs/API_SURFACE.md); config, tables, deps: [DEVELOPMENT.md](DEVELOPMENT.md) | `ml/**`, `frontend/**` |
+| **Publishing / deploy / auth / queue / quotas** | [docs/PUBLISH_PLAN.md](docs/PUBLISH_PLAN.md) — strategy + your phase only | other phases |
+| **Labelling** | [docs/TrainingGuide.md](docs/TrainingGuide.md) | — |
+| **"Why is it like this?" / model history** | [docs/MODEL_EXPERIMENTS.md](docs/MODEL_EXPERIMENTS.md) | — |
+| **Unclear term** (QWK, MAE, spatial CV…) | [docs/GLOSSARY.md](docs/GLOSSARY.md) | — |
+| **Team, briefs, merge/push flow** | [docs/TEAM.md](docs/TEAM.md) | — |
+| **Ticket board** (what's in progress, your ticket) | `python3 tools/board.py list` — rules in [docs/TEAM.md](docs/TEAM.md#ticket-board) | — |
+| **Launch copy / name / checklist** | [docs/LAUNCH.md](docs/LAUNCH.md) | — |
 
-Elv: **egy fájl = egy felelősség, önhordozó.** Ha egy táblasor fájljaiból
-megérted a feladatot, ne nyiss meg többet.
+Never load `docs/archive/**`, `ml/legacy/`, `scripts/legacy/` — history only.
+Principle: **one file = one responsibility, self-contained.** If your row's files
+explain the task, open nothing else.
 
-## Futtatás és fejlesztőkörnyezet
+## Environment
 
-- **Python:** MINDIG a `.venv/bin/python` (torch + MPS itt van). Ne hozz létre új
-  venv-et. A backend-teszteknek nem kell torch/DB. **Git worktree-ben** nincs saját
-  `.venv` — a fő checkout interpreterét használd (abszolút úttal).
-- **Node:** 22+ (CI: Node 22). Frontend: React 19 + Vite 8 + Vitest 4.
-- **DB:** Postgres/PostGIS Dockerben, **:5433**-on: `docker compose up -d db`.
-- **Dev szerver:** `make dev` (backend uvicorn :8000 + Vite frontend :5173).
-- **Google Maps kulcs:** a gyökér `.env`-ben (`GOOGLE_MAPS_API_KEY`), route→kép
-  letöltéshez kell.
+- **Python:** always `.venv/bin/python` (torch + MPS live there); never create a new
+  venv. In a **git worktree** there is no `.venv` — use the main checkout's
+  interpreter by absolute path. Backend tests need neither torch nor a DB.
+- **Node** 22+. **DB:** PostGIS in Docker on **:5433** (`docker compose up -d db`).
+- **Dev server:** `make dev` (backend :8000 + Vite :5173). Setup: [README.md](README.md#quickstart).
+- **Google Maps key:** root `.env` (`GOOGLE_MAPS_API_KEY`), needed for route → image download.
 
-## Tesztek / kapuk (minden PR előtt futtatandó)
+## Gates (run before every merge)
 
 ```bash
-cd backend && ../.venv/bin/python -m pytest -q                 # izolált, nincs DB/torch
+cd backend && ../.venv/bin/python -m pytest -q              # isolated, no DB/torch
 cd frontend && npm ci && npm run typecheck && npm run lint && npm test && npm run build
 ```
 
-CI a pytestet és a frontend typecheck/lint/testet futtatja
-(`.github/workflows/ci.yml`); a buildet a Vercel futtatja pushkor, ezért lokálisan
-is kell. **Zöld nélkül nem kész.**
+CI (`.github/workflows/ci.yml`) runs pytest and frontend typecheck/lint/test; Vercel
+runs the build on push, so run it locally too. **Not green = not done.**
 
-### ML-élesítési kapu (KRITIKUS szabály)
+## Critical rules
 
-Új/módosított RQI-modellt (`ml/cache/rqi_model.joblib`) CSAK akkor élesíts, ha
-`.venv/bin/python ml/evaluate_artifact.py` **PASS**-t ad. Ez **térben
-csoportosított** 5-fold CV-n mér (1 km-es rácscellák, StratifiedGroupKFold,
-seed=42, beágyazott vágópont-hangolás; ld. `ml/spatial_cv.py`), és a bajnokhoz
-hasonlít: **QWK ≥ 0.774, MAE ≤ 0.405, bad-AUC ≥ 0.934**. A régi, véletlen-foldos
-0.889/0.195/0.970 számok térbeli szivárgás miatt optimisták voltak, ne
-hivatkozz rájuk. A „mérhetően jobb" feltétele: a kapu páros összevetésében a
-ΔQWK 95%-os CI-je 0 fölött van. A koordináták forrása `ml/image_coords.csv`
-(`ml/build_coords.py`); új címkék után ezt is újra kell generálni. Sose az
-`ml/legacy/` (v1: `train.py`, `save_model.py`, `extract_features.py`) vagy a
-`backend/train_dino_head.py` szkripteket használd, azok referenciák vagy
-zsákutcák. Fogalmak: [docs/GLOSSARY.md](docs/GLOSSARY.md).
+- **ML promotion gate.** Ship a new/changed `ml/cache/rqi_model.joblib` ONLY if
+  `.venv/bin/python ml/evaluate_artifact.py` says **PASS** — spatially grouped 5-fold
+  CV (1 km cells, seed=42, nested cut-point tuning), champion thresholds **QWK ≥ 0.774,
+  MAE ≤ 0.405, bad-AUC ≥ 0.934**. To replace the champion, the paired ΔQWK 95% CI must
+  be above 0. Never cite the old leaky 0.889/0.195/0.970. Details: [ml/README.md](ml/README.md).
+- **Raw image.** The model runs on the raw frame; never add preprocessing
+  (FastSAM/CLAHE…) to the RQI path — training used raw images too.
+- **Canonical data dir:** root `data/` for backend and ML (a relative `DATA_DIR`
+  resolves to the repo root). Never recreate `backend/data/`.
+- **Commit / push.** Commit on your own branch; **never push** and never touch
+  `master` — a push to `master` deploys both Vercel projects and needs the owner's
+  approval, as does a Neon publish. Flow: [docs/TEAM.md](docs/TEAM.md).
+- **Docs:** adding, moving or retiring a doc → update this router in the same commit.
 
-## Buktatók (amiken más már elvérzett)
+## Pitfalls
 
-- **Kanonikus adatkönyvtár:** a backend és az ML-pipeline egyaránt a gyökér
-  `data/` könyvtárat használja (relatív `DATA_DIR` is a repó gyökeréhez oldódik).
-  Ne hozz létre újra `backend/data/` fát.
-- **A modell nyers képen fut:** ne told bele az előfeldolgozást (FastSAM/CLAHE
-  stb.) az RQI-útba — a tanítás is nyers képen ment.
-- **Egy review-felület, két panel:** a címkézés `/training/:id/review`-n megy
-  (pontozás + poligonjelölés); nincs külön `/training/dino` útvonal, és a régi
-  DINO-*tanítás* gomb megszűnt. Az RQI-modellt az `ml/` pipeline tanítja, nem a web.
-- **Két backend-függőséglista:** `backend/pyproject.toml` (teljes, torch-csal) és
-  `backend/requirements.txt` (torch-mentes, CSAK a Vercel-deployhoz; a
-  `.vercelignore` rejti el a pyproject-et). Új futásidejű függőség a read-only
-  útvonalon mindkettőbe kell.
-- **SQLAlchemy `<2.1`:** a 2.1 a sima `postgresql://` URL-t psycopg v3-ra képezi
-  (psycopg2 helyett) → CI és Vercel elhasal. A plafon csak driverváltással együtt
-  emelhető.
-- **A CLI nagy része törött:** `collect-points`, `download-images`,
-  `fetch-missing-images`, `analyze-points` a már nem létező `processing_service`-t
-  importálja; a webes job-flow a működő út.
-- **Gyökér rendben tartása:** egyszeri szkript → `scripts/` (ha a `Makefile`
-  használja) vagy `scripts/legacy/`; elavult jegyzet → `docs/archive/`.
+- **One review screen, two panels:** labelling is `/training/:id/review` (score +
+  polygons). The web UI never trains the RQI model; `ml/` does.
+- **Two backend dependency lists:** `backend/pyproject.toml` (full, with torch) and
+  `backend/requirements.txt` (torch-free, Vercel only). A new runtime dependency on the
+  read-only path goes into both. **SQLAlchemy `<2.1`** (2.1 maps `postgresql://` to
+  psycopg v3). Details: [DEVELOPMENT.md](DEVELOPMENT.md).
+- **Most of the CLI is broken** (`collect-points`, `download-images`,
+  `fetch-missing-images`, `analyze-points` import a removed module); use the web job flow.
+- **Keep the root tidy:** one-off scripts → `scripts/` (if the Makefile uses them) or
+  `scripts/legacy/`; superseded notes → `docs/archive/`.
 
-## Állapot (2026-11-18)
+## Status (2026-11-26)
 
-A javítási terv **A–D fázisa kész**. A publikálás **kétkörös**
-(ld. [docs/PUBLISH_PLAN.md](docs/PUBLISH_PLAN.md)): az elemzés lokálisan, kérésre
-fut, így **round 1 = read-only publikálás**. Deploy-topológia: **két Vercel-
-projekt** (frontend + `backend/` `PUBLIC_READ_ONLY=1`-gyel), **Neon** olvasható DB,
-a képek helyett Google Street View deep-linkek; mindkettő a `master` pusholásakor
-deployol. Kész: **F1** (Clerk auth), **F1.5** (minőség-rács + admin stats),
-**R1.1** (pano_id + SV link), **R1.2** (read-only mód + Vercel-artefaktumok),
-**R1.3** (`backend/scripts/publish.py` → Neon); az oldal a Vercel alap-domainjein
-él. **Nyitott: R1.4** (DNS `simaut.hu` / `api.simaut.hu`, Google-kulcs
-restrikció, budget-alert). A round-2 (auth/queue/kvóta, F0–F6) a user-beküldésig
-vár. 2026-11: repó-takarítás (legacy szkriptek/jegyzetek áthelyezve),
-függőségfrissítés (frontend: Vite 8, Vitest 4, graphql-codegen 8, lucide 1.x;
-backend: CVE-floorok, Pydantic/SQLAlchemy/utcnow elavulások). A lokális dev
-változatlan (`make dev`, teljes backend); a read-only csak env-flag.
-Commit/push csak explicit kérésre.
-
-**RQI-kiértékelés (2026-11-18):** térben csoportosított CV-re váltottunk. A v2
-bajnok őszinte számai: QWK 0.774 / MAE 0.405 / AUC 0.934. Budapesten gyenge,
-új régióban QWK ~0.66. A bajnok marad, mert egyik kihívó sem mérhetően jobb.
-Teendők (holdout régió, szórtabb címkék, szakasz-aggregálás):
-[docs/MODEL_EXPERIMENTS.md](docs/MODEL_EXPERIMENTS.md), 6. korszak.
-**Képdátum (2026-11-18):** `street_view_images.capture_date` (Metadata API,
-ingyenes) + `backend/scripts/backfill_capture_date.py`; a részletkártya jelzi a
-régi képet.
+- **Public site:** round 1 (read-only) live on the Vercel default domains, data on
+  Neon. Open: **R1.4** (DNS `simaut.hu` / `api.simaut.hu`, key restriction, budget
+  alert). Round 2 (auth/queue/quotas) waits for user submissions —
+  [docs/PUBLISH_PLAN.md](docs/PUBLISH_PLAN.md).
+- **RQI:** honest spatial-CV numbers QWK 0.774 / MAE 0.405 / AUC 0.934; weak in
+  Budapest; the v2 champion stays. Next steps: [docs/MODEL_EXPERIMENTS.md](docs/MODEL_EXPERIMENTS.md).
+- **In progress** (integration branch `claude/analysis-layer`): road-segment
+  aggregation (ML + backend + frontend), high-res road-crop features, VLM attribute
+  features, frame-quality audit (`analysis_metadata.frame_quality`), labelling
+  queue + mobile quick-rate. Who is on what: [docs/TEAM.md](docs/TEAM.md).
+- **Open, no owner:** YOLO retrain + FastSAM decision ([DEVELOPMENT.md](DEVELOPMENT.md)).

@@ -15,7 +15,7 @@ from app.services.job_service import create_job, get_job
 from app.services.map_aggregation import grid_cell_size_for_zoom
 from app.core.settings_manager import settings_manager
 
-from .types import Point, Job, TrainingData, ProcessRouteInput, TrainingDataInput, RunAnalysisInput, TrainingStats, TrainingPointsResponse, FilterMode, Setting, UpdateSettingInput, DetectInput, DetectPrediction, ReviewActionInput, ReviewActionResult, RqiModelInfo
+from .types import Point, Job, TrainingData, ProcessRouteInput, TrainingDataInput, RunAnalysisInput, TrainingStats, TrainingPointsResponse, FilterMode, Setting, UpdateSettingInput, DetectInput, DetectPrediction, ReviewActionInput, ReviewActionResult, RqiModelInfo, RoadSegment, RouteQuality
 
 from app.graphql.resolver_helpers import get_db_session, image_filename_from_url as get_filename
 from app.graphql.permissions import IsAdmin, IsAuthenticated, IsAuthenticatedUnlessPublicRead
@@ -82,6 +82,88 @@ class AdminStats:
 # Street View Static is an Essentials SKU: 10k free billable events per month.
 STREET_VIEW_FREE_TIER = 10000
 
+
+def _road_segment(record) -> RoadSegment:
+    """services.segment_read.SegmentRecord → GraphQL RoadSegment."""
+    from app.services.capture_date import format_capture_date
+
+    def _round(value, digits):
+        return None if value is None else round(float(value), digits)
+
+    return RoadSegment(
+        id=strawberry.ID(record.id),
+        path=[[lat, lng] for lat, lng in record.path],
+        rqi=record.rqi,
+        score=_round(record.score, 3),
+        p_bad=_round(record.p_bad, 3),
+        confidence=round(float(record.confidence), 3),
+        confidence_level=record.confidence_level,
+        n_images=record.n_images,
+        length_m=round(float(record.length_m), 1),
+        road_name=record.road_name,
+        highway=record.highway,
+        capture_date_min=format_capture_date(record.capture_date_min),
+        capture_date_max=format_capture_date(record.capture_date_max),
+        confidence_reason=record.confidence_reason,
+        mid_lat=record.mid[0] if record.mid else None,
+        mid_lng=record.mid[1] if record.mid else None,
+        mid_heading=record.mid_heading,
+    )
+
+
+def _points_from_images(db, results) -> List[Point]:
+    """StreetViewImage rows → GraphQL Points (manual labels joined in)."""
+    filenames = [get_filename(x.image_url) for x in results if x.image_url]
+    filenames = [f for f in filenames if f]
+
+    training_map = {}
+    if filenames:
+        td_results = db.query(TrainingDataModel).filter(TrainingDataModel.image_filename.in_(filenames)).all()
+        for td in td_results:
+            training_map[td.image_filename] = td
+
+    # Fetch setting once
+    rqi_display_source = settings_manager.get_setting("rqi_display_source", "both")
+
+    final_points = []
+    for x in results:
+        fname = get_filename(x.image_url)
+        td = training_map.get(fname)
+
+        # Logic for score selection
+        final_rqi_score = x.rqi_score
+        rqi_source = "yolo"
+
+        if rqi_display_source == "dino":
+            if x.dino_rqi_score is not None:
+                final_rqi_score = x.dino_rqi_score
+                rqi_source = "dino"
+            else:
+                rqi_source = "yolo_fallback"
+
+        final_points.append(Point(
+            id=x.id,
+            latitude=x.latitude,
+            longitude=x.longitude,
+            heading=x.heading,
+            pitch=x.pitch,
+            image_url=f"images/{fname}" if x.image_url else None,
+            rqi_score=final_rqi_score,
+            dino_rqi_score=x.dino_rqi_score,
+            damage_count=x.damage_count or 0,
+            damage_types=x.damage_types,
+            analysis_metadata=x.analysis_metadata,
+            created_at=x.created_at,
+            rqi_source=rqi_source,
+            pano_id=x.pano_id,
+            capture_date_value=x.capture_date,
+            manual_rqi=td.manual_rqi if td else None,
+            manual_tags=td.tags if td else None,
+            manual_annotations=td.annotations if td else None,
+            manual_comment=td.comment if td else None
+        ))
+
+    return final_points
 
 
 
@@ -240,60 +322,7 @@ class Query:
                 )
             
             results = query.offset(offset).limit(limit).all()
-
-            import os
-
-            filenames = [get_filename(x.image_url) for x in results if x.image_url]
-            filenames = [f for f in filenames if f]
-            
-            training_map = {}
-            if filenames:
-                 td_results = db.query(TrainingDataModel).filter(TrainingDataModel.image_filename.in_(filenames)).all()
-                 for td in td_results:
-                     training_map[td.image_filename] = td
-
-            # Fetch setting once
-            rqi_display_source = settings_manager.get_setting("rqi_display_source", "both")
-
-            final_points = []
-            for x in results:
-                fname = get_filename(x.image_url)
-                td = training_map.get(fname)
-                
-                # Logic for score selection
-                final_rqi_score = x.rqi_score
-                rqi_source = "yolo"
-
-                if rqi_display_source == "dino":
-                    if x.dino_rqi_score is not None:
-                        final_rqi_score = x.dino_rqi_score
-                        rqi_source = "dino"
-                    else:
-                        rqi_source = "yolo_fallback"
-                
-                final_points.append(Point(
-                    id=x.id,
-                    latitude=x.latitude,
-                    longitude=x.longitude,
-                    heading=x.heading,
-                    pitch=x.pitch,
-                    image_url=f"images/{fname}" if x.image_url else None,
-                    rqi_score=final_rqi_score,
-                    dino_rqi_score=x.dino_rqi_score,
-                    damage_count=x.damage_count or 0,
-                    damage_types=x.damage_types,
-                    analysis_metadata=x.analysis_metadata,
-                    created_at=x.created_at,
-                    rqi_source=rqi_source,
-                    pano_id=x.pano_id,
-                    capture_date_value=x.capture_date,
-                    manual_rqi=td.manual_rqi if td else None,
-                    manual_tags=td.tags if td else None,
-                    manual_annotations=td.annotations if td else None,
-                    manual_comment=td.comment if td else None
-                ))
-
-            return final_points
+            return _points_from_images(db, results)
         finally:
             db.close()
     
@@ -347,6 +376,79 @@ class Query:
                 for row in rows
             ],
         }
+
+    @strawberry.field
+    def road_segments(self, bbox: List[float], zoom: int) -> List[RoadSegment]:
+        """Road-segment layer: real road geometry (OSM), quality per ~150 m piece.
+
+        `bbox` = `[minLng, minLat, maxLng, maxLat]` like `roadQualityGrid`.
+        Only segments with frames (`nImages > 0`); geometry simplified for the
+        zoom. Returns `[]` below zoom 13 (the quality grid covers the overview)
+        and at most 5000 segments per call. Anonymous; served from the
+        pre-built `road_segments` table (no Overpass / model at request time).
+        """
+        from app.services.segment_read import fetch_segments_in_bbox
+
+        db = get_db_session()
+        try:
+            return [_road_segment(r) for r in fetch_segments_in_bbox(db, bbox, zoom)]
+        finally:
+            db.close()
+
+    @strawberry.field
+    def route_quality(self, path: List[List[float]]) -> RouteQuality:
+        """Quality summary of a route. `path` = `[[lat, lng], ...]`.
+
+        The path is matched to the stored segments (15 m buffer, direction
+        within 45 degrees, both travel directions merged). `meanScore` is the
+        length-weighted mean on the score scale (null when nothing is
+        covered); `coveredLengthM` equals the sum of `lengthByRqi`;
+        `worstSegments` are worst-first and carry the same ids as
+        `roadSegments`. Anonymous, read-only.
+        """
+        from app.services.segment_read import route_quality as compute
+
+        db = get_db_session()
+        try:
+            result = compute(db, path)
+        finally:
+            db.close()
+        # coveredLengthM is DEFINED as the sum of the per-class lengths, so the
+        # two can never disagree (not even by rounding).
+        length_by_rqi = [round(v, 1) for v in result.length_by_rqi]
+        covered = round(sum(length_by_rqi), 1)
+        return RouteQuality(
+            total_length_m=max(round(result.total_length_m, 1), covered),
+            covered_length_m=covered,
+            length_by_rqi=length_by_rqi,
+            mean_score=(
+                None if result.mean_score is None or covered <= 0
+                else round(result.mean_score, 3)
+            ),
+            worst_segments=[_road_segment(r) for r in result.worst_segments],
+        )
+
+    @strawberry.field
+    def segment_frames(self, segment_id: strawberry.ID) -> List[Point]:
+        """The frames a road segment was aggregated from, ordered along it.
+
+        Only frames that snap to THIS segment (nearest road within 20 m whose
+        direction fits the frame heading) — frames of a parallel or crossing
+        road are not included. `[]` for an unknown id. Anonymous, read-only.
+        """
+        from app.services.segment_read import frame_ids_on_segment
+
+        db = get_db_session()
+        try:
+            ids = frame_ids_on_segment(db, str(segment_id))
+            if not ids:
+                return []
+            images = db.query(StreetViewImage).filter(StreetViewImage.id.in_(ids)).all()
+            order = {frame_id: i for i, frame_id in enumerate(ids)}
+            images.sort(key=lambda image: order[image.id])
+            return _points_from_images(db, images)
+        finally:
+            db.close()
 
     @strawberry.field(permission_classes=[IsAdmin])
     def admin_stats(self) -> AdminStats:
