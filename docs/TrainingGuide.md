@@ -51,3 +51,26 @@ in route scoring, not in the label). Each level has a driver's test:
 - Polygons: mark a small but deep pothole clearly; shallow unevenness belongs in
   the score, not in a polygon.
 - Do not score non-road frames (lobbies, pavements, indoors).
+
+## Quick-rate weak spots
+
+On the phone, open `/training/quick` and choose **Gyenge pontok**. This targets
+the systematic errors found in [Era 16](MODEL_EXPERIMENTS.md#era-16--external-training-data-streetsurfacevis-and-the-budapest-errors-t-58-t-43-2026-11-26):
+aged motorway asphalt with cracks, and inner-city road markings the model
+confuses with damage. Keep using the same rubric above: score the visible
+surface, regardless of the road class. The model guess remains hidden until
+rating; skip and undo work as in the other modes. These labels count toward the
+same 1000-label sprint as **Sprint**.
+
+The default mix is 45% motorway/trunk frames predicted Kiváló (including ramps),
+45% frames predicted Közepes in the coverage report's approximate inner V–IX box,
+and 10% Budapest frames in cells with no label. All frames must be unlabelled,
+usable and present locally. Shared 150 m thinning spreads picks across streets;
+a stable shuffle hides the rule order. A dry rule yields its share to the others.
+The queue ends when all enabled pools are exhausted; it never falls back to
+unrelated or already-labelled frames.
+
+Maintainers can tune `backend/config/weak_spots.json` (shares, scale keys,
+road classes, bbox and thinning); restart the backend after editing. Details
+and the read-only count command are in the
+[queue API documentation](API_SURFACE.md#labelling-admin).

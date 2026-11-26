@@ -23,6 +23,7 @@ export const STRATEGIES: { value: LabelStrategy; label: string; hint: string }[]
   { value: 'MIXED', label: 'Vegyes', hint: 'Felváltva új helyek és bizonytalan képek' },
   { value: 'DIVERSE', label: 'Új helyek', hint: 'Címkézetlen 1 km-es cellák, Budapest elöl' },
   { value: 'UNCERTAIN', label: 'Bizonytalan', hint: 'Ahol a modell két szint határán áll' },
+  { value: 'WEAK_SPOTS', label: 'Gyenge pontok', hint: 'A modell gyenge pontjai: sztrádák és belvárosi felfestések' },
   {
     value: 'SPRINT',
     label: 'Sprint',
@@ -54,8 +55,13 @@ export const areaLabel = (area: string): string => AREA_LABELS[area] ?? area
 /** A labelled frame served again by the re-check strategy (not a new label). */
 export const isRecheckItem = (item: Pick<QueueItem, 'reason'>): boolean => item.reason.startsWith('recheck')
 
+/** Both modes contribute new labels to the owner's learning-curve sprint. */
+export const isSprintStrategy = (strategy: LabelStrategy): boolean =>
+  strategy === 'SPRINT' || strategy === 'WEAK_SPOTS'
+
 /** Short Hungarian chip: why this frame is in the queue. */
 export const reasonLabel = (item: Pick<QueueItem, 'reason' | 'area' | 'cellLabels' | 'boundary'>): string => {
+  if (item.reason === 'weak_spots') return 'Gyenge pontok'
   if (item.reason === 'model_best') return `Sprint · legjobbnak becsült · ${areaLabel(item.area)}`
   if (item.reason === 'recheck_suspicious') return 'Újraellenőrzés · gyanús'
   if (item.reason === 'recheck_sample') return 'Újraellenőrzés · minta'
@@ -196,6 +202,23 @@ export const newClientId = (): string => {
 }
 
 const RETRAIN_ACK_KEY = 'quickLabel.retrainAck'
+const WEAK_SPOTS_HINT_KEY = 'quickLabel.weakSpotsHintSeen'
+
+export const loadWeakSpotsHintSeen = (): boolean => {
+  try {
+    return window.localStorage.getItem(WEAK_SPOTS_HINT_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
+export const saveWeakSpotsHintSeen = (): void => {
+  try {
+    window.localStorage.setItem(WEAK_SPOTS_HINT_KEY, 'true')
+  } catch {
+    // Keep the current session usable when browser storage is blocked.
+  }
+}
 
 export const loadRetrainAck = (): number => {
   try {

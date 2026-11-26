@@ -14,7 +14,8 @@ export type LabelQueueStrategy =
   | 'MIXED'
   | 'RECHECK'
   | 'SPRINT'
-  | 'UNCERTAIN';
+  | 'UNCERTAIN'
+  | 'WEAK_SPOTS';
 
 export type PairJudgmentInput = {
   clientId: string;

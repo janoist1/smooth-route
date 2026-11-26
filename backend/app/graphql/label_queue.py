@@ -26,6 +26,7 @@ class LabelQueueStrategy(Enum):
     MIXED = "mixed"
     RECHECK = "recheck"  # already-labelled frames, served blind (old label never sent)
     SPRINT = "sprint"  # learning-curve sprint: new streets, <= 1 per 75 m, + model-best
+    WEAK_SPOTS = "weak_spots"  # Era 16 targets, mixed and served blind
 
 
 @strawberry.type
@@ -60,7 +61,7 @@ class LabelQueueStats:
     rechecked: int
     recheck_same: Optional[float]
     recheck_within_one: Optional[float]
-    # Labelling sprint: new labels made in sprint mode, toward sprint_target.
+    # Labelling sprint: new sprint/weak-spot labels, toward sprint_target.
     sprint_labelled: int
     sprint_target: int
 

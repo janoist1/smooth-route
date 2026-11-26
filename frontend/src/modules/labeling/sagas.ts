@@ -2,7 +2,7 @@ import type { SagaIterator } from 'redux-saga'
 import { call, fork, put, select, take, takeEvery, takeLatest } from 'redux-saga/effects'
 import { takeLatestAsync } from 'saga-toolkit'
 import { gql, gqlMutate, gqlQuery } from '../graphql'
-import { excludeIds, needsRefill, pairExcludeIds, QUEUE_BATCH, saveRetrainAck, saveSkipped, saveStrategy } from './logic'
+import { excludeIds, needsRefill, pairExcludeIds, QUEUE_BATCH, saveRetrainAck, saveSkipped, saveStrategy, saveWeakSpotsHintSeen } from './logic'
 
 const PAIR_BATCH = 10
 const PAIR_REFILL_AT = 3
@@ -149,6 +149,7 @@ const errorText = (e: unknown): string => (e instanceof Error ? e.message : Stri
 
 function* enterWorker() {
   const state: LabelingState = yield select(selectRoot)
+  if (state.strategy === 'WEAK_SPOTS') yield call(saveWeakSpotsHintSeen)
   if (state.examples.length === 0) yield put(fetchExamples())
   if (state.queue.length === 0 && !state.loading) yield put(fetchQueue())
   if (state.mode === 'pair' && state.pairs.length === 0 && !state.pairsLoading) yield put(fetchPairs())
@@ -264,6 +265,7 @@ function* persistSkipped(): SagaIterator<void> {
 
 function* persistStrategy(action: ReturnType<typeof setStrategy>): SagaIterator<void> {
   yield call(saveStrategy, action.payload)
+  if (action.payload === 'WEAK_SPOTS') yield call(saveWeakSpotsHintSeen)
 }
 
 export default [

@@ -140,6 +140,7 @@ enum LabelQueueStrategy {
   MIXED
   RECHECK
   SPRINT
+  WEAK_SPOTS
 }
 
 type LevelCount {
