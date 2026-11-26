@@ -620,6 +620,35 @@ Promoting it would mean replacing `rqi_model.joblib` and re-scoring the map.
 Only `dino_service` changes in code, and that change is already in place and
 backward compatible: classic recipes take the same code path as before.
 
+### YOLO sanity check (experiment 2)
+
+The weights loaded are the production setting `yolo_model` =
+`data/models/yolov8m-seg-best-20260105.pt` (9 classes: 6 damage types plus
+shadow/manhole/marking), at production threshold 0.15. This owner-trained
+model's quality had never been measured. Inside the production ROI trapezoid,
+on the 1903 labelled frames:
+
+| class | fires on | mean area % for RQI 1 / 2 / 3 / 4 | Spearman ρ vs RQI |
+|---|---|---|---|
+| long_crack | 5.9% | 0.07 / 0.06 / 0.06 / 0.00 | −0.04 (no signal) |
+| trans_crack | 12.6% | 0.04 / 0.17 / 0.23 / 0.12 | +0.13 |
+| alligator_crack | 12.2% | 0.08 / 0.41 / 0.99 / 1.12 | +0.22 |
+| pothole | 2.7% | 0.00 / 0.01 / 0.04 / 0.13 | +0.20 |
+| patch | 9.6% | 0.00 / 0.13 / 0.56 / 1.96 | +0.32 |
+| degradation | 16.0% | 0.01 / 0.41 / 1.91 / 9.17 | +0.48 |
+| any damage | 42.1% | 0.20 / 1.17 / 3.73 / 12.16 | +0.54 |
+
+Frames with any damage detection, by true class: RQI 1 14%, RQI 2 38%,
+RQI 3 68%, RQI 4 84%. The signal is real and monotone, but it comes mostly
+from the coarse "degradation"/"patch" masks. Crack classes are weak or noisy.
+A visual check (one frame per class) matches: the RQI 1 frame is clean, and
+the RQI 4 frame gets a plausible whole-lane degradation mask. On the RQI 2
+motorway, lane-marking edges and joints are labelled as transverse/alligator
+cracks. On the RQI 3 frame there are tiny distant "patch" boxes plus a
+"shadow". Everything YOLO knows is already in the DINO features: on its own it
+reaches QWK 0.54–0.62, and stacked with the champion the best is +0.004
+(n.s.). No tuning was done around it.
+
 ### Verdict and what it means
 
 1. **Resolution is not the bottleneck.** At native or upsampled resolution
