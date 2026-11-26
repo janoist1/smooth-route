@@ -92,18 +92,22 @@ the identical `labels.csv` (proved by the rehearsal below).
 
 ## The direction flip (phase 2): status and runbook
 
-Code is flipped on branch `claude/rqi-canonical-scale-e22444`; the **data
-migration has NOT run yet** (lead's go pending). The branch must not run against
-an unmigrated DB: it would show every stored value inverted. Merge it and
-migrate in one step.
+**Status (2026-11-26 13:15 CST):** code flipped on branch
+`claude/rqi-canonical-scale-e22444`; migration `0006` **applied to the dev DB**
+(backup `data/backups/pre_rqi_flip_202611261309.dump`), `road_segments`
+rebuilt (identical class split to the migrated rows: Rossz 34 / Közepes 297 /
+Jó 601 / Kiváló 198 segments), label re-export identical in ML numbering for
+all 1 917 previously exported labels, gate output unchanged. **Neon / the public
+site are still on the old numbering:** publish + `master` push together (step 6).
+Any server running code without `0006` must not be restarted against the dev DB.
 
 Tooling, all tested:
 
 - `scripts/sync_rqi_scale.py --flip` mirrors the JSON (values, `bad_from`,
   `model_levels`, direction) and the segment config's `scale` block + thresholds,
   then syncs the copies. Flipping twice restores both files byte-for-byte.
-- `backend/alembic/pending/rqi_flip_direction.py` (revision `0006`, revises
-  `0005`) is the data migration, **inactive** outside `versions/`. It mirrors
+- `backend/alembic/versions/0006_rqi_flip_direction.py` (revises `0005`) is the
+  data migration. It mirrors
   `training_data.manual_rqi`, `street_view_images.rqi_score` /
   `dino_rqi_score`, `analysis_metadata.dino_score`,
   `analysis_metadata.dino_rqi_score_prev` (written by `rescore_dino.py`),

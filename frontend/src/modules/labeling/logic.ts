@@ -23,6 +23,11 @@ export const STRATEGIES: { value: LabelStrategy; label: string; hint: string }[]
   { value: 'MIXED', label: 'Vegyes', hint: 'Felváltva új helyek és bizonytalan képek' },
   { value: 'DIVERSE', label: 'Új helyek', hint: 'Címkézetlen 1 km-es cellák, Budapest elöl' },
   { value: 'UNCERTAIN', label: 'Bizonytalan', hint: 'Ahol a modell két szint határán áll' },
+  {
+    value: 'RECHECK',
+    label: 'Újraellenőrzés',
+    hint: 'Régi címkék újra, vakon (a régi érték rejtve): előbb a gyanúsak, aztán véletlen minta',
+  },
 ]
 
 export const QUEUE_BATCH = 20
@@ -41,8 +46,13 @@ const AREA_LABELS: Record<string, string> = {
 
 export const areaLabel = (area: string): string => AREA_LABELS[area] ?? area
 
+/** A labelled frame served again by the re-check strategy (not a new label). */
+export const isRecheckItem = (item: Pick<QueueItem, 'reason'>): boolean => item.reason.startsWith('recheck')
+
 /** Short Hungarian chip: why this frame is in the queue. */
 export const reasonLabel = (item: Pick<QueueItem, 'reason' | 'area' | 'cellLabels' | 'boundary'>): string => {
+  if (item.reason === 'recheck_suspicious') return 'Újraellenőrzés · gyanús'
+  if (item.reason === 'recheck_sample') return 'Újraellenőrzés · minta'
   if (item.reason === 'uncertain') {
     return item.boundary ? `Bizonytalan · ${item.boundary} határ` : 'Bizonytalan'
   }
@@ -131,6 +141,15 @@ export const isOldCapture = (ym: string | null | undefined, now: Date = new Date
   if (!m) return false
   const months = (now.getFullYear() - Number(m[1])) * 12 + (now.getMonth() + 1 - Number(m[2]))
   return months > years * 12
+}
+
+/** "67% azonos · 95% ±1 (n=12)" — the owner's agreement with their old labels. */
+export const consistencyText = (
+  stats: { rechecked: number; recheckSame?: number | null; recheckWithinOne?: number | null } | null,
+): string | null => {
+  if (!stats || !stats.rechecked || stats.recheckSame == null || stats.recheckWithinOne == null) return null
+  const pct = (x: number) => `${Math.round(x * 100)}%`
+  return `${pct(stats.recheckSame)} azonos · ${pct(stats.recheckWithinOne)} ±1 (n=${stats.rechecked})`
 }
 
 /** Human-agreement summary after rating: "egyezik" / "±1" / "eltér". */

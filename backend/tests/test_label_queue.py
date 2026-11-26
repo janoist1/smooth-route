@@ -231,7 +231,7 @@ class TestBuildQueue:
 
     def test_labelled_neighbourhood_is_excluded_for_every_strategy(self):
         frames = [frame(1, dx=10, score=2.5), frame(2, dx=1000, score=2.5)]
-        for strategy in Strategy:
+        for strategy in (Strategy.UNCERTAIN, Strategy.DIVERSE, Strategy.MIXED):
             res = lq.build_queue(frames, [BP], strategy, 10, cut_points=CUTS)
             assert 1 not in ids(res.items)
             assert res.eligible == 1
@@ -322,3 +322,58 @@ class TestGraphQLPermissions:
         fields = read_schema.get_type_by_name("Query").fields
         names = {f.python_name for f in fields}
         assert "label_queue" not in names and "label_examples" not in names
+
+
+# --- re-check strategy ------------------------------------------------------
+
+class TestRecheck:
+    def frames(self):
+        return [frame(i, dx=i * 10) for i in range(1, 13)]  # dense: no spatial rules apply
+
+    def test_suspicious_first_in_priority_order_then_stratified_sample(self):
+        level_of = {i: (i - 1) % 4 + 1 for i in range(1, 13)}  # levels 1..4, three frames each
+        items = lq.pick_recheck(self.frames(), level_of, [7, 3, 99], 8, [1, 2, 3, 4])
+        assert ids(items)[:2] == [7, 3]  # unknown id 99 ignored
+        assert [it.reason for it in items[:2]] == ["recheck_suspicious"] * 2
+        sample = items[2:]
+        assert {it.reason for it in sample} == {"recheck_sample"}
+        # Round-robin over the old levels, best to worst.
+        assert [level_of[it.frame.id] for it in sample] == [1, 2, 3, 4, 1, 2]
+
+    def test_excluded_and_limit(self):
+        level_of = {i: 1 for i in range(1, 13)}
+        items = lq.pick_recheck(self.frames(), level_of, [1, 2], 3, [1, 2, 3], exclude_ids=[1])
+        assert ids(items)[0] == 2 and len(items) == 3 and 1 not in ids(items)
+
+    def test_build_queue_refuses_recheck(self):
+        with pytest.raises(ValueError):
+            lq.build_queue([], [], "recheck", 5)
+
+
+def test_consistency_stats_original_vs_latest_and_direction_aware():
+    from app.core.rqi_scale import SCALE
+
+    d = SCALE.direction
+    other = next(x for x in ("lower_is_better", "higher_is_better") if x != d)
+    lo, hi = SCALE.best, SCALE.worst
+    histories = [
+        [{"old": 2, "new": 2, "direction": d}],                       # same
+        [{"old": 2, "new": 3, "direction": d}],                       # +1
+        [{"old": 2, "new": 4, "direction": d}],                       # far
+        [{"old": 1, "new": 3, "direction": d}, {"old": 3, "new": 1, "direction": d}],  # original 1 vs latest 1
+        # Written before a direction flip: stored values are mirrored.
+        [{"old": lo + hi - 1, "new": lo + hi - 2, "direction": other}],  # canonical 1 -> 2
+        [],
+    ]
+    st = lq.consistency_stats(histories, SCALE)
+    assert st["n"] == 5
+    assert st["same"] == pytest.approx(2 / 5, abs=1e-3)
+    assert st["within_one"] == pytest.approx(4 / 5, abs=1e-3)
+    assert st["per_level"][2] == {"n": 3, "same": pytest.approx(1 / 3, abs=1e-3),
+                                  "within_one": pytest.approx(2 / 3, abs=1e-3)}
+    assert st["per_level"][1]["n"] == 2
+    assert lq.consistency_stats([], SCALE)["same"] is None
+    mixed = [[{"old": 2, "new": 2, "direction": d, "reason": "recheck_sample"}],
+             [{"old": 2, "new": 4, "direction": d, "reason": "recheck_suspicious"}]]
+    only_sample = lq.consistency_stats(mixed, SCALE, reason="recheck_sample")
+    assert only_sample["n"] == 1 and only_sample["same"] == 1.0

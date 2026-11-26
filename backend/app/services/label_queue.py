@@ -68,6 +68,9 @@ class Strategy(str, Enum):
     UNCERTAIN = "uncertain"
     DIVERSE = "diverse"
     MIXED = "mixed"
+    # Already-labelled frames, served again blind (pick_recheck): the owner's
+    # early labels were made while learning the task.
+    RECHECK = "recheck"
 
 
 @dataclass(frozen=True)
@@ -383,6 +386,88 @@ def interleave(first: Sequence[QueueItem], second: Sequence[QueueItem], limit: i
     return out
 
 
+def pick_recheck(frames: Sequence[Frame], level_of: dict[int, int],
+                 suspicious_ids: Sequence[int], limit: int,
+                 levels: Sequence[int], exclude_ids: Iterable[int] = (),
+                 seed: int = 0) -> list[QueueItem]:
+    """Labelled frames to rate again, blind.
+
+    First the ``suspicious_ids`` in their given (priority) order: frames whose
+    human label disagrees with both the model and the VLM. Then a random
+    sample stratified by the old label (round-robin over ``levels``, best to
+    worst), the consistency control. ``frames`` must already exclude frames
+    re-checked before; ``level_of`` maps frame id -> old level (never sent to
+    the client).
+    """
+    excluded = set(exclude_ids)
+    by_id = {f.id: f for f in frames if f.id not in excluded}
+    out: list[QueueItem] = []
+    for fid in suspicious_ids:
+        if len(out) >= limit:
+            return out
+        f = by_id.pop(fid, None)
+        if f is not None:
+            out.append(QueueItem(frame=f, reason="recheck_suspicious",
+                                 area=area_of(f.lat, f.lon), uncertainty=None,
+                                 cell_labels=0))
+    strata: dict[int, list[Frame]] = {lv: [] for lv in levels}
+    for f in by_id.values():
+        lv = level_of.get(f.id)
+        if lv in strata:
+            strata[lv].append(f)
+    for members in strata.values():
+        members.sort(key=lambda f: stable_rank(f.id, seed), reverse=True)
+    while len(out) < limit and any(strata.values()):
+        for lv in levels:
+            if len(out) >= limit:
+                break
+            if strata[lv]:
+                f = strata[lv].pop()
+                out.append(QueueItem(frame=f, reason="recheck_sample",
+                                     area=area_of(f.lat, f.lon), uncertainty=None,
+                                     cell_labels=0))
+    return out
+
+
+def consistency_stats(histories: Iterable[list], scale, reason: Optional[str] = None) -> dict:
+    """Owner's self-consistency from relabel_history lists: the ORIGINAL label
+    (first entry's old) against the latest re-check (last entry's new), both on
+    the canonical scale of ``scale`` (an app.core.rqi_scale.RqiScale, passed in
+    so ml/label_consistency.py can load this module without the backend app).
+    Per old level: n, exact share, within-one share.
+
+    ``reason`` keeps only frames whose first re-check had that queue reason:
+    the noise ceiling must come from "recheck_sample" (random control), not
+    from "recheck_suspicious" frames, which were picked because they look wrong.
+    """
+    per: dict[int, list[int]] = {}
+    for hist in histories:
+        if not hist:
+            continue
+        first, last = hist[0], hist[-1]
+        if reason is not None and first.get("reason") != reason:
+            continue
+        try:
+            old = scale.convert(float(first["old"]), first.get("direction", scale.direction))
+            new = scale.convert(float(last["new"]), last.get("direction", scale.direction))
+        except (KeyError, TypeError, ValueError):
+            continue
+        bucket = per.setdefault(int(scale.nearest(old)), [0, 0, 0])
+        bucket[0] += 1
+        bucket[1] += abs(new - old) < 1e-9
+        bucket[2] += abs(new - old) <= 1 + 1e-9
+
+    def share(n, k):
+        return round(k / n, 3) if n else None
+
+    n, same, near = (sum(b[i] for b in per.values()) for i in range(3))
+    return {
+        "n": n, "same": share(n, same), "within_one": share(n, near),
+        "per_level": {lv: {"n": b[0], "same": share(*b[:2]), "within_one": share(b[0], b[2])}
+                      for lv, b in sorted(per.items())},
+    }
+
+
 def build_queue(candidates: Iterable[Frame],
                 labelled: Iterable[tuple[float, float]],
                 strategy: Strategy | str = Strategy.MIXED,
@@ -402,6 +487,8 @@ def build_queue(candidates: Iterable[Frame],
     taken, so a follow-up request does not serve their near-duplicates.
     """
     strategy = Strategy(strategy)
+    if strategy is Strategy.RECHECK:
+        raise ValueError("recheck serves labelled frames: use pick_recheck")
     limit = max(0, min(int(limit), MAX_LIMIT))
     candidates = list(candidates)
     labelled = list(labelled)

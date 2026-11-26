@@ -1,5 +1,5 @@
 /** GraphQL enum LabelQueueStrategy (codegen: enumsAsTypes). */
-export type LabelStrategy = 'MIXED' | 'UNCERTAIN' | 'DIVERSE'
+export type LabelStrategy = 'MIXED' | 'UNCERTAIN' | 'DIVERSE' | 'RECHECK'
 
 /** One frame served by the backend label queue (`labelQueue`). */
 export interface QueueItem {
@@ -29,6 +29,10 @@ export interface QueueStats {
   labelledToday: number
   eligible: number
   scored: number
+  /** Owner's self-consistency on re-checked frames (original vs re-check). */
+  rechecked: number
+  recheckSame?: number | null
+  recheckWithinOne?: number | null
 }
 
 export interface LabelQueuePage {
@@ -53,6 +57,8 @@ export type HistoryEntry =
       rqi: number
       status: 'saving' | 'saved'
       revealed: boolean
+      /** A new label (false for a re-check, which only replaces one). */
+      isNew: boolean
     }
   | { kind: 'skipped'; item: QueueItem }
 

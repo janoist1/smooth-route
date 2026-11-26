@@ -31,7 +31,7 @@ vi.mock('../../graphql', () => ({
           modelRqi: rqiValue('good'),
           modelScore: fromSeverity(2.1),
         })),
-        stats: { totalLabelled: 10, labelledToday: 0, eligible: 2, scored: 2 },
+        stats: { totalLabelled: 10, labelledToday: 0, eligible: 2, scored: 2, rechecked: 0 },
       },
     }
   },
