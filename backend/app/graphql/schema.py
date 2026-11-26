@@ -5,14 +5,20 @@ in resolver_helpers.py, request limits in limits.py. This module only wires
 them into the Strawberry schema.
 """
 import strawberry
+from strawberry.tools import merge_types
 
+from app.graphql.label_queue import LabelQueueMutation, LabelQueueQuery
 from app.graphql.limits import schema_extensions
 from app.graphql.mutations import Mutation
 from app.graphql.queries import Query
 
 # Full schema for local dev / the always-on backend (reads + mutations).
+# Feature modules with their own resolver classes (label queue) are merged in
+# here instead of growing queries.py / mutations.py.
+FullQuery = merge_types("Query", (Query, LabelQueueQuery))
+FullMutation = merge_types("Mutation", (Mutation, LabelQueueMutation))
 schema = strawberry.Schema(
-    query=Query, mutation=Mutation, extensions=schema_extensions(public=False)
+    query=FullQuery, mutation=FullMutation, extensions=schema_extensions(public=False)
 )
 
 # Read-only schema for the round-1 public deploy: query fields only, so no

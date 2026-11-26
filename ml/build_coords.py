@@ -10,10 +10,15 @@ test fold, the CV score is optimistic. See ml/spatial_cv.py.
 Two filename schemes exist in ml/cache/dataset_v2.csv:
   1. ``00001_47.496700_19.069360_67.jpg``  -> seq_lat_lon_heading, parsed directly
   2. ``sv_{svi_id}_{uuid}.jpg``             -> coordinates live in the DB table
-     ``street_view_images`` (row id = svi_id). We read them from the DB export
-     ``ml/missing_labelled_mapped.csv`` (produced when those images were
-     recovered, see ml/recover_missing_images.py) or, with ``--from-db``,
-     straight from Postgres (``docker compose up -d db``, :5433).
+     ``street_view_images`` (row id = svi_id). Looked up, in order, in:
+       a. ``ml/labels.csv`` latitude/longitude columns (ml/export_labels.sh
+          joins them in, so every new label — review page or the quick-rate
+          screen — carries its coordinate);
+       b. the older DB export ``ml/missing_labelled_mapped.csv`` (produced
+          when images were recovered, see ml/recover_missing_images.py);
+       c. Postgres (``docker compose up -d db``, :5433) for anything still
+          missing — always with ``--from-db``, otherwise as an automatic
+          fallback when the DB is reachable.
 
 The output is committed (small, ~2k rows) so the promotion gate does not depend
 on the git-ignored DB export. Re-run only when the labelled set changes.
@@ -23,8 +28,8 @@ Columns: image_filename, lat, lon, seq, coord_source, area
   - area  : which of the collection areas the image belongs to (see AREAS)
 
 Usage:
-  .venv/bin/python ml/build_coords.py             # from the CSV export
-  .venv/bin/python ml/build_coords.py --from-db   # from Postgres instead
+  .venv/bin/python ml/build_coords.py             # labels.csv / CSV export, DB fallback
+  .venv/bin/python ml/build_coords.py --from-db   # sv_* coordinates from Postgres
 """
 import argparse
 import os
@@ -37,6 +42,7 @@ import pandas as pd
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CACHE = os.path.join(ROOT, "ml", "cache")
 MANIFEST = os.path.join(CACHE, "dataset_v2.csv")
+LABELS = os.path.join(ROOT, "ml", "labels.csv")
 SVI_EXPORT = os.path.join(ROOT, "ml", "missing_labelled_mapped.csv")
 OUT = os.path.join(ROOT, "ml", "image_coords.csv")
 DB_URL = os.environ.get(
@@ -73,10 +79,21 @@ def assign_area(lat, lon):
     return out
 
 
-def svi_coords_from_csv():
-    df = pd.read_csv(SVI_EXPORT)
-    return {int(r.svi_id): (float(r.latitude), float(r.longitude))
-            for r in df.itertuples()}
+def svi_coords_from_csv(labels_path=LABELS, export_path=SVI_EXPORT):
+    """svi_id -> (lat, lon) from the CSV exports (labels.csv wins)."""
+    out = {}
+    for path in (export_path, labels_path):  # later file overrides earlier
+        if not path or not os.path.exists(path):
+            continue
+        df = pd.read_csv(path)
+        if not {"latitude", "longitude"} <= set(df.columns):
+            continue
+        if "svi_id" not in df.columns:
+            df["svi_id"] = df["image_filename"].str.extract(SVI.pattern, expand=False)
+        df = df.dropna(subset=["svi_id", "latitude", "longitude"])
+        for r in df.itertuples():
+            out[int(r.svi_id)] = (float(r.latitude), float(r.longitude))
+    return out
 
 
 def svi_coords_from_db(ids):
@@ -91,10 +108,13 @@ def svi_coords_from_db(ids):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--from-db", action="store_true",
-                    help="read sv_* coordinates from Postgres instead of the CSV export")
+                    help="read sv_* coordinates from Postgres instead of the CSV exports")
+    ap.add_argument("--manifest", default=MANIFEST, help=argparse.SUPPRESS)
+    ap.add_argument("--labels", default=LABELS, help=argparse.SUPPRESS)
+    ap.add_argument("--out", default=OUT, help=argparse.SUPPRESS)
     args = ap.parse_args()
 
-    files = pd.read_csv(MANIFEST)["image_filename"].tolist()
+    files = pd.read_csv(args.manifest)["image_filename"].tolist()
     rows, need_svi = [], {}
     for f in files:
         m = NAMED.match(f)
@@ -109,8 +129,20 @@ def main():
         rows.append((f, np.nan, np.nan, -1, "missing"))
 
     if need_svi:
-        lookup = (svi_coords_from_db(set(need_svi.values())) if args.from_db
-                  else svi_coords_from_csv())
+        ids = set(need_svi.values())
+        if args.from_db:
+            lookup = svi_coords_from_db(ids)
+        else:
+            lookup = svi_coords_from_csv(args.labels)
+            missing = ids - set(lookup)
+            if missing:
+                try:
+                    lookup.update(svi_coords_from_db(missing))
+                    print(f"{len(missing)} sv_* coordinates read from Postgres")
+                except Exception as exc:  # DB down: reported as missing below
+                    print(f"WARNING: {len(missing)} sv_* frames have no coordinate "
+                          f"in the CSV exports and the DB is unreachable ({exc}). "
+                          f"Re-run bash ml/export_labels.sh or use --from-db.")
         for f, sid in need_svi.items():
             lat, lon = lookup.get(sid, (np.nan, np.nan))
             src = "svi_db" if np.isfinite(lat) else "missing"
@@ -125,9 +157,9 @@ def main():
                                       out.loc[ok, "lon"].values)
     out["lat"] = out["lat"].round(7)
     out["lon"] = out["lon"].round(7)
-    out.to_csv(OUT, index=False)
+    out.to_csv(args.out, index=False)
 
-    print(f"{len(out)} images -> {os.path.relpath(OUT, ROOT)}")
+    print(f"{len(out)} images -> {os.path.relpath(args.out, ROOT)}")
     print(out["coord_source"].value_counts().to_string())
     print(out["area"].value_counts().to_string())
     if (~ok).any():

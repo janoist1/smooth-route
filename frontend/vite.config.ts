@@ -5,7 +5,8 @@ import path from 'path'
 
 // Backend the dev server proxies to (default: `make backend` on :8000).
 // Override e.g. for the E2E suite or a second backend: API_PROXY_TARGET=http://localhost:8002
-const apiTarget = process.env.API_PROXY_TARGET ?? 'http://localhost:8000'
+const apiTarget = 
+  process.env.API_PROXY_TARGET ?? process.env.BACKEND_URL ?? 'http://localhost:8000'
 const proxied = { target: apiTarget, changeOrigin: true }
 
 // https://vitejs.dev/config/

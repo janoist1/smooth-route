@@ -131,6 +131,14 @@ egy-annotátoros plafonhoz.
 
 ## Pipeline (minden a Mac-en fut, MPS)
 
+> **New labels (2026-11-26):** the quick-rate screen (`/training/quick`) writes
+> into `training_data.manual_rqi` like the review page, so `export_labels.sh`
+> exports both. `labels.csv` now also carries `svi_id, latitude, longitude`
+> (joined from `street_view_images`) and `source` (`quick` | `review`);
+> `build_coords.py` takes sv_* coordinates from there first, then the old
+> `missing_labelled_mapped.csv`, then Postgres automatically. The export pins
+> `COMPOSE_PROJECT_NAME=smooth-route`, so it also works from a git worktree.
+
 ```bash
 bash ml/export_labels.sh                       # -> ml/labels.csv (Docker kell)
 .venv/bin/python ml/recover_missing_images.py  # hiányzó címkézett képek vissza (Street View API)

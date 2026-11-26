@@ -1,0 +1,62 @@
+{
+  "$comment": "CANONICAL RQI scale. Edit ONLY shared/rqi_scale.json, then run `python scripts/sync_rqi_scale.py` to refresh the deployable copies (backend/app/core/rqi_scale.json, frontend/src/modules/ui/utils/rqiScale.json); tests fail if a copy drifts. Rules: shared/README.md.",
+  "name": "RQI",
+  "title_hu": "Útminőség-index",
+  "title_en": "Road Quality Index",
+  "version": 1,
+  "direction": "lower_is_better",
+  "bad_from": 3,
+  "model_levels": [1, 2, 3, 4],
+  "levels": [
+    {
+      "value": 1,
+      "key": "excellent",
+      "label_hu": "Kiváló",
+      "label_en": "Excellent",
+      "color": "#4ade80",
+      "rubric_hu": "Új vagy frissen felújított burkolat, látható hiba nélkül.",
+      "rubric_en": "New or freshly resurfaced, no visible defects."
+    },
+    {
+      "value": 2,
+      "key": "good",
+      "label_hu": "Jó",
+      "label_en": "Good",
+      "color": "#4ade80",
+      "rubric_hu": "Enyhe kopás, apró repedések, jó foltozások; a vezetést nem zavarja.",
+      "rubric_en": "Light wear, small cracks, good patches; does not affect driving."
+    },
+    {
+      "value": 3,
+      "key": "fair",
+      "label_hu": "Közepes",
+      "label_en": "Fair",
+      "color": "#facc15",
+      "rubric_hu": "Látható repedéshálók, sok foltozás, kisebb kátyúk.",
+      "rubric_en": "Visible crack networks, heavy patching, small potholes."
+    },
+    {
+      "value": 4,
+      "key": "poor",
+      "label_hu": "Rossz",
+      "label_en": "Poor",
+      "color": "#f87171",
+      "rubric_hu": "Mély kátyúk, töredezett vagy nagyon egyenetlen felület.",
+      "rubric_en": "Deep potholes, broken-up or very rough surface."
+    },
+    {
+      "value": 5,
+      "key": "very_poor",
+      "label_hu": "Nagyon rossz",
+      "label_en": "Very poor",
+      "color": "#ef4444",
+      "rubric_hu": "Alig járható: összefüggő kátyúmező, szétesett burkolat. A modell nem adja (kevés példa).",
+      "rubric_en": "Barely drivable: continuous potholes, disintegrated surface. The model never predicts it (too few examples)."
+    }
+  ],
+  "unknown": {
+    "label_hu": "Nincs adat",
+    "label_en": "Unknown",
+    "color": "#888"
+  }
+}

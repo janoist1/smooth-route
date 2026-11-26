@@ -74,6 +74,8 @@ runs the build on push, so run it locally too. **Not green = not done.**
 
 - **One review screen, two panels:** labelling is `/training/:id/review` (score +
   polygons). The web UI never trains the RQI model; `ml/` does.
+  Fast mobile RQI labelling: `/training/quick` (label queue, see
+  [docs/API_SURFACE.md](docs/API_SURFACE.md)); it writes the same `training_data`.
 - **Two backend dependency lists:** `backend/pyproject.toml` (full, with torch) and
   `backend/requirements.txt` (torch-free, Vercel only). A new runtime dependency on the
   read-only path goes into both. **SQLAlchemy `<2.1`** (2.1 maps `postgresql://` to
