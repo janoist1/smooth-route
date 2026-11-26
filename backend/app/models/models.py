@@ -92,6 +92,9 @@ class RoadSegment(Base):
     length_m = Column(Float, nullable=False)
     road_name = Column(String, nullable=True)
     highway = Column(String, nullable=True)  # OSM highway class
+    # OSM maxspeed (km/h) when tagged; NULL = use the class default
+    # (config/route_scoring.json). Only route comparison uses it (T-47).
+    maxspeed_kmh = Column(Integer, nullable=True)
     # Aggregates; score/rqi/p_bad are NULL for a piece without frames.
     n_images = Column(Integer, nullable=False, default=0, server_default="0")
     score = Column(Float, nullable=True)  # aggregated continuous score, canonical RQI scale

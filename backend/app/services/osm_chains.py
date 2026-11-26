@@ -118,6 +118,8 @@ def merge_ways(ways: Mapping[int, Way]) -> dict[int, Way]:
             pts = ways[way_id].coords[::-1] if reverse else ways[way_id].coords
             coords.extend(pts if not coords else pts[1:])   # shared node once
         base = ways[anchor]
-        merged[anchor] = Way(id=anchor, coords=tuple(coords), name=base.name, highway=base.highway)
+        # A chain shares name and class; its speed limit is the anchor way's.
+        merged[anchor] = Way(id=anchor, coords=tuple(coords), name=base.name, highway=base.highway,
+                             maxspeed=base.maxspeed)
     return merged
 

@@ -30,6 +30,7 @@ from app.services.map_matching import (
     DEFAULT_MAX_DISTANCE_M,
     LineIndex,
 )
+from app.services.route_scoring import speed_kmh
 from app.services.route_quality import (
     RouteStats,
     SegmentRef,
@@ -91,6 +92,7 @@ class SegmentRecord:
     # where a Street View link should look.
     mid: Optional[LatLon] = None
     mid_heading: Optional[float] = None
+    maxspeed_kmh: Optional[int] = None  # OSM tag; None = class default (route_scoring)
 
 
 @dataclass(frozen=True)
@@ -100,6 +102,7 @@ class RouteQualityResult:
     length_by_rqi: list[float]
     mean_score: Optional[float]
     worst_segments: list[SegmentRecord]
+    impact_score: Optional[float] = None  # speed-weighted badness (route_scoring)
 
 
 # --------------------------------------------------------------------------
@@ -208,6 +211,7 @@ def _record(row, cfg: SegmentConfig) -> SegmentRecord:
         capture_date_max=row.capture_date_max,
         mid=mid,
         mid_heading=row.mid_heading,
+        maxspeed_kmh=getattr(row, "maxspeed_kmh", None),
     )
 
 
@@ -239,7 +243,7 @@ def match_frames_to_segment(
 # geometry, so they do not move with the zoom-dependent simplification.
 _COLUMNS = (
     "s.id, s.rqi, s.score, s.p_bad, s.confidence, s.unlabelled_area, s.n_images, s.length_m, "
-    "s.road_name, s.highway, s.capture_date_min, s.capture_date_max, s.updated_at, "
+    "s.road_name, s.highway, s.maxspeed_kmh, s.capture_date_min, s.capture_date_max, s.updated_at, "
     "ST_Y(ST_LineInterpolatePoint(s.geom, 0.5)) AS mid_lat, "
     "ST_X(ST_LineInterpolatePoint(s.geom, 0.5)) AS mid_lng, "
     "degrees(ST_Azimuth(ST_LineInterpolatePoint(s.geom, 0.45), "
@@ -331,7 +335,8 @@ def summarize_route(
     """
     cfg = cfg or load_config()
     refs = [
-        SegmentRef(id=r.id, coords=r.path, rqi=r.rqi, score=r.score, length_m=r.length_m)
+        SegmentRef(id=r.id, coords=r.path, rqi=r.rqi, score=r.score, length_m=r.length_m,
+                   speed_kmh=speed_kmh(r.maxspeed_kmh, r.highway))
         for r in records
     ]
     stats: RouteStats = compute_route_stats(path, refs, cfg.scale)
@@ -342,6 +347,7 @@ def summarize_route(
         covered_length_m=stats.covered_length_m,
         length_by_rqi=stats.length_by_rqi,
         mean_score=stats.mean_score,
+        impact_score=stats.impact_score,
         worst_segments=[by_id[i] for i in worst_segment_ids(stats, refs, cfg.scale, eligible)],
     )
 

@@ -262,7 +262,7 @@ candidates for removal.
 Google Directions request (`alternatives=true`, billed like `getRoute`), each
 with `distanceM`, `durationS`, `summary`, `points`, its `quality`
 (RouteQuality from the stored segments, no extra Google call) and `coverage`.
-`fastestIndex`; `smoothestIndex` = best length-weighted quality among routes at
+`fastestIndex`; `smoothestIndex` = lowest speed-weighted impact (below) among routes at
 most `ROUTE_SMOOTH_MAX_EXTRA_DURATION` (0.2 = +20 %) slower than the fastest
 AND with at least `ROUTE_SMOOTH_MIN_COVERAGE` (0.5) measured; null when none
 qualifies. Quality is compared through `app.core.rqi_scale` (direction-free).
@@ -279,3 +279,13 @@ is no separate REST annotation endpoint.
 admin-only: both handed the server-side Google Maps key to anonymous callers
 (also on the public read-only deploy), and their only consumer, the static
 `map.html`, no longer exists.
+
+**Speed-weighted impact (T-47).** `RouteQuality.impactScore` (also inside each
+route alternative): the average number of levels below Kiváló per measured
+metre, where each metre counts by its speed ÷ 50 km/h — a defect at 90 km/h
+weighs 1.8×, at 30 km/h 0.6×; a Kiváló stretch costs 0 at any speed. Lower is
+better. Speed = OSM `maxspeed` (stored as `road_segments.maxspeed_kmh`, Alembic
+0008, filled by `build_segments.py`), else a default per `highway` class from
+`backend/config/route_scoring.json` (editable without a rebuild). Labels stay
+surface-only; speed only enters route comparison. `meanScore` is unchanged.
+

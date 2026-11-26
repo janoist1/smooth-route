@@ -339,5 +339,9 @@ class RouteQuality:
     length_by_rqi: List[float]
     # Length-weighted mean segment score over the covered part; null if none.
     mean_score: Optional[float]
+    # Speed-weighted impact (lower is better, 0 = all Kiváló): the average
+    # number of levels below Kiváló per measured metre, each metre weighted by
+    # speed / 50 km/h (OSM maxspeed, else a class default). Ranks "Legsimább".
+    impact_score: Optional[float] = None
     # Up to 5, worst first; segments with "low" confidence excluded.
     worst_segments: List[RoadSegment]

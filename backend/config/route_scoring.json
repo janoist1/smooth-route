@@ -1,0 +1,18 @@
+{
+  "$comment": "Speed context for route scoring (T-47). A defect matters more at 90 km/h than at 30 km/h. Speed = the OSM maxspeed tag when present (parsed at segment build time into road_segments.maxspeed_kmh), else default_kmh_by_highway[highway], else fallback_kmh. speed_factor = speed / reference_kmh. Changing these needs no segment rebuild.",
+  "reference_kmh": 50,
+  "fallback_kmh": 50,
+  "default_kmh_by_highway": {
+    "motorway": 130, "motorway_link": 80,
+    "trunk": 110, "trunk_link": 70,
+    "primary": 70, "primary_link": 50,
+    "secondary": 60, "secondary_link": 50,
+    "tertiary": 50, "tertiary_link": 40,
+    "unclassified": 50, "residential": 40,
+    "living_street": 20, "service": 20
+  },
+  "maxspeed_zones_kmh": {
+    "HU:urban": 50, "HU:rural": 90, "HU:trunk": 110, "HU:motorway": 130,
+    "HU:living_street": 20, "HU:zone30": 30, "HU:zone20": 20, "walk": 7
+  }
+}
