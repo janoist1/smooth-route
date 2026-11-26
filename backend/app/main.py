@@ -5,6 +5,9 @@ from app.core.config import settings
 from app.core.paths import data_path, image_path
 import os
 
+# Startup guard: the public deploy must never run with auth disabled (T-79).
+settings.check_public_auth()
+
 # The public read-only deploy publishes no OpenAPI schema / Swagger UI: it
 # serves only /graphql (+ /health), and the docs would advertise local-only
 # REST endpoints.

@@ -63,6 +63,18 @@ class Settings(BaseSettings):
             return str(configured.resolve())
         return str((PROJECT_ROOT / configured).resolve())
 
+    def check_public_auth(self) -> None:
+        """Refuse to start the public read-only deploy with auth disabled.
+
+        AUTH_MODE=disabled makes every caller an admin, so on the public
+        site it would expose the admin fields to anonymous visitors.
+        """
+        if self.PUBLIC_READ_ONLY and self.AUTH_MODE.strip().lower() == "disabled":
+            raise RuntimeError(
+                "PUBLIC_READ_ONLY=1 cannot run with AUTH_MODE=disabled "
+                "(every caller would be admin); unset AUTH_MODE or use 'clerk'."
+            )
+
 
 def find_env_file():
     cwd_env = Path.cwd() / ".env"
