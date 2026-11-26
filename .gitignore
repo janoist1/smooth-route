@@ -58,6 +58,7 @@ ml/cache/frame_meta.csv
 ml/cache/ext_ssv_manifest.csv
 ml/cache/external_data_*.json
 ml/cache/scene_bias_results.json
+ml/cache/motorway_vlm_*.json
 
 # pytest-cov data files
 .coverage
