@@ -83,3 +83,46 @@ def test_validate_artifact_missing_v2_metadata_warns_not_raises():
     warnings = validate_artifact({"pipeline": object()})
     assert warnings  # non-empty
     assert any("thresholds" in w for w in warnings)
+
+
+# ----- canonical-scale boundary (phase-2 direction flip readiness) ---------
+
+class _FakeCalibrator:
+    """P(bad) rises with the raw (severity) score; records what it was given."""
+
+    def __init__(self):
+        self.seen = []
+
+    def predict(self, xs):
+        self.seen.extend(xs)
+        return [min(1.0, max(0.0, (x - 1.0) / 3.0)) for x in xs]
+
+
+def _flipped_scale():
+    from app.core.rqi_scale import SCALE
+    return SCALE.mirrored()
+
+
+def test_scale_boundary_is_identity_today():
+    svc = make_service(thresholds=[1.62, 2.48, 3.35])
+    svc.p_bad_calibrator = _FakeCalibrator()
+    assert svc.scale_direction == "lower_is_better"
+    assert svc.rqi_from_score(2.49) == 3
+    assert svc.p_bad_from_score(2.5) == pytest.approx(0.5)
+    assert svc.p_bad_calibrator.seen == [2.5]
+
+
+def test_flipped_scale_mirrors_levels_and_keeps_p_bad():
+    """With a 5 = best scale, a severity-trained artifact needs no retrain:
+    levels mirror (x -> 6 - x) and P(bad) is unchanged."""
+    ref = make_service(thresholds=[1.62, 2.48, 3.35])
+    ref.p_bad_calibrator = _FakeCalibrator()
+    flip = make_service(thresholds=[1.62, 2.48, 3.35])
+    flip.p_bad_calibrator = _FakeCalibrator()
+    flip.scale = _flipped_scale()
+    for raw in (1.0, 1.61, 1.63, 2.47, 2.49, 3.34, 3.36, 5.0):
+        canonical = flip._to_canonical(raw)
+        assert canonical == pytest.approx(6 - raw)
+        assert flip.rqi_from_score(canonical) == 6 - ref.rqi_from_score(raw)
+        assert flip.p_bad_from_score(canonical) == pytest.approx(ref.p_bad_from_score(raw))
+    assert flip.p_bad_calibrator.seen == pytest.approx(ref.p_bad_calibrator.seen)

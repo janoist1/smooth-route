@@ -45,7 +45,7 @@ def load(backbone, recipe="cls+patch"):
     X = build_features(recipe, backbone)
     keep = df["is_road_prob"].values >= ROAD_PROB_MIN
     if DROP_RQI5:
-        keep &= df["rqi"].values != 5
+        keep &= ~np.isin(df["rqi"].values, S.DROPPED_LEVELS)
     df = df[keep].reset_index(drop=True)
     c = S.load_coords(df["image_filename"])
     df["lat"], df["lon"], df["area"] = c["lat"], c["lon"], c["area"]

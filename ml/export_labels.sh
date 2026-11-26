@@ -32,10 +32,17 @@ for i in $(seq 1 30); do
   [ "$i" = "30" ] && { echo "ERROR: DB did not become ready." >&2; exit 1; }
 done
 
+# ml/labels.csv is in the ML *severity* orientation (1 = best), whatever the
+# canonical direction in shared/rqi_scale.json is; ml/rqi_scale.py gives the SQL
+# that converts (plain `manual_rqi` today, `(6 - manual_rqi)` after a flip).
+PY="${PY:-.venv/bin/python}"
+[ -x "$PY" ] || PY=python3
+RQI_EXPR=$("$PY" ml/rqi_scale.py --sql manual_rqi)
+
 OUT="ml/labels.csv"
-echo ">> Dumping labelled rows to $OUT ..."
+echo ">> Dumping labelled rows to $OUT (manual_rqi := $RQI_EXPR) ..."
 $DC exec -T db psql -U postgres -d smooth_route -v ON_ERROR_STOP=1 -c \
-"\copy (SELECT image_filename, manual_rqi, tags, comment FROM training_data WHERE manual_rqi IS NOT NULL ORDER BY image_filename) TO STDOUT WITH CSV HEADER" > "$OUT"
+"\copy (SELECT image_filename, $RQI_EXPR AS manual_rqi, tags, comment FROM training_data WHERE manual_rqi IS NOT NULL ORDER BY image_filename) TO STDOUT WITH CSV HEADER" > "$OUT"
 
 N=$(($(wc -l < "$OUT") - 1))
 echo ">> Done. Exported $N labelled rows to $OUT"
