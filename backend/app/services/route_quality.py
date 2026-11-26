@@ -11,6 +11,9 @@ stands for a known number of metres, so the summary is plain bookkeeping:
                         per class, BEST FIRST (``RqiScale.best_to_worst``), so
                         the API keeps its meaning whichever way the scale runs
 - ``mean_score``        length-weighted mean of the segments' scores
+- ``impact_score``      speed-weighted badness per measured metre (lower is
+                        better; see ``route_scoring``): a defect at 90 km/h
+                        counts 1.8x, at 30 km/h 0.6x
 - ``matched_m``         metres matched per segment id (for the worst-list)
 
 ``covered_length_m`` always equals ``sum(length_by_rqi)``: a segment without
@@ -25,6 +28,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Hashable, Optional, Sequence
 
+from app.services import route_scoring
 from app.services.map_matching import LineIndex
 from app.services.segment_aggregation import RqiScale
 from app.services.segment_geometry import LatLon, densify
@@ -53,6 +57,7 @@ class SegmentRef:
     rqi: Optional[int]
     score: Optional[float]
     length_m: float = 0.0
+    speed_kmh: Optional[float] = None  # None = route_scoring fallback speed
 
 
 @dataclass
@@ -61,6 +66,9 @@ class RouteStats:
     covered_length_m: float = 0.0
     length_by_rqi: list[float] = field(default_factory=list)   # per class, best first
     mean_score: Optional[float] = None
+    # Speed-weighted badness per measured metre (route_scoring docstring);
+    # lower is better, 0 = all Kiváló. None without coverage.
+    impact_score: Optional[float] = None
     matched_m: dict[Hashable, float] = field(default_factory=dict)
 
 
@@ -85,6 +93,8 @@ def compute_route_stats(
     index = LineIndex(usable)
 
     weighted_score = 0.0
+    impact = 0.0
+    best = classes[0]
     for point, bearing, length in densify(path, step_m):
         stats.total_length_m += length
         match = index.snap(
@@ -98,10 +108,13 @@ def compute_route_stats(
         stats.covered_length_m += length
         stats.length_by_rqi[classes.index(seg.rqi)] += length
         weighted_score += seg.score * length
+        speed = seg.speed_kmh if seg.speed_kmh else route_scoring.speed_kmh(None, None)
+        impact += route_scoring.badness(seg.score, best) * route_scoring.speed_factor(speed) * length
         stats.matched_m[seg.id] = stats.matched_m.get(seg.id, 0.0) + length
 
     if stats.covered_length_m > 0:
         stats.mean_score = weighted_score / stats.covered_length_m
+        stats.impact_score = impact / stats.covered_length_m
     return stats
 
 

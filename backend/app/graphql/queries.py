@@ -100,6 +100,10 @@ def route_quality_type(result) -> RouteQuality:
             else round(result.mean_score, 3)
         ),
         worst_segments=[_road_segment(r) for r in result.worst_segments],
+        impact_score=(
+            None if getattr(result, "impact_score", None) is None or covered <= 0
+            else round(result.impact_score, 3)
+        ),
     )
 
 

@@ -96,6 +96,9 @@ const RouteAlternatives: React.FC<RouteAlternativesProps> = ({ routes, selectedI
           </button>
         )
       })}
+      <p style={{ margin: 0, fontSize: 11, color: '#94a3b8' }}>
+        A gyorsabb utak hibái nagyobb súllyal számítanak.
+      </p>
     </section>
   )
 }

@@ -88,6 +88,7 @@ const ROUTE_ALTERNATIVES = gql(`
           coveredLengthM
           lengthByRqi
           meanScore
+          impactScore
         }
       }
     }

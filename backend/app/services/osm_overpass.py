@@ -35,6 +35,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Optional
 
+from app.services.route_scoring import parse_maxspeed
+
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 USER_AGENT = "smooth-route-dev"
 
@@ -69,6 +71,8 @@ class Way:
     coords: tuple[tuple[float, float], ...]  # ((lat, lon), ...)
     name: Optional[str]
     highway: str
+    # OSM maxspeed in km/h when tagged and parseable (route_scoring.parse_maxspeed).
+    maxspeed: Optional[int] = None
 
 
 # --------------------------------------------------------------------------
@@ -171,7 +175,8 @@ def parse_ways(payload: dict, highway_classes: tuple[str, ...] = HIGHWAY_CLASSES
         if len(coords) < 2:
             continue
         name = tags.get("name") or tags.get("ref") or None
-        ways.append(Way(id=int(el["id"]), coords=tuple(coords), name=name, highway=highway))
+        ways.append(Way(id=int(el["id"]), coords=tuple(coords), name=name, highway=highway,
+                        maxspeed=parse_maxspeed(tags.get("maxspeed"))))
     return ways
 
 

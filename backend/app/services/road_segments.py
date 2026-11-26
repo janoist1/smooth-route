@@ -315,6 +315,7 @@ def build_rows(
                 "length_m": piece_len,
                 "road_name": line.name,
                 "highway": line.highway,
+                "maxspeed_kmh": getattr(line, "maxspeed", None),
                 "n_images": agg.n_images,
                 "score": agg.score,
                 "rqi": agg.rqi,
@@ -507,12 +508,12 @@ def stored_fingerprint(db) -> Optional[str]:
 _INSERT = text(
     """
     INSERT INTO road_segments
-        (id, osm_way_id, piece_index, geom, length_m, road_name, highway,
+        (id, osm_way_id, piece_index, geom, length_m, road_name, highway, maxspeed_kmh,
          n_images, score, rqi, p_bad, confidence, unlabelled_area,
          capture_date_min, capture_date_max, updated_at)
     VALUES
         (:id, :osm_way_id, :piece_index, ST_GeomFromText(:wkt, 4326), :length_m,
-         :road_name, :highway, :n_images, :score, :rqi, :p_bad, :confidence,
+         :road_name, :highway, :maxspeed_kmh, :n_images, :score, :rqi, :p_bad, :confidence,
          :unlabelled_area, :capture_date_min, :capture_date_max, now())
     """
 )
@@ -538,7 +539,8 @@ def write_rows(
                 {"ids": sorted(only_ids)},
             )
         payload = [
-            {**{k: v for k, v in row.items() if k != "coords"},
+            {"maxspeed_kmh": None,  # rows built before T-47 lack it
+             **{k: v for k, v in row.items() if k != "coords"},
              "wkt": linestring_wkt(row["coords"])}
             for row in rows
         ]

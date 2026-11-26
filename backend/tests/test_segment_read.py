@@ -235,6 +235,7 @@ def test_graphql_contract_matches_what_the_frontend_builds_against():
             "coveredLengthM: Float!",
             "lengthByRqi: [Float!]!",
             "meanScore: Float",
+            "impactScore: Float",  # T-47, additive: speed-weighted impact
             "worstSegments: [RoadSegment!]!",
         ]
         assert "roadSegments(bbox: [Float!]!, zoom: Int!): [RoadSegment!]!" in sdl

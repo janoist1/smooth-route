@@ -69,8 +69,8 @@ class RouteAlternativesQuery:
     @strawberry.field(permission_classes=[IsAuthenticatedUnlessPublicRead])
     def route_alternatives(self, origin: str, destination: str) -> RouteAlternatives:
         """Up to 3 driving routes from one Google Directions call, each with
-        its RouteQuality; marks the fastest and the smoothest (best
-        length-weighted quality within +ROUTE_SMOOTH_MAX_EXTRA_DURATION of the
+        its RouteQuality; marks the fastest and the smoothest (lowest
+        speed-weighted impact, RouteQuality.impactScore, within +ROUTE_SMOOTH_MAX_EXTRA_DURATION of the
         fastest, with at least ROUTE_SMOOTH_MIN_COVERAGE of it measured)."""
         from app.core.config import settings
         from app.core.rqi_scale import SCALE
@@ -94,7 +94,7 @@ class RouteAlternativesQuery:
             db.close()
         cands = [RouteCandidate(duration_s=r["duration_s"], distance_m=r["distance_m"],
                                 mean_score=q.mean_score, covered_m=q.covered_length_m,
-                                total_m=q.total_length_m)
+                                total_m=q.total_length_m, impact_score=q.impact_score)
                  for r, q in zip(routes, qualities)]
         extra = settings.ROUTE_SMOOTH_MAX_EXTRA_DURATION
         min_cov = settings.ROUTE_SMOOTH_MIN_COVERAGE
