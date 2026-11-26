@@ -11,6 +11,7 @@ import {
 } from 'modules/ui'
 import { gql } from 'modules/graphql'
 import MainLayout from '../MainLayout'
+import ModelAdminPanel from './ModelAdminPanel'
 
 // Distribution buckets as the backend's adminStats counts them (good = up to
 // Jó, fair = Közepes, poor = worse than Közepes); text and colours from the
@@ -203,6 +204,9 @@ const AdminStatsPage: React.FC = () => {
               ))}
             </div>
           </div>
+
+          {/* Model: labels since the champion, retrain + gate, promotion (T-68) */}
+          <ModelAdminPanel />
 
           {/* Recent jobs */}
           <div style={card}>

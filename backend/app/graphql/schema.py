@@ -9,6 +9,7 @@ from strawberry.tools import merge_types
 
 from app.graphql.label_queue import LabelQueueMutation, LabelQueueQuery, PairQueueQuery
 from app.graphql.limits import schema_extensions
+from app.graphql.model_admin import ModelAdminMutation, ModelAdminQuery
 from app.graphql.mutations import Mutation
 from app.graphql.route_alternatives import RouteAlternativesQuery
 from app.graphql.queries import Query
@@ -16,8 +17,9 @@ from app.graphql.queries import Query
 # Full schema for local dev / the always-on backend (reads + mutations).
 # Feature modules with their own resolver classes (label queue) are merged in
 # here instead of growing queries.py / mutations.py.
-FullQuery = merge_types("Query", (Query, LabelQueueQuery, PairQueueQuery, RouteAlternativesQuery))
-FullMutation = merge_types("Mutation", (Mutation, LabelQueueMutation))
+FullQuery = merge_types(
+    "Query", (Query, LabelQueueQuery, PairQueueQuery, RouteAlternativesQuery, ModelAdminQuery))
+FullMutation = merge_types("Mutation", (Mutation, LabelQueueMutation, ModelAdminMutation))
 schema = strawberry.Schema(
     query=FullQuery, mutation=FullMutation, extensions=schema_extensions(public=False)
 )

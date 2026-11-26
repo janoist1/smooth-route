@@ -15,6 +15,10 @@ import type { TypedDocumentNode as DocumentNode } from '@graphql-typed-document-
  */
 type Documents = {
     "\n  query AdminStats {\n    adminStats {\n      totalImages\n      imagesThisMonth\n      freeTierLimit\n      billableThisMonth\n      totalPoints\n      analyzedPoints\n      pendingAnalysis\n      rqiGood\n      rqiFair\n      rqiPoor\n      totalUsers\n      adminUsers\n      imagesPerDay {\n        day\n        count\n      }\n      recentJobs {\n        id\n        status\n        message\n        progress\n        total\n      }\n    }\n  }\n": typeof types.AdminStatsDocument,
+    "\n  query ModelAdmin {\n    modelAdmin {\n      trainedOn\n      newLabels\n      newByArea {\n        area\n        count\n      }\n      newByLevel {\n        level\n        count\n      }\n      sprintLabelled\n      sprintTarget\n      hint\n      candidateAvailable\n      report\n      reportVerdict\n      reportGatePass\n      reportAt\n      confirmPhrase\n    }\n  }\n": typeof types.ModelAdminDocument,
+    "\n  mutation StartRetrain {\n    startRetrain\n  }\n": typeof types.StartRetrainDocument,
+    "\n  mutation PromoteCandidate($confirm: String!) {\n    promoteCandidate(confirm: $confirm)\n  }\n": typeof types.PromoteCandidateDocument,
+    "\n  mutation StartRescoreAndRebuild {\n    startRescoreAndRebuild\n  }\n": typeof types.StartRescoreAndRebuildDocument,
     "\n  query GetJob($id: String!) {\n    job(id: $id) {\n      id\n      status\n      progress\n      total\n      message\n      result\n      error\n      createdAt\n      completedAt\n    }\n  }\n": typeof types.GetJobDocument,
     "\n  query Viewer {\n    me {\n      clerkId\n      email\n      role\n    }\n  }\n": typeof types.ViewerDocument,
     "\n  query LabelQueue($strategy: LabelQueueStrategy!, $limit: Int!, $excludeIds: [Int!]) {\n    labelQueue(strategy: $strategy, limit: $limit, excludeIds: $excludeIds) {\n      strategy\n      items {\n        id\n        imageUrl\n        latitude\n        longitude\n        heading\n        captureDate\n        streetViewUrl\n        reason\n        area\n        uncertainty\n        cellLabels\n        boundary\n        modelScore\n        modelRqi\n        modelPBad\n      }\n      stats {\n        totalLabelled\n        labelledToday\n        eligible\n        scored\n        rechecked\n        recheckSame\n        recheckWithinOne\n        sprintLabelled\n        sprintTarget\n      }\n    }\n  }\n": typeof types.LabelQueueDocument,
@@ -49,6 +53,10 @@ type Documents = {
 };
 const documents: Documents = {
     "\n  query AdminStats {\n    adminStats {\n      totalImages\n      imagesThisMonth\n      freeTierLimit\n      billableThisMonth\n      totalPoints\n      analyzedPoints\n      pendingAnalysis\n      rqiGood\n      rqiFair\n      rqiPoor\n      totalUsers\n      adminUsers\n      imagesPerDay {\n        day\n        count\n      }\n      recentJobs {\n        id\n        status\n        message\n        progress\n        total\n      }\n    }\n  }\n": types.AdminStatsDocument,
+    "\n  query ModelAdmin {\n    modelAdmin {\n      trainedOn\n      newLabels\n      newByArea {\n        area\n        count\n      }\n      newByLevel {\n        level\n        count\n      }\n      sprintLabelled\n      sprintTarget\n      hint\n      candidateAvailable\n      report\n      reportVerdict\n      reportGatePass\n      reportAt\n      confirmPhrase\n    }\n  }\n": types.ModelAdminDocument,
+    "\n  mutation StartRetrain {\n    startRetrain\n  }\n": types.StartRetrainDocument,
+    "\n  mutation PromoteCandidate($confirm: String!) {\n    promoteCandidate(confirm: $confirm)\n  }\n": types.PromoteCandidateDocument,
+    "\n  mutation StartRescoreAndRebuild {\n    startRescoreAndRebuild\n  }\n": types.StartRescoreAndRebuildDocument,
     "\n  query GetJob($id: String!) {\n    job(id: $id) {\n      id\n      status\n      progress\n      total\n      message\n      result\n      error\n      createdAt\n      completedAt\n    }\n  }\n": types.GetJobDocument,
     "\n  query Viewer {\n    me {\n      clerkId\n      email\n      role\n    }\n  }\n": types.ViewerDocument,
     "\n  query LabelQueue($strategy: LabelQueueStrategy!, $limit: Int!, $excludeIds: [Int!]) {\n    labelQueue(strategy: $strategy, limit: $limit, excludeIds: $excludeIds) {\n      strategy\n      items {\n        id\n        imageUrl\n        latitude\n        longitude\n        heading\n        captureDate\n        streetViewUrl\n        reason\n        area\n        uncertainty\n        cellLabels\n        boundary\n        modelScore\n        modelRqi\n        modelPBad\n      }\n      stats {\n        totalLabelled\n        labelledToday\n        eligible\n        scored\n        rechecked\n        recheckSame\n        recheckWithinOne\n        sprintLabelled\n        sprintTarget\n      }\n    }\n  }\n": types.LabelQueueDocument,
@@ -100,6 +108,22 @@ export function gql(source: string): unknown;
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function gql(source: "\n  query AdminStats {\n    adminStats {\n      totalImages\n      imagesThisMonth\n      freeTierLimit\n      billableThisMonth\n      totalPoints\n      analyzedPoints\n      pendingAnalysis\n      rqiGood\n      rqiFair\n      rqiPoor\n      totalUsers\n      adminUsers\n      imagesPerDay {\n        day\n        count\n      }\n      recentJobs {\n        id\n        status\n        message\n        progress\n        total\n      }\n    }\n  }\n"): (typeof documents)["\n  query AdminStats {\n    adminStats {\n      totalImages\n      imagesThisMonth\n      freeTierLimit\n      billableThisMonth\n      totalPoints\n      analyzedPoints\n      pendingAnalysis\n      rqiGood\n      rqiFair\n      rqiPoor\n      totalUsers\n      adminUsers\n      imagesPerDay {\n        day\n        count\n      }\n      recentJobs {\n        id\n        status\n        message\n        progress\n        total\n      }\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  query ModelAdmin {\n    modelAdmin {\n      trainedOn\n      newLabels\n      newByArea {\n        area\n        count\n      }\n      newByLevel {\n        level\n        count\n      }\n      sprintLabelled\n      sprintTarget\n      hint\n      candidateAvailable\n      report\n      reportVerdict\n      reportGatePass\n      reportAt\n      confirmPhrase\n    }\n  }\n"): (typeof documents)["\n  query ModelAdmin {\n    modelAdmin {\n      trainedOn\n      newLabels\n      newByArea {\n        area\n        count\n      }\n      newByLevel {\n        level\n        count\n      }\n      sprintLabelled\n      sprintTarget\n      hint\n      candidateAvailable\n      report\n      reportVerdict\n      reportGatePass\n      reportAt\n      confirmPhrase\n    }\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation StartRetrain {\n    startRetrain\n  }\n"): (typeof documents)["\n  mutation StartRetrain {\n    startRetrain\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation PromoteCandidate($confirm: String!) {\n    promoteCandidate(confirm: $confirm)\n  }\n"): (typeof documents)["\n  mutation PromoteCandidate($confirm: String!) {\n    promoteCandidate(confirm: $confirm)\n  }\n"];
+/**
+ * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function gql(source: "\n  mutation StartRescoreAndRebuild {\n    startRescoreAndRebuild\n  }\n"): (typeof documents)["\n  mutation StartRescoreAndRebuild {\n    startRescoreAndRebuild\n  }\n"];
 /**
  * The gql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

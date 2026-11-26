@@ -309,3 +309,23 @@ surface-only; speed only enters route comparison. `meanScore` is unchanged.
   label queue now converts it to the model's severity orientation once
   (`_severity_row`) instead of mixing the two.
 
+## Admin model panel (T-68, 2026-11-26)
+
+Admin page → "Modell" panel; admin-only GraphQL (`app/graphql/model_admin.py`,
+not on the public schema, logic in `app/services/model_ops.py`):
+
+- `modelAdmin`: labels the champion has not seen (not in
+  `ml/cache/dataset_v2.csv`) by area and level, sprint progress, the
+  learning-curve hint, and the latest retrain report in plain Hungarian
+  (from `ml/cache/retrain/<run>/summary.json`: verdict, spatial gate
+  PASS/FAIL, paired ΔQWK with 95% CI, Budapest / leave-Budapest-out).
+- `startRetrain` → job id: runs `ml/retrain.py` (= `make retrain`) in the
+  background; progress over the existing SSE job stream. Never promotes.
+- `promoteCandidate(confirm: "ÉLESÍTÉS")`: only with the exact phrase, an
+  existing candidate and a PASS gate; keeps `ml/cache/rqi_model.<UTC>.bak.joblib`,
+  swaps atomically, reloads the live model, refreshes `ml/model_card.json`
+  as a job.
+- `startRescoreAndRebuild` → job id: `rescore_dino.py` then
+  `build_segments.py --offline` (offered after a promotion).
+One model job at a time.
+
