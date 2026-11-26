@@ -213,8 +213,10 @@ is **not** on the public read schema.
 | Operation | Purpose |
 |---|---|
 | `labelQueue(strategy: MIXED\|UNCERTAIN\|DIVERSE, limit, excludeIds)` | next frames + why (`reason`, `area`, `boundary`, `uncertainty`, `cellLabels`) + the model guess (`modelScore/modelRqi/modelPBad`, hidden in the UI until rated) + `stats` |
+| `labelQueue(strategy: RECHECK, …)` | re-check: already-labelled frames, never re-checked, served blind (the old label is not sent): first `data/vlm/label_audit.csv` (human disagrees with model OOF and VLM, by priority), then a random sample stratified by the old level. `stats.rechecked/recheckSame/recheckWithinOne` = owner's self-consistency on that random sample only |
 | `labelExamples(perClass)` | rubric thumbnails for every scale level: integer-labelled frames whose out-of-fold prediction agrees best with the label (`ml/cache/oof_table.csv`); levels without OOF rows (Nagyon rossz) fall back to the live model score |
 | `quickLabel(input: {pointId, rqi, strategy, reason, revealedModel, elapsedMs})` — `rqi` is any level of `shared/rqi_scale.json` (1 = Kiváló … 5 = Nagyon rossz today) | upserts `training_data.manual_rqi` (same row shape as `saveTrainingData`; annotations/tags/comment kept); context in `meta_data.quick_label` |
+| (re-check save) | overwriting an existing `manual_rqi` appends `{timestamp, old, new, strategy, reason, direction}` to `meta_data.relabel_history` (`direction` = the scale direction the values were written in, so a flip cannot misread them); `manual_rqi` becomes the new value |
 | `undoQuickLabel(pointId)` | reverts a quick label: deletes a row it created (if nobody annotated it), else restores the previous `manual_rqi`; never touches review-page labels |
 
 Selection (pure logic, `app/services/label_queue.py`, tested in

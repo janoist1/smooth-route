@@ -15,6 +15,7 @@ import { useQuickLabel } from '../hooks'
 import {
   agreement,
   areaLabel,
+  consistencyText,
   imageSrc,
   isOldCapture,
   keyToAction,
@@ -345,6 +346,12 @@ export const QuickLabelView: React.FC<QuickLabelViewProps> = ({ onBack }) => {
           <Kbd>M</Kbd>
         </button>
       </div>
+
+      {q.strategy === 'RECHECK' && (
+        <div style={{ padding: '0 12px 6px', fontSize: 12, color: '#94a3b8' }}>
+          Önkonzisztencia a véletlen kontrollmintán (régi vs. új): {consistencyText(stats) ?? 'a gyanús képek után indul'}
+        </div>
+      )}
 
       <main style={{ flex: 1, minHeight: 0, position: 'relative', background: '#000', overflow: 'hidden' }}>
         {current ? (

@@ -3,6 +3,7 @@ import { RQI_LEVELS } from '../ui'
 import {
   agreement,
   canUndo,
+  consistencyText,
   excludeIds,
   imageSrc,
   isOldCapture,
@@ -79,7 +80,7 @@ describe('keyToAction', () => {
 })
 
 describe('queue bookkeeping', () => {
-  const rated: HistoryEntry = { kind: 'rated', seq: 1, item: item(2), rqi: 3, status: 'saved', revealed: false }
+  const rated: HistoryEntry = { kind: 'rated', seq: 1, item: item(2), rqi: 3, status: 'saved', revealed: false, isNew: true }
   const skipped: HistoryEntry = { kind: 'skipped', item: item(3) }
 
   it('excludes everything the client holds, without duplicates', () => {
@@ -124,6 +125,16 @@ describe('labels', () => {
     expect(reasonLabel(item(1))).toBe('Új cella · Budapest')
     expect(reasonLabel(item(1, { cellLabels: 2, area: 'other' }))).toBe('Ritka cella · Új terület')
     expect(reasonLabel(item(1, { reason: 'uncertain', boundary: '2|3' }))).toBe('Bizonytalan · 2|3 határ')
+  })
+
+  it('labels re-check frames and summarises self-consistency', () => {
+    expect(reasonLabel(item(1, { reason: 'recheck_suspicious' }))).toBe('Újraellenőrzés · gyanús')
+    expect(reasonLabel(item(1, { reason: 'recheck_sample' }))).toBe('Újraellenőrzés · minta')
+    expect(consistencyText({ rechecked: 12, recheckSame: 0.667, recheckWithinOne: 0.95 })).toBe(
+      '67% azonos · 95% ±1 (n=12)',
+    )
+    expect(consistencyText({ rechecked: 0 })).toBeNull()
+    expect(consistencyText(null)).toBeNull()
   })
 
   it('compares the human rating with the model only after the fact', () => {

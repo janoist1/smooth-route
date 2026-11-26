@@ -30,7 +30,7 @@ vi.mock('../../graphql', () => ({
           modelRqi: 2,
           modelScore: 2.1,
         })),
-        stats: { totalLabelled: 10, labelledToday: 0, eligible: 2, scored: 2 },
+        stats: { totalLabelled: 10, labelledToday: 0, eligible: 2, scored: 2, rechecked: 0 },
       },
     }
   },
