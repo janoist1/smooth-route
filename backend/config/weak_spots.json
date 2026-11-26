@@ -1,0 +1,23 @@
+{
+  "thin_radius_m": 150,
+  "rules": [
+    {
+      "key": "motorway_top",
+      "share": 0.45,
+      "predicted_level": "excellent",
+      "highways": ["motorway", "motorway_link", "trunk", "trunk_link"]
+    },
+    {
+      "key": "inner_city_fair",
+      "share": 0.45,
+      "predicted_level": "fair",
+      "bbox": [47.475, 19.045, 47.515, 19.095]
+    },
+    {
+      "key": "new_budapest_cells",
+      "share": 0.10,
+      "area": "budapest",
+      "unlabelled_cells": true
+    }
+  ]
+}

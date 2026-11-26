@@ -79,6 +79,7 @@ class Strategy(str, Enum):
     # with <= 1 frame per SPRINT_THIN_M, plus every 4th frame from the ones the
     # model rates best, so the top level (Kiváló) is covered too.
     SPRINT = "sprint"
+    WEAK_SPOTS = "weak_spots"
 
 
 @dataclass(frozen=True)
@@ -90,6 +91,8 @@ class Frame:
     pano_id: Optional[str] = None
     score: Optional[float] = None   # continuous model RQI estimate (1.0-4.0)
     p_bad: Optional[float] = None   # calibrated P(bad = Közepes or worse)
+    highway: Optional[str] = None  # OSM class of the matched measured segment
+    heading: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -621,7 +624,16 @@ def build_queue(candidates: Iterable[Frame],
         return pick_diverse(frames, labelled, n, cut_points, thin_radius_m, cell_m,
                             occupied, seed)
 
-    if strategy is Strategy.SPRINT:
+    if strategy is Strategy.WEAK_SPOTS:
+        from app.services.weak_spots import load_config, pick, rule_pools
+
+        config = load_config()
+        pools = rule_pools(frames, labelled, cut_points, config)
+        matching = {f.id for r in config.rules if r.share > 0 for f in pools[r.key]}
+        frames = [f for f in frames if f.id in matching]
+        scored = sum(f.score is not None or f.p_bad is not None for f in frames)
+        items = pick(frames, labelled, limit, cut_points, config, occupied, seed)
+    elif strategy is Strategy.SPRINT:
         diverse_75 = pick_diverse(frames, labelled, limit, cut_points, SPRINT_THIN_M, cell_m,
                                   occupied, seed)
         best = pick_model_best(frames, limit, SPRINT_THIN_M, occupied, seed)

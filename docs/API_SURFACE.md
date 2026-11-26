@@ -347,18 +347,37 @@ screen is `/training/quick`; the model guess is hidden until a frame is rated.
 | `UNCERTAIN` | model score closest to a class cut-point, round-robin over the three boundaries, Budapest first on near-ties |
 | `DIVERSE` | ≥ 150 m thinning, one frame per 1 km cell per round (grid of `ml/spatial_cv.py`), emptiest cell first |
 | `SPRINT` | learning-curve sprint on new streets: emptiest 1 km cells, Budapest first, ≤ 1 frame per 75 m, every 4th from the frames the model rates best |
+| `WEAK_SPOTS` | Era 16 targets: 45% motorway/trunk (+ `_link`) frames predicted Kiváló, 45% inner Budapest (approx. V–IX) frames predicted Közepes, 10% Budapest frames in 1 km cells without a label; shared ≥ 150 m thinning, hash-shuffled blind order |
 | `RECHECK` | already-labelled frames served blind: first `data/vlm/label_audit.csv` (human vs model OOF and VLM disagreement), then a random sample stratified by the old level |
 
 Each item carries why it was picked (`reason`, `area`, `boundary`,
 `uncertainty`, `cellLabels`) and the model guess (`modelScore`, `modelRqi`,
 `modelPBad`). `stats` adds `sprintLabelled / sprintTarget` (progress bar; the
-page suggests `make retrain` after every 200) and
+page suggests `make retrain` after every 200; both `SPRINT` and `WEAK_SPOTS`
+contribute new labels) and
 `rechecked / recheckSame / recheckWithinOne` (the owner's self-consistency on
 the random re-check sample).
 
 - Unlabelled strategies serve frames with an image on disk and no
-  `manual_rqi`; frames < 50 m from a labelled frame and repeat panoramas are
+  `manual_rqi`, excluding frames marked `frame_quality.usable = false`;
+  frames < 50 m from a labelled frame and repeat panoramas are
   excluded, and no two served frames are < 50 m apart (incl. `excludeIds`).
+- `WEAK_SPOTS` rules live in `backend/config/weak_spots.json` (restart the
+  backend after editing). `share` is a non-negative relative weight (zero
+  disables a rule); dry rules yield to the others. `predicted_level` is a
+  canonical scale **key**, resolved using the live tuned cut-points, never
+  rounding the score. Optional `highways`, `bbox` (south/west/north/east,
+  half-open), `area`, and `unlabelled_cells` filters combine with AND.
+  The inner bbox is the coverage report's `inner (V-IX)` box, not district
+  polygons. Highway uses the measured segment's OSM class via the same
+  heading-aware matching as `Point.segmentId`, including all rival geometry.
+  `thin_radius_m` applies across all rules and against labels/`excludeIds`
+  (minimum 50 m). Selection uses weighted shares and diverse spatial ordering;
+  a separate stable hash shuffles the final batch, with generic `weak_spots`
+  reasons and no boundary/uncertainty hints. There is no repeating rule schedule.
+  Rule pools may overlap; each frame is served only once. Counts on real data:
+  from `backend/`, run the project interpreter with
+  `scripts/weak_spots_report.py` (read-only, no network or inference).
 - Model outputs are converted from the model's severity orientation to the
   canonical scale (`app.core.rqi_scale`). The model only predicts the scale's
   `model_levels` (Kiváló … Rossz), so the queue is also how Nagyon rossz labels

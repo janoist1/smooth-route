@@ -19,6 +19,7 @@ import {
   consistencyText,
   imageSrc,
   isOldCapture,
+  isSprintStrategy,
   keyToAction,
   pairKeyToAction,
   reasonLabel,
@@ -500,6 +501,7 @@ export const QuickLabelView: React.FC<QuickLabelViewProps> = ({ onBack }) => {
               key={s.value}
               className="ql-btn"
               title={s.hint}
+              aria-pressed={q.strategy === s.value}
               onClick={() => q.setStrategy(s.value)}
               style={pill(q.strategy === s.value)}>
               {s.label}
@@ -546,10 +548,17 @@ export const QuickLabelView: React.FC<QuickLabelViewProps> = ({ onBack }) => {
         </div>
       )}
 
-      {q.mode === 'rate' && q.strategy === 'SPRINT' && stats?.sprintTarget ? (
+      {q.mode === 'rate' && q.strategy === 'WEAK_SPOTS' && !q.weakSpotsHintSeen && (
+        <div role="status" style={{ padding: '0 12px 6px', fontSize: 12, color: '#94a3b8' }}>
+          Itt azok a képek jönnek, ahol a modell a legtöbbet téved (sztrádák, belvárosi felfestések).{' '}
+          <button className="ql-btn" onClick={q.dismissWeakSpotsHint} style={pill(false)}>Rendben</button>
+        </div>
+      )}
+
+      {q.mode === 'rate' && isSprintStrategy(q.strategy) && stats?.sprintTarget ? (
         <div style={{ padding: '0 12px 6px', fontSize: 12, color: '#94a3b8' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span>Sprint: új utcák</span>
+            <span>{q.strategy === 'WEAK_SPOTS' ? 'Sprint: gyenge pontok' : 'Sprint: új utcák'}</span>
             <span>
               {stats.sprintLabelled ?? 0} / {stats.sprintTarget} címke
             </span>

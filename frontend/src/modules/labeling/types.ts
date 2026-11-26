@@ -1,5 +1,5 @@
 /** GraphQL enum LabelQueueStrategy (codegen: enumsAsTypes). */
-export type LabelStrategy = 'MIXED' | 'UNCERTAIN' | 'DIVERSE' | 'RECHECK' | 'SPRINT'
+export type LabelStrategy = 'MIXED' | 'UNCERTAIN' | 'DIVERSE' | 'RECHECK' | 'SPRINT' | 'WEAK_SPOTS'
 
 /** 'rate' = one frame, absolute grade; 'pair' = which of two is worse. */
 export type LabelMode = 'rate' | 'pair'
@@ -49,7 +49,7 @@ export interface QueueStats {
   rechecked: number
   recheckSame?: number | null
   recheckWithinOne?: number | null
-  /** New labels made in sprint mode, toward sprintTarget. */
+  /** New labels made in sprint/weak-spots modes, toward sprintTarget. */
   sprintLabelled?: number
   sprintTarget?: number
 }
@@ -137,6 +137,7 @@ export interface LabelingState {
   pairsFetchSeq: number | null
   /** Highest retrain milestone (every RETRAIN_EVERY sprint labels) already acknowledged. */
   retrainAck: number
+  weakSpotsHintSeen: boolean
 }
 
 export type RateArgs = { id: number; rqi: number; elapsedMs?: number }

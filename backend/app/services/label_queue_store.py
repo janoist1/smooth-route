@@ -24,7 +24,7 @@ import csv
 import math
 import os
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
@@ -78,9 +78,9 @@ def cut_points() -> tuple[float, ...]:
 def model_rqi(score: Optional[float], cuts: Iterable[float]) -> Optional[int]:
     """Canonical RQI level of a continuous severity score (same cut rule as
     dino_service.rqi_from_score, then converted to the scale's direction)."""
-    if score is None:
-        return None
-    return int(SCALE.from_severity(1 + sum(1 for c in cuts if score >= c)))
+    from app.services.weak_spots import predicted_rqi
+
+    return predicted_rqi(score, tuple(cuts), SCALE)
 
 
 def canonical_score(score: Optional[float]) -> Optional[float]:
@@ -161,7 +161,8 @@ def _filename(image_url: Optional[str]) -> Optional[str]:
 
 def _float(value) -> Optional[float]:
     try:
-        return None if value is None else float(value)
+        number = None if value is None else float(value)
+        return number if number is not None and math.isfinite(number) else None
     except (TypeError, ValueError):
         return None
 
@@ -208,6 +209,11 @@ def load_inputs(db: Session):
     rows = _frame_rows(db)
     files = image_files()
     cache = load_score_cache()
+    # Re-read quality flags alongside labels: the slower frame-row cache must
+    # not keep serving a frame just marked unusable.
+    unusable = {fid for (fid,) in db.execute(text(
+        "SELECT id FROM street_view_images WHERE "
+        "lower(trim(analysis_metadata->'frame_quality'->>'usable')) = 'false'"))}
 
     candidates: list[lq.Frame] = []
     labelled: list[tuple[float, float]] = []
@@ -219,13 +225,13 @@ def load_inputs(db: Session):
         if name in labelled_names:
             labelled.append((lat, lon))
             continue
-        if name not in files:
+        if name not in files or fid in unusable:
             continue
         score, p_bad = _float(score), _float(p_bad)
         if score is None and name in cache:
             score, p_bad = cache[name]
         candidates.append(lq.Frame(id=fid, lat=lat, lon=lon, pano_id=pano,
-                                   score=score, p_bad=p_bad))
+                                   score=score, p_bad=p_bad, heading=heading))
         info[fid] = FrameInfo(filename=name, heading=heading, pitch=pitch,
                               pano_id=pano, capture_date=cdate)
     return candidates, labelled, info
@@ -291,9 +297,29 @@ def build(db: Session, strategy: str, limit: int, exclude_ids: Iterable[int] = (
         return build_recheck(db, limit, exclude_ids)
     candidates, labelled, info = load_inputs(db)
     cuts = cut_points()
+    if strategy == lq.Strategy.WEAK_SPOTS.value:
+        candidates = weak_spot_inputs(db, candidates, cuts)
     result = lq.build_queue(candidates, labelled, strategy, limit,
                             cut_points=cuts, exclude_ids=exclude_ids)
     return result, info, cuts
+
+
+def weak_spot_inputs(db: Session, candidates: list[lq.Frame], cuts: tuple[float, ...]
+                     ) -> list[lq.Frame]:
+    """Add OSM classes using the same frame links as Point.segmentId.
+
+    Match against all nearby geometry (including unmeasured rivals), then
+    accept only measured segments. Never pull a frame onto a motorway merely
+    because it is close to one. Only highway-targeted levels need this query.
+    """
+    from app.services.segment_read import highways_for_frames
+    from app.services.weak_spots import load_config, predicted_rqi
+
+    targets = {SCALE.value_of(r.predicted_level) for r in load_config().rules
+               if r.share > 0 and r.highways and r.predicted_level is not None}
+    frames = [f for f in candidates if predicted_rqi(f.score, cuts) in targets]
+    highways = highways_for_frames(db, frames)
+    return [replace(f, highway=highways.get(f.id)) for f in candidates]
 
 
 def build_pairs(db: Session, limit: int, exclude_ids: Iterable[int] = ()):
@@ -363,10 +389,10 @@ def _local_midnight_utc() -> datetime:
 
 
 def sprint_count(db: Session) -> int:
-    """New labels written in sprint mode (an undo removes its quick_label)."""
+    """New sprint/weak-spot labels (an undo removes its quick_label)."""
     return int(db.execute(text(
         "SELECT count(*) FROM training_data WHERE manual_rqi IS NOT NULL "
-        "AND (meta_data::jsonb)->'quick_label'->>'strategy' = 'sprint' "
+        "AND (meta_data::jsonb)->'quick_label'->>'strategy' IN ('sprint', 'weak_spots') "
         "AND ((meta_data::jsonb)->'quick_label'->>'created_row')::boolean")).scalar() or 0)
 
 

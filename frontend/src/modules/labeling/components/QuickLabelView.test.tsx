@@ -16,27 +16,28 @@ const queried: unknown[] = []
 
 vi.mock('../../graphql', () => ({
   gql: (source: string) => source,
-  *gqlQuery(options: { query: string }) {
+  *gqlQuery(options: { query: string; variables?: { strategy?: string } }) {
     queried.push(options)
     yield delay(1)
     if (options.query.includes('labelExamples')) return { labelExamples: [] }
     return {
       labelQueue: {
-        strategy: 'MIXED',
-        items: [7, 8].map(id => ({
+        strategy: options.variables?.strategy ?? 'MIXED',
+        items: (options.variables?.strategy === 'WEAK_SPOTS' ? [17, 18, 19] : [7, 8]).map(id => ({
           id,
           imageUrl: `images/sv_${id}_x.jpg`,
           latitude: 47.5,
           longitude: 19.05,
           streetViewUrl: 'https://example.invalid',
-          reason: 'diverse',
+          reason: options.variables?.strategy === 'WEAK_SPOTS' ? 'weak_spots' : 'diverse',
           area: 'budapest',
           cellLabels: 0,
           // the API sends canonical values; the model said Jó (severity 2.1)
           modelRqi: rqiValue('good'),
           modelScore: fromSeverity(2.1),
         })),
-        stats: { totalLabelled: 10, labelledToday: 0, eligible: 2, scored: 2, rechecked: 0 },
+        stats: { totalLabelled: 10, labelledToday: 0, eligible: 2, scored: 2, rechecked: 0,
+                 sprintLabelled: 199, sprintTarget: 1000 },
       },
     }
   },
@@ -55,6 +56,56 @@ const { QuickLabelView } = await import('./QuickLabelView')
 
 describe('QuickLabelView', () => {
   afterEach(cleanup)
+  it('switches Gyenge pontok to the right queue, shows the hint once, and shares sprint/skip/undo', async () => {
+    window.localStorage.clear()
+    const middleware = createSagaMiddleware()
+    const store = configureStore({ reducer: combineReducers({ labeling: reducer }), middleware: gdm => gdm().concat(middleware) })
+    const task = middleware.run(function* () { yield all(sagas) })
+    try {
+      render(<Provider store={store}><QuickLabelView onBack={() => {}} /></Provider>)
+      await act(async () => { await new Promise(r => setTimeout(r, 30)) })
+      fireEvent.click(screen.getByRole('button', { name: 'Modell' }))
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Gyenge pontok' }))
+        await new Promise(r => setTimeout(r, 400))
+      })
+      expect(screen.getByRole('button', { name: 'Gyenge pontok' })).toHaveAttribute('aria-pressed', 'true')
+      expect(queried).toContainEqual(expect.objectContaining({
+        variables: { strategy: 'WEAK_SPOTS', limit: 20, excludeIds: [] },
+      }))
+      expect(store.getState().labeling.queue.map(it => it.id)).toEqual([17, 18, 19])
+      expect(screen.queryByText(/Modell: /)).toBeNull()
+      expect(screen.getByText(/Itt azok a képek jönnek/)).toBeInTheDocument()
+      expect(window.localStorage.getItem('quickLabel.weakSpotsHintSeen')).toBe('true')
+      expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '199')
+      fireEvent.click(screen.getByRole('button', { name: /Kihagyás/ }))
+      expect(store.getState().labeling.queue[0].id).toBe(18)
+      fireEvent.click(screen.getByRole('button', { name: /Visszavonás/ }))
+      expect(store.getState().labeling.queue[0].id).toBe(17)
+      await act(async () => { await new Promise(r => setTimeout(r, 350)) })
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Jó' }))
+        await new Promise(r => setTimeout(r, 20))
+      })
+      expect(saved).toContainEqual(expect.objectContaining({ input: expect.objectContaining({
+        pointId: 17, rqi: rqiValue('good'), strategy: 'weak_spots', reason: 'weak_spots', revealedModel: false,
+      }) }))
+      expect(store.getState().labeling.stats?.sprintLabelled).toBe(200)
+      fireEvent.click(screen.getByRole('button', { name: /Visszavonás/ }))
+      expect(store.getState().labeling.stats?.sprintLabelled).toBe(199)
+      fireEvent.click(screen.getByRole('button', { name: 'Vegyes' }))
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Gyenge pontok' }))
+        await new Promise(r => setTimeout(r, 20))
+      })
+      expect(screen.queryByText(/Itt azok a képek jönnek/)).toBeNull()
+    } finally {
+      task.cancel()
+      window.localStorage.clear()
+      saved.length = 0
+      queried.length = 0
+    }
+  })
   it('shows one name-first button per scale level and stores the tapped level', async () => {
     window.localStorage.clear()
     const sagaMiddleware = createSagaMiddleware()

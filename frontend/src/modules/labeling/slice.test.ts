@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import reducer, { actions, initialState } from './slice'
 import type { LabelingState, LabelQueuePage, QueueItem } from './types'
+import { rqiValue } from '../ui'
+import type { LabelStrategy } from './types'
 
 const item = (id: number, extra: Partial<QueueItem> = {}): QueueItem => ({
   id,
@@ -32,9 +34,9 @@ const page = (ids: number[], strategy: LabelQueuePage['strategy'] = 'MIXED'): La
 })
 
 describe('rating', () => {
-  it('bumps sprint progress on a new sprint rating and rolls it back on undo or failure', () => {
-    const start = withQueue([1, 2], { strategy: 'SPRINT', stats: { ...stats, sprintLabelled: 199, sprintTarget: 200 } })
-    const rated = reducer(start, actions.rate({ id: 1, rqi: 3 }))
+  it.each<LabelStrategy>(['SPRINT', 'WEAK_SPOTS'])('bumps sprint progress in %s and rolls it back on undo or failure', strategy => {
+    const start = withQueue([1, 2], { strategy, stats: { ...stats, sprintLabelled: 199, sprintTarget: 200 } })
+    const rated = reducer(start, actions.rate({ id: 1, rqi: rqiValue('fair') }))
     expect(rated.stats?.sprintLabelled).toBe(200)
     const switched = reducer(rated, actions.setStrategy('MIXED'))
     expect(reducer(switched, actions.undoLast()).stats?.sprintLabelled).toBe(199)

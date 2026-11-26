@@ -457,6 +457,27 @@ def segment_id_for_point(db, lat: float, lng: float, heading: Optional[float]) -
     return matched.id if _is_measured(matched) else None
 
 
+def highways_for_frames(db, frames: Sequence) -> dict[int, Optional[str]]:
+    """Batch frame links for labelling, with the exact Point.segmentId rules.
+
+    Small batches bound geometry reads; no per-frame SQL and no OSM requests.
+    Keep unmeasured and non-motorway rivals in the index for disambiguation.
+    """
+    out: dict[int, Optional[str]] = {}
+    for start in range(0, len(frames), 250):
+        batch = frames[start:start + 250]
+        segments = fetch_segments_in_boxes(
+            db, [_box_around([(f.lat, f.lon)]) for f in batch])
+        index = _FrameSegmentIndex(segments)
+        for frame in batch:
+            match = index.snap((frame.lat, frame.lon), frame.heading)
+            if match is not None:
+                segment = index.by_id[cast(str, match.line_id)]
+                if _is_measured(segment):
+                    out[frame.id] = segment.highway
+    return out
+
+
 def frame_ids_on_segment(db, segment_id: str) -> list[int]:
     """Ids of the frames that belong to a segment, ordered along it. Only
     frames the builder would use (scored, not marked unusable)."""

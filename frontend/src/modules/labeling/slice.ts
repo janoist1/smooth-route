@@ -1,7 +1,7 @@
 import type { PayloadAction } from '@reduxjs/toolkit'
 import { createSlice } from '@reduxjs/toolkit'
 import { createSagaAction } from 'saga-toolkit'
-import { isRecheckItem, loadRetrainAck, loadSkipped, loadStrategy, mergeQueue, pushHistory, SKIP_MEMORY } from './logic'
+import { isRecheckItem, isSprintStrategy, loadRetrainAck, loadSkipped, loadStrategy, loadWeakSpotsHintSeen, mergeQueue, pushHistory, SKIP_MEMORY } from './logic'
 import type {
   LabelExample,
   LabelingState,
@@ -37,6 +37,7 @@ export const initialState: LabelingState = {
   pairsJudged: 0,
   pairsFetchSeq: null,
   retrainAck: 0,
+  weakSpotsHintSeen: false,
 }
 
 // Per-browser memory (strategy, skipped frames) is read once at start-up.
@@ -45,6 +46,7 @@ const startState = (): LabelingState => ({
   strategy: loadStrategy(),
   skipped: loadSkipped(),
   retrainAck: loadRetrainAck(),
+  weakSpotsHintSeen: loadWeakSpotsHintSeen(),
 })
 
 /** Route entry: load the rubric and the first batch (sagas.ts). */
@@ -89,7 +91,7 @@ const slice = createSlice({
         status: 'saving',
         revealed: state.reveal,
         isNew,
-        isSprint: state.strategy === 'SPRINT',
+        isSprint: isSprintStrategy(state.strategy),
       })
       state.outbox.push({
         seq,
@@ -102,7 +104,7 @@ const slice = createSlice({
         elapsedMs: action.payload.elapsedMs,
       })
       state.sessionRated += 1
-      if (isNew) bumpStats(state, +1, state.strategy === 'SPRINT') // server truth arrives with the next queue page
+      if (isNew) bumpStats(state, +1, isSprintStrategy(state.strategy)) // server truth arrives with the next queue page
       state.lastResult = { item: current, rqi: action.payload.rqi }
       state.error = null
     },
@@ -173,11 +175,17 @@ const slice = createSlice({
     setStrategy(state, action: PayloadAction<LabelStrategy>) {
       if (state.strategy === action.payload) return
       const crossesRecheck = state.strategy === 'RECHECK' || action.payload === 'RECHECK'
+      const crossesWeakSpots = state.strategy === 'WEAK_SPOTS' || action.payload === 'WEAK_SPOTS'
+      if (state.strategy === 'WEAK_SPOTS') state.weakSpotsHintSeen = true
       state.strategy = action.payload
+      if (action.payload === 'WEAK_SPOTS') state.reveal = false
       // Keep the frame on screen and drop the rest of the old batch, unless
-      // switching into/out of re-check: new and old labels never mix.
-      state.queue = crossesRecheck ? [] : state.queue.slice(0, 1)
+      // crossing re-check or weak spots: keep the new pool's targeting intact.
+      state.queue = crossesRecheck || crossesWeakSpots ? [] : state.queue.slice(0, 1)
       state.exhausted = false
+    },
+    dismissWeakSpotsHint(state) {
+      state.weakSpotsHintSeen = true
     },
     setMode(state, action: PayloadAction<LabelMode>) {
       state.mode = action.payload

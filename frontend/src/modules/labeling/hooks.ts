@@ -116,6 +116,8 @@ export const useQuickLabel = () => {
     canUndoPair: state.pairHistory.length > 0,
     retrainMilestone: retrainMilestone(state.stats?.sprintLabelled, state.retrainAck),
     ackRetrain: (m: number) => dispatch(actions.ackRetrain(m)),
+    weakSpotsHintSeen: state.weakSpotsHintSeen,
+    dismissWeakSpotsHint: () => dispatch(actions.dismissWeakSpotsHint()),
     pendingWrites: state.outbox.length,
     rate,
     skip,
