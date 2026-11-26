@@ -1,8 +1,9 @@
 """Pin the canonical RQI scale (shared/rqi_scale.json) and its helpers.
 
-No torch, no DB. The flipped-scale tests prove the helpers are direction-
-agnostic. A direction flip must leave every bucket count / bad-road decision
-the same once the stored values are mirrored (x -> 6 - x).
+No torch, no DB. Expectations are written in SEVERITY terms (sv(k) = level k
+counted from the best, 1 = Kiváló), so they hold for either numbering. After a
+direction flip (`scripts/sync_rqi_scale.py --flip`), the ONLY test meant to fail
+is test_current_direction_pin. It pins today's numbers and is updated on purpose.
 """
 import copy
 import json
@@ -11,15 +12,12 @@ import os
 import pytest
 
 from app.core.rqi_scale import (HIGHER_IS_BETTER, LOWER_IS_BETTER, SCALE,
-                                SCALE_PATH, RqiScale)
+                                SCALE_PATH, SEVERITY, RqiScale)
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SHARED = os.path.join(REPO_ROOT, "shared", "rqi_scale.json")
 
-
-def flipped_scale() -> RqiScale:
-    """The same scale with the numbers mirrored (5 = best), as phase 2 would ship it."""
-    return SCALE.mirrored()
+sv = SCALE.from_severity  # severity number (1 = best) -> canonical value
 
 
 # ----- the definition itself ----------------------------------------------
@@ -31,22 +29,31 @@ def test_backend_copy_matches_shared_source():
         assert a.read() == b.read(), "run: python scripts/sync_rqi_scale.py"
 
 
-def test_five_levels_with_hungarian_labels():
-    assert SCALE.values == (1, 2, 3, 4, 5)
+def test_current_direction_pin():
+    # THE direction pin. Phase 1 keeps today's numbering: 1 = Kiváló (best).
+    # A deliberate flip changes exactly these lines.
+    assert SCALE.direction == LOWER_IS_BETTER
+    assert SCALE.best == 1 and SCALE.worst == 5
+    assert SCALE.model_levels == (1, 2, 3, 4)
+    assert SCALE.bad_from == 3
+    assert [SCALE.to_severity(x) for x in (1, 1.5, 2.48, 4, 5)] == [1, 1.5, 2.48, 4, 5]
+
+
+def test_five_levels_with_hungarian_labels_best_first():
+    assert sorted(SCALE.values) == [1, 2, 3, 4, 5]
     assert [lv.key for lv in SCALE.levels] == ["excellent", "good", "fair", "poor", "very_poor"]
     assert [lv.label_hu for lv in SCALE.levels] == ["Kiváló", "Jó", "Közepes", "Rossz", "Nagyon rossz"]
     assert [lv.label_en for lv in SCALE.levels] == ["Excellent", "Good", "Fair", "Poor", "Very poor"]
+    assert [SCALE.to_severity(v) for v in SCALE.values] == [1, 2, 3, 4, 5]
     for lv in SCALE.levels:
         assert lv.rubric_hu and lv.rubric_en and lv.color.startswith("#")
 
 
-def test_current_direction_and_model_contract():
-    # Phase 1 keeps today's numbering: 1 = Kiváló (best). The flip is phase 2.
-    assert SCALE.direction == LOWER_IS_BETTER
-    assert SCALE.best == 1 and SCALE.worst == 5
-    assert SCALE.model_levels == (1, 2, 3, 4)       # 5 has 14 labels, not trained
-    assert SCALE.bad_from == SCALE.value_of("fair") == 3
+def test_model_contract():
+    # 5 / Nagyon rossz has 14 (mostly junk) labels: never trained, never predicted.
     assert SCALE.severity_values(SCALE.model_levels) == [1, 2, 3, 4]
+    assert SCALE.worst not in SCALE.model_levels
+    assert SCALE.bad_from == SCALE.value_of("fair")
 
 
 def test_middle_level_is_its_own_mirror():
@@ -69,75 +76,82 @@ def test_invalid_scale_rejected():
         RqiScale(bad)
 
 
+def test_shared_json_carries_the_edit_rule():
+    with open(SCALE_PATH, encoding="utf-8") as f:
+        data = json.load(f)
+    assert "shared/rqi_scale.json" in data["$comment"]
+
+
 # ----- helpers -------------------------------------------------------------
 
 def test_ordering_helpers():
-    assert SCALE.at_or_better(2, 2) and SCALE.at_or_better(1, 2)
-    assert SCALE.worse_than(3, 2) and not SCALE.worse_than(2, 2)
-    assert SCALE.is_bad(3) and SCALE.is_bad(4) and not SCALE.is_bad(2)
-    assert sorted([1, 4, 2, 3], key=SCALE.worst_first_key) == [4, 3, 2, 1]
+    assert SCALE.at_or_better(sv(2), sv(2)) and SCALE.at_or_better(sv(1), sv(2))
+    assert SCALE.worse_than(sv(3), sv(2)) and not SCALE.worse_than(sv(2), sv(2))
+    assert SCALE.better_than(sv(1), sv(2)) and SCALE.at_or_worse(sv(3), sv(3))
+    assert SCALE.is_bad(sv(3)) and SCALE.is_bad(sv(4)) and not SCALE.is_bad(sv(2.9))
+    assert sorted([sv(1), sv(4), sv(2), sv(3)], key=SCALE.worst_first_key) == [sv(4), sv(3), sv(2), sv(1)]
 
 
 def test_rounding_matches_legacy_call_sites():
-    # nearest(ties=better) == frontend getRQILabel bands (<=1.5 -> 1 ...)
-    assert [SCALE.nearest(x) for x in (0.2, 1.5, 1.51, 2.5, 3.5, 4.5, 4.6, 9)] == [1, 1, 2, 2, 3, 4, 5, 5]
+    # nearest(ties=better) == frontend getRQILabel bands (<= 1.5 -> 1 ...)
+    assert ([SCALE.nearest(sv(x)) for x in (0.2, 1.5, 1.51, 2.5, 3.5, 4.5, 4.6, 9)]
+            == [sv(k) for k in (1, 1, 2, 2, 3, 4, 5, 5)])
     # nearest(ties=worse) == trainingStats rqiNCount bins (1.5 <= s < 2.5 -> 2)
-    assert [SCALE.nearest(x, "worse") for x in (1.49, 1.5, 2.5, 3.5, 4.5)] == [1, 2, 3, 4, 5]
+    assert ([SCALE.nearest(sv(x), "worse") for x in (1.49, 1.5, 2.5, 3.5, 4.5)]
+            == [sv(k) for k in (1, 2, 3, 4, 5)])
     # toward_worse == frontend getRQIColor bands (2.0 green, 2.01 yellow)
-    assert [SCALE.toward_worse(x) for x in (0, 2.0, 2.01, 3.0, 4.0, 4.01, 7)] == [1, 2, 3, 3, 4, 5, 5]
-    assert SCALE.midpoint("fair", "poor") == 3.5
+    assert ([SCALE.toward_worse(sv(x)) for x in (0, 2.0, 2.01, 3.0, 4.0, 4.01, 7)]
+            == [sv(k) for k in (1, 2, 3, 3, 4, 5, 5)])
+    assert SCALE.midpoint("fair", "poor") == sv(3.5)
 
 
 def test_labels():
-    assert SCALE.label(1) == "Kiváló"
-    assert SCALE.label(2.6) == "Közepes"
-    assert SCALE.label(4.8, "en") == "Very poor"
+    assert SCALE.label(sv(1)) == "Kiváló"
+    assert SCALE.label(sv(2.6)) == "Közepes"
+    assert SCALE.label(sv(4.8), "en") == "Very poor"
     assert SCALE.label(None) == "Nincs adat"
 
 
-def test_severity_round_trip_is_identity_today():
+def test_severity_round_trip():
     for x in (1, 1.5, 2.48, 4, 5):
-        assert SCALE.to_severity(x) == x
-        assert SCALE.from_severity(SCALE.to_severity(x)) == x
+        assert SCALE.from_severity(SCALE.to_severity(x)) == pytest.approx(x)
 
 
 def test_helpers_work_on_sqlalchemy_columns():
     sa = pytest.importorskip("sqlalchemy")
     col = sa.column("dino_rqi_score")
     expr = SCALE.at_or_better(col, SCALE.value_of("good"))
-    assert str(expr.compile(compile_kwargs={"literal_binds": True})) == "dino_rqi_score <= 2"
+    op = "<=" if SCALE.lower_is_better else ">="
+    assert (str(expr.compile(compile_kwargs={"literal_binds": True}))
+            == f"dino_rqi_score {op} {SCALE.value_of('good')}")
 
 
-# ----- a flipped scale gives the same answers on mirrored data -------------
+# ----- the mirrored scale gives the same answers on mirrored data ----------
 
-def test_flipped_scale_is_consistent():
-    F = flipped_scale()
-    assert F.direction == HIGHER_IS_BETTER
-    assert F.best == 5 and F.worst == 1
-    assert [lv.label_hu for lv in F.levels] == ["Kiváló", "Jó", "Közepes", "Rossz", "Nagyon rossz"]
-    assert F.model_levels == (5, 4, 3, 2)
-    assert F.severity_values(F.model_levels) == [1, 2, 3, 4]
-    assert F.bad_from == 3
+def test_mirrored_scale_is_consistent():
+    F = SCALE.mirrored()
+    assert {F.direction, SCALE.direction} == {LOWER_IS_BETTER, HIGHER_IS_BETTER}
+    assert F.best == SCALE.flip(SCALE.best) and F.worst == SCALE.flip(SCALE.worst)
+    assert [lv.label_hu for lv in F.levels] == [lv.label_hu for lv in SCALE.levels]
+    assert F.model_levels == tuple(SCALE.flip(v) for v in SCALE.model_levels)
+    assert F.severity_values(F.model_levels) == SCALE.severity_values(SCALE.model_levels)
+    assert F.bad_from == SCALE.flip(SCALE.bad_from)
+    assert F.mirrored_data() == SCALE.data  # flipping twice is the identity
 
 
 @pytest.mark.parametrize("x", [0.7, 1.0, 1.5, 1.51, 2.0, 2.01, 2.5, 3.0, 3.18, 3.5, 4.0, 4.5, 5.0, 6.2])
 def test_flip_preserves_every_decision(x):
-    F = flipped_scale()
+    F = SCALE.mirrored()
     y = 6 - x  # the value after the phase-2 data migration
     assert F.is_bad(y) == SCALE.is_bad(x)
     assert F.nearest(y) == 6 - SCALE.nearest(x)
     assert F.nearest(y, "worse") == 6 - SCALE.nearest(x, "worse")
     assert F.toward_worse(y) == 6 - SCALE.toward_worse(x)
     assert F.label(y) == SCALE.label(x)
-    assert F.to_severity(y) == pytest.approx(x)
+    assert F.to_severity(y) == pytest.approx(SCALE.to_severity(x))
     assert F.at_or_better(y, F.value_of("good")) == SCALE.at_or_better(x, SCALE.value_of("good"))
-    assert F.worse_than(y, F.midpoint("fair", "poor")) == SCALE.worse_than(x, SCALE.midpoint("fair", "poor"))
-
-
-def test_shared_json_is_valid_json_with_comment():
-    with open(SCALE_PATH, encoding="utf-8") as f:
-        data = json.load(f)
-    assert "shared/rqi_scale.json" in data["$comment"]
+    assert (F.worse_than(y, F.midpoint("fair", "poor"))
+            == SCALE.worse_than(x, SCALE.midpoint("fair", "poor")))
 
 
 # ----- the ML view (ml/rqi_scale.py) is pinned here because CI runs pytest --
@@ -153,22 +167,22 @@ def _load_ml_view():
     return mod
 
 
-def test_ml_view_constants_are_todays_numbers():
+def test_ml_view_uses_severity_numbers_in_any_direction():
     R = _load_ml_view()
     assert R.LEVELS == [1, 2, 3, 4, 5]
     assert R.MODEL_LEVELS == [1, 2, 3, 4]
     assert R.DROPPED_LEVELS == [5]
     assert R.BAD_FROM == 3
     assert (R.MODEL_MIN, R.MODEL_MAX) == (1, 4)
-    assert R.SCALE_DIRECTION == LOWER_IS_BETTER
-    assert R.sql_to_severity("manual_rqi") == "manual_rqi"
+    assert R.SCALE_DIRECTION == SEVERITY
+    expected = "manual_rqi" if R.SCALE.direction == SEVERITY else "(6 - manual_rqi)"
+    assert R.sql_to_severity("manual_rqi") == expected
 
 
-def test_ml_view_after_a_flip_keeps_severity_numbers():
+def test_ml_severity_of_each_level_survives_a_flip():
     R = _load_ml_view()
     F = R.RqiScale(R.SCALE.mirrored_data())
-    # ML constants are severity numbers: a canonical flip must not move them.
+    for lv in R.SCALE.levels:
+        assert F.to_severity(F.value_of(lv.key)) == R.SCALE.to_severity(lv.value)
     assert F.severity_values(F.model_levels) == R.MODEL_LEVELS
     assert int(F.to_severity(F.bad_from)) == R.BAD_FROM
-    # ...and the export would convert stored canonical values back to severity.
-    assert F.to_severity(5) == 1 and F.to_severity(4.5) == 1.5

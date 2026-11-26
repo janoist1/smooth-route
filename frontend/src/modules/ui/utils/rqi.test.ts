@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import { getRQIColor, getRQILabel, resolveRqi } from './rqi'
+import { fromSeverity as sv } from './rqiScale'
+
+// Scores written as sv(severity) (1 = best) so the expectations hold for
+// either numbering of the canonical scale.
 
 describe('getRQIColor', () => {
   it('returns gray for unknown scores', () => {
@@ -8,23 +12,23 @@ describe('getRQIColor', () => {
   })
 
   it('maps score ranges to colours', () => {
-    expect(getRQIColor(1)).toBe('#4ade80') // green
-    expect(getRQIColor(2)).toBe('#4ade80')
-    expect(getRQIColor(2.5)).toBe('#facc15') // yellow
-    expect(getRQIColor(3)).toBe('#facc15')
-    expect(getRQIColor(3.5)).toBe('#f87171') // red
-    expect(getRQIColor(4)).toBe('#f87171')
-    expect(getRQIColor(4.5)).toBe('#ef4444') // dark red
+    expect(getRQIColor(sv(1))).toBe('#4ade80') // green
+    expect(getRQIColor(sv(2))).toBe('#4ade80')
+    expect(getRQIColor(sv(2.5))).toBe('#facc15') // yellow
+    expect(getRQIColor(sv(3))).toBe('#facc15')
+    expect(getRQIColor(sv(3.5))).toBe('#f87171') // red
+    expect(getRQIColor(sv(4))).toBe('#f87171')
+    expect(getRQIColor(sv(4.5))).toBe('#ef4444') // dark red
   })
 })
 
 describe('getRQILabel', () => {
   it('labels each quality band', () => {
-    expect(getRQILabel(1)).toBe('Excellent')
-    expect(getRQILabel(2)).toBe('Good')
-    expect(getRQILabel(3)).toBe('Fair')
-    expect(getRQILabel(4)).toBe('Poor')
-    expect(getRQILabel(5)).toBe('Critical')
+    expect(getRQILabel(sv(1))).toBe('Excellent')
+    expect(getRQILabel(sv(2))).toBe('Good')
+    expect(getRQILabel(sv(3))).toBe('Fair')
+    expect(getRQILabel(sv(4))).toBe('Poor')
+    expect(getRQILabel(sv(5))).toBe('Critical')
     expect(getRQILabel(undefined)).toBe('Unknown')
   })
 })

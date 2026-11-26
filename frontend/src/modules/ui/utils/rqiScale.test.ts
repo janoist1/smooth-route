@@ -8,14 +8,19 @@ import {
   RQI_MODEL_LEVELS,
   RQI_SCALE,
   compareWorstFirst,
+  fromSeverity as sv,
   isBadRqi,
   nearestRqiLevel,
   rqiLevel,
   rqiScoreLabelHu,
   rqiValue,
+  toSeverity,
   towardWorseRqiLevel,
 } from './rqiScale'
 import { getRQIColor, getRQILabel } from './rqi'
+
+// Expectations use sv(severity) (1 = best) so they hold for either numbering.
+// After a flip (scripts/sync_rqi_scale.py --flip) only the direction pin fails.
 
 describe('canonical RQI scale definition', () => {
   it('frontend copy is byte-identical to shared/rqi_scale.json', () => {
@@ -26,38 +31,48 @@ describe('canonical RQI scale definition', () => {
   it('has five levels with the Hungarian UI labels, best first', () => {
     expect(RQI_LEVELS.map(l => l.label_hu)).toEqual(['Kiváló', 'Jó', 'Közepes', 'Rossz', 'Nagyon rossz'])
     expect(RQI_LEVELS.map(l => l.key)).toEqual(['excellent', 'good', 'fair', 'poor', 'very_poor'])
+    expect(RQI_LEVELS.map(l => toSeverity(l.value))).toEqual([1, 2, 3, 4, 5])
   })
 
-  it('pins the current direction and model contract', () => {
+  it('direction pin: today 1 = Kiváló (changes only on a deliberate flip)', () => {
     expect(RQI_SCALE.direction).toBe('lower_is_better')
     expect(RQI_LEVELS.map(l => l.value)).toEqual([1, 2, 3, 4, 5])
     expect(RQI_MODEL_LEVELS).toEqual([1, 2, 3, 4])
+    expect(RQI_BAD_FROM).toBe(3)
+  })
+
+  it('model contract: Nagyon rossz is never predicted; bad road from Közepes', () => {
+    expect(RQI_MODEL_LEVELS.map(toSeverity)).toEqual([1, 2, 3, 4])
     expect(RQI_BAD_FROM).toBe(rqiValue('fair'))
-    expect(rqiLevel(3)?.label_hu).toBe('Közepes')
+    expect(rqiLevel(rqiValue('fair'))?.label_hu).toBe('Közepes')
     expect(rqiLevel(2.5)).toBeUndefined()
   })
 })
 
 describe('helpers', () => {
   it('bad road = at or worse than Közepes', () => {
-    expect([1, 2, 2.9, 3, 4, 5].map(isBadRqi)).toEqual([false, false, false, true, true, true])
+    expect([1, 2, 2.9, 3, 4, 5].map(x => isBadRqi(sv(x)))).toEqual([false, false, false, true, true, true])
   })
 
   it('sorts worst first', () => {
-    expect([1, 4, 2, 3].sort(compareWorstFirst)).toEqual([4, 3, 2, 1])
+    expect([1, 4, 2, 3].map(sv).sort(compareWorstFirst)).toEqual([4, 3, 2, 1].map(sv))
   })
 
   it('rounds continuous scores', () => {
-    expect([0.2, 1.5, 1.51, 2.5, 3.5, 4.5, 4.6, 9].map(s => nearestRqiLevel(s))).toEqual([1, 1, 2, 2, 3, 4, 5, 5])
-    expect([1.49, 1.5, 2.5, 4.5].map(s => nearestRqiLevel(s, 'worse'))).toEqual([1, 2, 3, 5])
-    expect([0, 2, 2.01, 3, 4, 4.01, 7].map(towardWorseRqiLevel)).toEqual([1, 2, 3, 3, 4, 5, 5])
+    expect([0.2, 1.5, 1.51, 2.5, 3.5, 4.5, 4.6, 9].map(s => nearestRqiLevel(sv(s)))).toEqual(
+      [1, 1, 2, 2, 3, 4, 5, 5].map(sv),
+    )
+    expect([1.49, 1.5, 2.5, 4.5].map(s => nearestRqiLevel(sv(s), 'worse'))).toEqual([1, 2, 3, 5].map(sv))
+    expect([0, 2, 2.01, 3, 4, 4.01, 7].map(s => towardWorseRqiLevel(sv(s)))).toEqual(
+      [1, 2, 3, 3, 4, 5, 5].map(sv),
+    )
   })
 
   it('Hungarian score label', () => {
-    expect(rqiScoreLabelHu(1)).toBe('Kiváló')
-    expect(rqiScoreLabelHu(1.5)).toBe('Kiváló')
-    expect(rqiScoreLabelHu(2.6)).toBe('Közepes')
-    expect(rqiScoreLabelHu(4.8)).toBe('Nagyon rossz')
+    expect(rqiScoreLabelHu(sv(1))).toBe('Kiváló')
+    expect(rqiScoreLabelHu(sv(1.5))).toBe('Kiváló')
+    expect(rqiScoreLabelHu(sv(2.6))).toBe('Közepes')
+    expect(rqiScoreLabelHu(sv(4.8))).toBe('Nagyon rossz')
     expect(rqiScoreLabelHu(null)).toBe('Nincs adat')
   })
 })
@@ -77,24 +92,25 @@ const legacyLabel = (score: number): string => {
   return 'Critical'
 }
 
+// The legacy rules were written for 1 = best, i.e. in severity terms.
 describe('getRQIColor / getRQILabel are unchanged', () => {
   const samples: number[] = []
   for (let s = -1; s <= 7.0001; s += 0.01) samples.push(Math.round(s * 100) / 100)
 
   it('colour matches the legacy bands on a 0.01 grid', () => {
-    for (const s of samples) expect(getRQIColor(s), `score ${s}`).toBe(legacyColor(s))
+    for (const s of samples) expect(getRQIColor(sv(s)), `severity ${s}`).toBe(legacyColor(s))
   })
 
   it('label matches the legacy bands on a 0.01 grid', () => {
-    for (const s of samples) expect(getRQILabel(s), `score ${s}`).toBe(legacyLabel(s))
+    for (const s of samples) expect(getRQILabel(sv(s)), `severity ${s}`).toBe(legacyLabel(s))
   })
 })
 
-describe('a flipped scale (5 = best) answers the same on mirrored data', () => {
+describe('the mirrored scale answers the same on mirrored data', () => {
   it('mirrors levels and keeps labels, colours and the bad-road decision', async () => {
     const flipped = {
       ...scaleJson,
-      direction: 'higher_is_better',
+      direction: scaleJson.direction === 'lower_is_better' ? 'higher_is_better' : 'lower_is_better',
       bad_from: 6 - scaleJson.bad_from,
       model_levels: scaleJson.model_levels.map(v => 6 - v).sort(),
       levels: scaleJson.levels.map(l => ({ ...l, value: 6 - l.value })),
@@ -103,8 +119,8 @@ describe('a flipped scale (5 = best) answers the same on mirrored data', () => {
     vi.doMock('./rqiScale.json', () => ({ default: flipped }))
     const F = await import('./rqiScale')
     const FR = await import('./rqi')
-    expect(F.RQI_LEVELS.map(l => l.value)).toEqual([5, 4, 3, 2, 1])
-    expect(F.RQI_MODEL_LEVELS).toEqual([5, 4, 3, 2])
+    expect(F.RQI_LEVELS.map(l => l.value)).toEqual(RQI_LEVELS.map(l => 6 - l.value))
+    expect(F.RQI_MODEL_LEVELS).toEqual(RQI_MODEL_LEVELS.map(v => 6 - v))
     for (const x of [0.7, 1, 1.5, 1.51, 2, 2.01, 2.5, 3, 3.5, 4, 4.5, 5, 6.2]) {
       const y = 6 - x
       expect(F.isBadRqi(y)).toBe(isBadRqi(x))

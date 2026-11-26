@@ -5,16 +5,28 @@ How to make manual labels on `/training/:id/review`: **RQI scoring** (the
 polygons** (the "Hibák jelölése" panel → YOLO training data). The web UI does not
 train the RQI model; `ml/` does ([ml/README.md](../ml/README.md)).
 
-## Scale (lower = better)
+## Scale
 
-| RQI | meaning |
-|---|---|
-| 1 | excellent — new or freshly resurfaced, no visible defects |
-| 2 | good — light wear, small cracks, good patches; does not affect driving |
-| 3 | fair — visible crack networks, patching, small potholes |
-| 4 | poor — deep potholes, broken-up or very rough surface |
+The scale and its rubric are defined once in
+[shared/rqi_scale.json](../shared/rqi_scale.json) (this table is a copy of it;
+rules: [shared/README.md](../shared/README.md)). Today **lower = better**; the
+review screen's buttons and the keys `1`–`5` set the value.
 
-Do not use 5: too few examples; training drops it.
+| RQI | UI label | rubric |
+|---|---|---|
+| 1 | **Kiváló** | New or freshly resurfaced, no visible defects. |
+| 2 | **Jó** | Light wear, small cracks, good patches; does not affect driving. |
+| 3 | **Közepes** | Visible crack networks, heavy patching, small potholes. |
+| 4 | **Rossz** | Deep potholes, broken-up or very rough surface. |
+| 5 | **Nagyon rossz** | Barely drivable: continuous potholes, disintegrated surface. |
+
+- **Bad road** = Közepes or worse (≥ 3); the map's "Rossz út valószínűsége" is
+  the model's probability of that.
+- **5 (Nagyon rossz) is on the scale but not trained:** it has only 14 labels,
+  mostly junk, and training drops every 5. Until the owner decides otherwise,
+  label even the worst real road **4**. Never use 5 for non-road or broken
+  frames: skip those (see below).
+- Half steps (1.5, 2.5, 3.5) are accepted but discouraged; pick the nearer level.
 
 ## What to label (this matters most)
 
