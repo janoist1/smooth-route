@@ -22,6 +22,9 @@ The recipe is stored machine-readably in the artifact; inference code
 (ml/predict.py, backend dino_service) builds features from it.
 
 Usage:  .venv/bin/python ml/save_model_v2.py --recipe cls+patch [--head svr-rbf]
+        # era 8 candidate (never overwrite the champion; the lead promotes):
+        .venv/bin/python ml/save_model_v2.py --recipe cls+patch+full_mid \
+            --backbone base --out rqi_model_candidate.joblib
 """
 import argparse
 import json
@@ -59,7 +62,27 @@ RECIPES = {
     "cls+patch+clip": (["cls", "patch", "clip"], True),
     "cls+patch flipavg": (["cls_avg", "patch_avg"], False),
     "all": (["cls_avg", "patch_avg", "patch_crop", "clip"], True),
+    # era 8: + mean/std of intermediate-block (8) tokens over the road half of
+    # the full frame seen at native resolution (588x392, no centre-crop)
+    "cls+patch+full_mid": (["cls", "patch", "full_midmean", "full_midstd"], False),
 }
+
+# Hi-res views (ml/extract_features_hires.py). A recipe key "<view>_<pool>"
+# whose prefix is listed here comes from feats_hires_<backbone>_<view>.npz,
+# and the spec is written into the artifact's feature_recipe["hires_views"]
+# so the backend (app/services/hires_views.py) rebuilds the same features:
+# crop `box` (frame fractions x0,y0,x1,y1) -> BICUBIC resize to `size` (W,H)
+# -> ImageNet mean/std; pools run over patches whose centre is at frame
+# y >= road_y; "mid*" pools read hidden_states[mid_layer].
+HIRES_VIEWS = {
+    "full": {"box": [0.0, 0.0, 1.0, 1.0], "size": [588, 392],
+             "mid_layer": 8, "road_y": 0.5},
+}
+
+
+def hires_views_for(keys):
+    return sorted({k.split("_", 1)[0] for k in keys
+                   if "_" in k and k.split("_", 1)[0] in HIRES_VIEWS})
 
 HEADS = {
     "ridge": lambda: RidgeCV(alphas=[1, 3, 10, 30, 100, 300]),
@@ -85,6 +108,17 @@ def build_features(recipe, backbone):
     pool["patch_avg"] = (pool["patch"] + pool["patch_flip"]) / 2
     pool["clip"] = C["clip"]
     keys, _ = RECIPES[recipe]
+    for view in hires_views_for(keys):
+        H = np.load(os.path.join(CACHE, f"feats_hires_{backbone}_{view}.npz"),
+                    allow_pickle=True)
+        meta, spec = json.loads(str(H["meta"])), HIRES_VIEWS[view]
+        if (list(meta["box"]) != spec["box"] or list(meta["size"]) != spec["size"]
+                or meta["mid_layer"] != spec["mid_layer"]):
+            raise ValueError(f"feats_hires_{backbone}_{view}.npz was extracted "
+                             f"with {meta}, recipe expects {spec}")
+        if len(H["files"]) != len(F["cls"]):
+            raise ValueError(f"feats_hires_{backbone}_{view}.npz misaligned")
+        pool.update({k: H[k] for k in H.files if k.startswith(view + "_")})
     return np.hstack([pool[k] for k in keys])
 
 
@@ -147,14 +181,17 @@ def main():
     pipe.fit(X, y)
 
     keys, needs_clip = RECIPES[args.recipe]
+    recipe_spec = {"name": args.recipe, "keys": keys, "needs_clip": needs_clip,
+                   "crop_top": 0.35}
+    views = hires_views_for(keys)
+    if views:
+        recipe_spec["hires_views"] = {v: HIRES_VIEWS[v] for v in views}
     artifact = {
         "version": 2,
         "pipeline": pipe,
         "p_bad_calibrator": iso,
         "backbone": BACKBONE_NAMES[args.backbone],
-        "feature_recipe": {"name": args.recipe, "keys": keys,
-                           "needs_clip": needs_clip,
-                           "crop_top": 0.35},
+        "feature_recipe": recipe_spec,
         "head": args.head,
         "thresholds": thresholds,
         "rqi_clip": [RQI_MIN, RQI_MAX],

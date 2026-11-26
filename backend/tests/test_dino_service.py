@@ -83,3 +83,16 @@ def test_validate_artifact_missing_v2_metadata_warns_not_raises():
     warnings = validate_artifact({"pipeline": object()})
     assert warnings  # non-empty
     assert any("thresholds" in w for w in warnings)
+
+
+def test_validate_artifact_checks_hires_recipe():
+    art = _full_artifact()
+    spec = {"box": [0, 0, 1, 1], "size": [588, 392], "mid_layer": 8,
+            "road_y": 0.5}
+    art["feature_recipe"] = {"name": "cls+patch+full_mid",
+                             "keys": ["cls", "patch", "full_midmean", "full_midstd"],
+                             "hires_views": {"full": spec}}
+    assert validate_artifact(art) == []
+    art["feature_recipe"]["keys"].append("full_bogus")
+    with pytest.raises(ValueError, match="unknown pool"):
+        validate_artifact(art)

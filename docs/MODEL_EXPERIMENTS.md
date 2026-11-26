@@ -454,3 +454,203 @@ Reprodukálás:
 5. **A kalibrált valószínűség többet ér, mint a nyers osztályzat** — a
    "92%-ban helyes jó/rossz döntés + megmondja, mennyire biztos" a termék
    valódi ígérete.
+
+---
+
+## Era 8 — Higher-resolution road features (2026-11-26)
+
+**Question.** The v2 recipe passes the 600×400 frame through the HF DINOv2
+processor: resize the short side to 256 (→ 384×256), then centre-crop 224×224.
+The backbone sees the frame at **0.64× scale**, without the outer 21% on each
+side and the bottom 6%. Is crack-scale pavement texture in the road region
+(the lower ~50%) being lost, and would higher-resolution road-region features
+beat the champion? A second question: does the project's YOLO damage
+segmenter add evidence on top of DINO?
+
+**TL;DR**
+
+- **The hypothesis is refuted.** Road-only DINOv2 features get *worse* as
+  resolution rises: on the bottom half of the frame, mean+std pooling, SVR,
+  QWK goes 0.781 (0.5× scale) → 0.761 (1.0×) → 0.767 (1.5×) → 0.745 (2×,
+  centre of the lane). Every road-only model is at or below the champion
+  (0.774). Frozen DINOv2 + a small head gets its signal from the scene, not
+  from crack-scale texture.
+- **Adding a second view to the champion helps a little, at any
+  resolution.** The best of 170 grid cells reach ΔQWK ≈ +0.02 on the official
+  grid. On 6 shifted grids they shrink to +0.006…+0.013. Low-resolution
+  controls gain as much as their high-resolution twins: the full frame at
+  336×224 gives +0.020 [+0.005, +0.036], the same frame at 588×392 gives
+  +0.021 [+0.003, +0.039]. The gain comes from the wider field of view (no
+  centre-crop), std/texture pooling and score averaging, not from resolution.
+- **YOLO damage evidence adds nothing.** YOLO-only features reach QWK
+  0.54–0.62. Stacked with the champion the best result is +0.004 [−0.005,
+  +0.016].
+- **One candidate formally qualifies:** dinov2-base cls+patch @224 + the
+  full frame at 588×392, mean and std of block-8 tokens over the road half,
+  SVR. On the official grid it has ΔQWK +0.021 [+0.001, +0.040]; on the
+  shifted grids its CI is above 0 in 4 of 6 (the rule was fixed before the
+  check). The gate gives **PASS** and "measurably better: YES": QWK 0.796 /
+  MAE 0.382 / AUC 0.940. It is saved as `ml/cache/rqi_model_candidate.joblib`,
+  and `dino_service` can run it (backend parity verified).
+- **Recommendation: do not promote yet.** The lead decides. The margin is the
+  smallest the rule allows, and its shift-mean (+0.013) equals that of
+  variants that failed (2/6). It costs about **11× more inference** (186 vs
+  17 ms/frame → ~54 vs ~5 min per 17.6k frames on MPS), and class-3 recall
+  drops 0.68 → 0.57. Re-measure on the planned holdout region first.
+- Not gated, but consistent across many two-view variants: MAE −0.02…−0.05,
+  class-2 recall 0.43 → 0.45–0.55, Budapest bad-road AUC 0.78 → 0.80–0.85.
+
+### Setup
+
+Same protocol as the gate (`ml/spatial_cv.py`): 1903 images, 35 cells of
+1 km, StratifiedGroupKFold 5, seed 42, nested cut-points. Every candidate is
+paired against the champion on identical folds (cell-bootstrap ΔQWK 95% CI).
+The harness reproduces the champion exactly (0.774 / 0.405 / 0.934, class-2
+recall 0.43, Budapest QWK 0.404 / AUC 0.776). **Decision rule, fixed before
+the shift check:** "measurably better" = ΔQWK CI > 0 on the official grid
+**and** on at least 4 of 6 shifted grids.
+
+Views (`ml/extract_features_hires.py`). Preprocessing is a PIL crop + BICUBIC
+resize + ImageNet mean/std, with no HF processor and no centre-crop.
+Throughput is DINOv2-small on MPS, measured while other jobs shared the
+machine, so treat it as a lower bound.
+
+| view | crop (frame fractions) | input | scale vs native | tokens | small, img/s | 17.6k frames |
+|---|---|---|---|---|---|---|
+| champion | centre 58% × 88% | 224×224 | 0.64 | 256 | – | – |
+| `road50lo` | bottom 50% | 308×98 | 0.51 | 154 | 109 | 3 min |
+| `road50` | bottom 50% | 588×196 | 0.98 | 588 | 26 | 11 min |
+| `road50x15` | bottom 50% | 882×294 | 1.47 | 1323 | 3–6* | 50–90 min* |
+| `roadc2x` | x 0.2–0.8, y 0.55–1 | 714×350 | 1.98 | 1275 | 11 | 27 min |
+| `fulllo` | whole frame | 336×224 | 0.56 | 384 | 31 | 9 min |
+| `full` | whole frame | 588×392 | 0.98 | 1176 | 9 | 33 min |
+
+\*measured under heavy load (load average ~35). dinov2-base `road50`: 12 img/s.
+
+Pooled per view: CLS, road-region patch mean / std / GeM(p=3), lower-centre
+patch mean (the lane ahead, no logo corners), a 2×3 spatial pyramid, and
+mean+std of block-8 tokens ("mid"). Heads: the champion SVR on the
+concatenation (`svr`), and `svravg`, which averages a champion-feature SVR
+with an SVR on the extra block (score-level ensemble). Ridge and RBF on large
+concatenations were consistently worse.
+
+### Results (official grid, paired vs champion)
+
+| candidate | head | QWK | MAE | AUC | class-2 recall | Budapest QWK / AUC | ΔQWK [95% CI] |
+|---|---|---|---|---|---|---|---|
+| **champion** (cls+patch @224, small) | svr | 0.774 | 0.405 | 0.934 | 0.43 | 0.404 / 0.776 | – |
+| *Resolution sweep, road-only (bottom half, mean+std):* | | | | | | | |
+| road50lo (0.5×) | svr | 0.781 | 0.405 | 0.927 | 0.41 | 0.434 / 0.770 | +0.006 [−0.026, +0.035] |
+| road50 (1.0×) | svr | 0.761 | 0.445 | 0.927 | 0.37 | 0.426 / 0.771 | −0.014 [−0.058, +0.025] |
+| road50x15 (1.5×) | svr | 0.767 | 0.426 | 0.927 | 0.41 | 0.395 / 0.776 | −0.007 [−0.036, +0.019] |
+| roadc2x (2×, lane centre) | svr | 0.745 | 0.437 | 0.918 | 0.45 | 0.418 / 0.757 | −0.029 [−0.073, +0.004] |
+| *Champion + second view (score average):* | | | | | | | |
+| + patch_crop @224 (existing v2 cache, control) | svravg | 0.786 | 0.410 | 0.939 | 0.40 | 0.448 / 0.791 | +0.012 [−0.014, +0.036] |
+| + road50lo mean+std | svravg | 0.795 | 0.374 | 0.937 | 0.46 | 0.377 / 0.808 | +0.021 [−0.001, +0.043] |
+| + road50 mean+std | svravg | 0.789 | 0.390 | 0.937 | 0.44 | 0.426 / 0.803 | +0.015 [−0.008, +0.039] |
+| + road50 mid | svravg | 0.794 | 0.374 | 0.940 | 0.49 | 0.514 / 0.830 | +0.019 [+0.002, +0.036] |
+| + fulllo mean+std | svravg | 0.795 | 0.378 | 0.940 | 0.48 | 0.477 / 0.815 | +0.020 [+0.005, +0.036] |
+| + full mean+std | svravg | 0.795 | 0.379 | 0.941 | 0.48 | 0.451 / 0.812 | +0.021 [+0.003, +0.039] |
+| *Single pass replacing the 224 view:* | | | | | | | |
+| full cls+allmean (= v2 recipe at 588×392, no crop) | svr | 0.784 | 0.379 | 0.931 | 0.51 | 0.367 / 0.731 | +0.009 [−0.016, +0.035] |
+| full cls+allmean+roadmean | svr | 0.799 | 0.353 | 0.937 | 0.55 | 0.398 / 0.785 | +0.025 [−0.005, +0.055] |
+| fulllo cls+allmean+roadmean (control) | svr | 0.777 | 0.390 | 0.936 | 0.51 | 0.392 / 0.771 | +0.003 [−0.010, +0.017] |
+| *dinov2-base:* | | | | | | | |
+| base champion recipe | svr | 0.779 | 0.407 | 0.929 | 0.42 | 0.147 / 0.730 | +0.005 [−0.026, +0.029] |
+| base road50 cls+mean | svr | 0.780 | 0.399 | 0.926 | 0.41 | 0.334 / 0.721 | +0.006 [−0.026, +0.035] |
+| base champ + road50 mid | svr | 0.799 | 0.374 | 0.939 | 0.46 | 0.480 / 0.813 | +0.025 [+0.005, +0.045] |
+| base champ + road50 GeM | svr | 0.798 | 0.372 | 0.934 | 0.48 | 0.429 / 0.784 | +0.023 [+0.003, +0.042] |
+| base champ + full mid | svr | 0.796 | 0.382 | 0.940 | 0.46 | 0.531 / 0.826 | +0.021 [+0.001, +0.040] |
+| base full mean+std (single pass) | svr | 0.797 | 0.375 | 0.940 | 0.47 | 0.448 / 0.823 | +0.023 [−0.006, +0.062] |
+| *YOLO damage evidence (experiment 2):* | | | | | | | |
+| YOLO features only (240) | svr | 0.611 | 0.569 | 0.808 | 0.50 | 0.296 / 0.673 | −0.164 [−0.224, −0.089] |
+| champion + YOLO "any damage" (24) | svr | 0.779 | 0.402 | 0.936 | 0.43 | 0.466 / 0.778 | +0.004 [−0.005, +0.016] |
+| champion + all YOLO (240) | svravg | 0.768 | 0.412 | 0.917 | 0.49 | 0.392 / 0.731 | −0.006 [−0.047, +0.040] |
+
+All 170 cells are in `ml/cache/experiments_hires_*.csv`. The ΔQWK median is
++0.007 and the maximum +0.025. The 7 cells with CI > 0 are expected from
+multiple testing of strongly correlated cells.
+
+### Winner's-curse check (6 shifted grids, paired ΔQWK vs champion)
+
+| candidate | ΔQWK per shifted grid | mean | CI > 0 |
+|---|---|---|---|
+| champ + road50 mid (svravg) | +0.014 +0.000 +0.001 +0.019 +0.007 +0.008 | +0.008 | 2/6 |
+| champ + road50lo mean+std (svravg) | +0.012 +0.000 +0.000 +0.020 +0.000 +0.004 | +0.006 | 1/6 |
+| champ + full mean (svravg) | +0.008 +0.014 +0.004 +0.009 +0.006 +0.009 | +0.008 | 0/6 |
+| champ + full mean+std (svravg) | +0.015 +0.010 −0.005 +0.010 +0.008 +0.008 | +0.008 | 1/6 |
+| champ + fulllo mean+std (svravg) | +0.013 +0.015 −0.003 +0.014 +0.014 +0.003 | +0.009 | 2/6 |
+| full cls+allmean+roadmean (svr, single pass) | +0.013 +0.015 −0.001 +0.026 +0.014 +0.000 | +0.011 | 1/6 |
+| base champ + road50 GeM (svr) | +0.016 +0.011 +0.005 +0.014 +0.009 +0.009 | +0.011 | 1/6 |
+| base champ + road50 mid (svr) | +0.017 +0.019 +0.002 +0.015 +0.007 +0.011 | +0.012 | 1/6 |
+| base full mean+std (svr, single pass) | +0.016 +0.018 −0.002 +0.016 +0.012 +0.020 | +0.013 | 2/6 |
+| **base champ + full mid (svr)** | +0.017 +0.019 −0.001 +0.012 +0.023 +0.007 | +0.013 | **4/6** |
+
+The deltas are almost all positive, but they are about +0.01. Only base
+champ + full mid clears the pre-set rule (CI > 0 on at least 4 of 6 grids),
+and its effect size is the same as its neighbours'. Feature engineering on
+frozen DINOv2 is still capped by the data: it moves QWK by about +0.01, far
+less than the ±0.07 CI of a single number.
+
+### The candidate artifact
+
+`ml/cache/rqi_model_candidate.joblib` (gitignored; rebuild with the command
+below). Recipe `cls+patch+full_mid`, backbone `facebook/dinov2-base`, head
+StandardScaler + SVR-RBF (C=1, eps=0.05), 3072 features. The
+`feature_recipe` carries a new `hires_views` spec:
+`{"full": {"box": [0,0,1,1], "size": [588,392], "mid_layer": 8, "road_y": 0.5}}`
+with keys `full_midmean`, `full_midstd`. The backend interprets it through
+the new torch-free `backend/app/services/hires_views.py`, with unit tests in
+`backend/tests/test_hires_views.py`. `ml/check_backend_parity.py` confirms
+that `dino_service` rebuilds the training features exactly (max relative
+diff 1.8e-7, score Δ 0.0000 on 40 frames). The champion passes the same
+check.
+
+| (spatial CV, official grid) | champion | candidate |
+|---|---|---|
+| QWK | 0.774 | **0.796** (Δ +0.021 [+0.001, +0.040]) |
+| MAE | 0.405 | 0.382 (Δ −0.023 [−0.056, +0.013]) |
+| bad-road AUC | 0.934 | 0.940 (Δ +0.006 [+0.000, +0.014]) |
+| exact | 0.610 | 0.630 |
+| recall 1 / 2 / 3 / 4 | 0.83 / 0.43 / 0.68 / 0.60 | 0.87 / 0.46 / **0.57** / 0.74 |
+| Budapest QWK / MAE / AUC | 0.404 / 0.397 / 0.776 | 0.531 / 0.306 / 0.826 |
+| inference (MPS, batch 1) | 17 ms/frame | 186 ms/frame |
+
+Promoting it would mean replacing `rqi_model.joblib` and re-scoring the map.
+Only `dino_service` changes in code, and that change is already in place and
+backward compatible: classic recipes take the same code path as before.
+
+### Verdict and what it means
+
+1. **Resolution is not the bottleneck.** At native or upsampled resolution
+   the road crop carries no more usable signal for a frozen backbone + small
+   head, and standalone it carries less. High-resolution passes help only as
+   a wider, uncropped second view, and a 336×224 pass does that just as well.
+2. **One formal pass, not a clear win.** The base + full-mid candidate
+   clears the gate and the pre-set shift rule by the smallest margin. The
+   decision to promote belongs to the lead. My recommendation is to keep the
+   v2 champion live and re-measure the candidate, plus the cheap
+   "champion + fulllo mean+std" score average (~+0.009 across shifts, one
+   extra 31 img/s pass), on the independent holdout region once it is
+   labelled.
+3. **YOLO stays where it is** (defect polygons on the detail card). Its
+   damage areas do not improve the RQI score.
+
+Reproduce (all caches land in `ml/cache/`, gitignored):
+
+```bash
+PY=/Users/i/Dev/smooth-route/.venv/bin/python
+for v in road50lo road50 road50x15 roadc2x fulllo full; do $PY ml/extract_features_hires.py --backbone small --view $v; done
+for v in road50 full; do $PY ml/extract_features_hires.py --backbone base --view $v; done
+$PY ml/extract_yolo_features.py                      # -> yolo_feats.npz (~6 min)
+$PY ml/experiments_hires.py --heads svr,svravg       # full grid (~2 h on CPU)
+$PY ml/experiments_hires.py --only yolo --heads svr,svravg,ridge
+$PY ml/experiments_hires.py --views road50,road50lo,full,fulllo --backbones small --shifts 6 \
+  --pairs "champ+full mean+std@svravg;champ+fulllo mean+std@svravg;champ+road50 mid@svravg;champ+full mean@svravg;full cls+allmean+roadmean@svr;champ+road50lo mean+std@svravg"
+$PY ml/experiments_hires.py --views road50,full --backbones small,base --shifts 6 \
+  --pairs "[base] champ+road50 mid@svr;[base] champ+road50 gem@svr;[base] champ+full mid@svr;[base] full mean+std@svr"
+# candidate artifact, gate, backend parity:
+$PY ml/save_model_v2.py --recipe cls+patch+full_mid --backbone base --out rqi_model_candidate.joblib
+$PY ml/evaluate_artifact.py ml/cache/rqi_model_candidate.joblib   # PASS, measurably better: YES
+$PY ml/check_backend_parity.py ml/cache/rqi_model_candidate.joblib
+```
