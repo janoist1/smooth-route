@@ -115,7 +115,7 @@ def render(data) -> None:
                    + (f"<p><b>Done when:</b></p><ul>{ac}</ul>" if ac else "")
                    + (f"<p><b>Decisions:</b></p><ul>{dec}</ul>" if dec else "") + "</details>")
         note += det
-        return (f'<article class="card"><header><b>{t["id"]}</b><time>{t["updated"]}</time></header>'
+        return (f'<article class="card" data-id="{t["id"]}"><header><b>{t["id"]}</b><time>{t["updated"]}</time></header>'
                 f'<h3>{html.escape(t["title"])}</h3>{note}'
                 f'{f"<footer>{meta}</footer>" if meta else ""}</article>')
 
@@ -126,18 +126,23 @@ def render(data) -> None:
         if key == "done":
             items = items[:30]
         cols.append(f'<section class="col {key}"><h2>{en} <span>· {hu}</span><em>{len(items)}</em></h2>'
-                    + "".join(card(t) for t in items) + "</section>")
+                    f'<div class="list" data-col="{key}">' + "".join(card(t) for t in items) + "</div></section>")
+    # Trello-like: the page never scrolls; columns scroll sideways on narrow
+    # screens and each column's cards scroll on their own. Refresh every 60 s
+    # but keep scroll positions and open details across the reload.
     page = f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="60">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Team board</title><style>
-:root{{--bg:#f6f7f9;--fg:#1d2330;--muted:#667085;--card:#fff;--line:#e3e6ec;--todo:#94a3b8;--doing:#3b82f6;--review:#a855f7;--owner:#f59e0b;--done:#22c55e}}
-@media (prefers-color-scheme:dark){{:root{{--bg:#12151b;--fg:#e6e9ef;--muted:#98a2b3;--card:#1c2129;--line:#2a313c}}}}
-*{{box-sizing:border-box}}body{{margin:0;padding:16px;background:var(--bg);color:var(--fg);font:14px/1.4 system-ui,-apple-system,sans-serif}}
-h1{{font-size:18px;margin:0 0 12px}}h1 small{{color:var(--muted);font-weight:400;font-size:13px}}
-main{{display:grid;grid-template-columns:repeat(5,minmax(200px,1fr));gap:12px;align-items:start}}
-@media (max-width:900px){{main{{grid-template-columns:1fr}}}}
-.col{{background:transparent;border-top:4px solid var(--line);padding-top:8px}}
-.col h2{{font-size:13px;text-transform:uppercase;letter-spacing:.04em;margin:0 0 8px;display:flex;gap:6px;align-items:baseline}}
+:root{{--bg:#f6f7f9;--fg:#1d2330;--muted:#667085;--card:#fff;--line:#e3e6ec;--colbg:#eceff3;--todo:#94a3b8;--doing:#3b82f6;--review:#a855f7;--owner:#f59e0b;--done:#22c55e}}
+@media (prefers-color-scheme:dark){{:root{{--bg:#12151b;--fg:#e6e9ef;--muted:#98a2b3;--card:#1c2129;--line:#2a313c;--colbg:#181c23}}}}
+*{{box-sizing:border-box}}html,body{{height:100%}}
+body{{margin:0;padding:16px 16px 12px;background:var(--bg);color:var(--fg);font:14px/1.4 system-ui,-apple-system,sans-serif;height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:hidden}}
+h1{{flex:none;font-size:18px;margin:0 0 12px}}h1 small{{color:var(--muted);font-weight:400;font-size:13px}}
+main{{flex:1;min-height:0;display:grid;grid-template-columns:repeat(5,minmax(200px,1fr));gap:12px;align-items:stretch}}
+@media (max-width:900px){{main{{grid-template-columns:repeat(5,minmax(78vw,1fr));overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch}}.col{{scroll-snap-align:start}}}}
+.col{{display:flex;flex-direction:column;min-height:0;background:var(--colbg);border-top:4px solid var(--line);border-radius:8px;padding:8px 8px 0}}
+.list{{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding-bottom:8px}}
+.col h2{{flex:none;font-size:13px;text-transform:uppercase;letter-spacing:.04em;margin:0 0 8px;display:flex;gap:6px;align-items:baseline}}
 .col h2 span{{color:var(--muted);text-transform:none;letter-spacing:0;font-weight:400}}.col h2 em{{margin-left:auto;font-style:normal;color:var(--muted)}}
 .todo{{border-color:var(--todo)}}.doing{{border-color:var(--doing)}}.review{{border-color:var(--review)}}.owner{{border-color:var(--owner)}}.done{{border-color:var(--done)}}
 .card{{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:8px}}
@@ -146,7 +151,28 @@ main{{display:grid;grid-template-columns:repeat(5,minmax(200px,1fr));gap:12px;al
 details{{font-size:13px;margin:4px 0}}details summary{{cursor:pointer;color:var(--muted)}}details p,details ul{{margin:4px 0}}details ul{{padding-left:18px}}
 .card footer{{font-size:12px;color:var(--muted);word-break:break-all}}.owner .card{{border-color:var(--owner)}}
 </style></head><body><h1>Team board <small>updated {now()} · auto-refresh 1 min</small></h1>
-<main>{''.join(cols)}</main></body></html>"""
+<main>{''.join(cols)}</main>
+<script>
+(function(){{
+  var KEY="board-view";
+  function save(){{try{{
+    var s={{x:document.querySelector("main").scrollLeft,lists:{{}},open:[]}};
+    document.querySelectorAll(".list").forEach(function(l){{s.lists[l.dataset.col]=l.scrollTop}});
+    document.querySelectorAll("details[open]").forEach(function(d){{var a=d.closest("article");if(a)s.open.push(a.dataset.id)}});
+    sessionStorage.setItem(KEY,JSON.stringify(s));
+  }}catch(e){{}}}}
+  try{{
+    var s=JSON.parse(sessionStorage.getItem(KEY)||"null");
+    if(s){{
+      document.querySelector("main").scrollLeft=s.x||0;
+      document.querySelectorAll(".list").forEach(function(l){{l.scrollTop=(s.lists||{{}})[l.dataset.col]||0}});
+      (s.open||[]).forEach(function(id){{var d=document.querySelector('article[data-id="'+id+'"] details');if(d)d.open=true}});
+    }}
+  }}catch(e){{}}
+  setTimeout(function(){{save();location.reload()}},60000);
+  window.addEventListener("pagehide",save);
+}})();
+</script></body></html>"""
     tmp = HTML_OUT.with_suffix(".tmp")
     tmp.write_text(page)
     os.replace(tmp, HTML_OUT)
