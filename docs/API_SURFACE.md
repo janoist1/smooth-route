@@ -34,7 +34,6 @@ opcionálisan halványítja ezeket a pontokat.
 
 | Végpont | Indok |
 |---|---|
-| `GET /api/v1/config` | A beépített statikus térkép Google Maps konfigurációja |
 | `GET /api/v1/points`, `GET /api/v1/points/{id}` | A statikus térkép és a README-ben dokumentált egyszerű API |
 | `POST /api/v1/process-route` | A statikus térkép útvonal-feldolgozása |
 | `GET /api/v1/job/{id}` | A statikus térkép állapotlekérdezése |
@@ -49,3 +48,8 @@ A `/images`, `/previews` és `/api/v1/exports` fájlkiszolgáló végpont, nem
 `POST /api/v1/inference/detect` megszűnt: nem volt hívója, és ugyanazt a
 funkciót a GraphQL `detectObjects`, illetve a termékben használt
 `performReviewAction` már lefedi. Külön REST annotációs végpont nincs.
+
+`GET /api/v1/config` megszűnt (2026-11-26), a GraphQL `config` pedig csak
+adminnak érhető el: mindkettő anonim módon kiadta a szerveroldali Google
+Maps-kulcsot (a read-only éles deployon is), a fogyasztójuk, a statikus
+`map.html` pedig már nem létezik.
