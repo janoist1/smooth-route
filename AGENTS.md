@@ -26,6 +26,7 @@ public site is read-only (Vercel + Neon); analysis runs locally.
 | **Backend API / GraphQL** | [docs/API_SURFACE.md](docs/API_SURFACE.md); config, tables, deps: [DEVELOPMENT.md](DEVELOPMENT.md) | `ml/**`, `frontend/**` |
 | **Publishing / deploy / auth / queue / quotas** | [docs/PUBLISH_PLAN.md](docs/PUBLISH_PLAN.md) — strategy + your phase only | other phases |
 | **Releasing** (Neon publish + `master` deploy, rollback, smoke) | [docs/RELEASE.md](docs/RELEASE.md); `backend/scripts/publish.py`, `smoke_public_api.py`, `release_rehearsal.sh` | `ml/**`, `frontend/**` |
+| **Cloud workstation (AWS)** — remote agents/data box | [docs/CLOUD_WORKSTATION.md](docs/CLOUD_WORKSTATION.md); `scripts/cloud/` (plan by default, `APPLY=1` runs) | `ml/**`, `frontend/**` |
 | **Public API limits / security / cost abuse** | [docs/SECURITY.md](docs/SECURITY.md); code: `backend/app/graphql/limits.py` | `ml/**` |
 | **Labelling** (review page, quick-rate queue) | [docs/TrainingGuide.md](docs/TrainingGuide.md); queue API: [docs/API_SURFACE.md](docs/API_SURFACE.md#label-queue--quick-rate-screen-admin-only-2026-11-26) | — |
 | **"Why is it like this?" / model history** | [docs/MODEL_EXPERIMENTS.md](docs/MODEL_EXPERIMENTS.md) | — |
