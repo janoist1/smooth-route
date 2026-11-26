@@ -53,12 +53,13 @@ explain the task, open nothing else.
 ## Gates (run before every merge)
 
 ```bash
-cd backend && ../.venv/bin/python -m pytest -q              # isolated, no DB/torch
+cd backend && uvx ruff check . && ../.venv/bin/python -m pytest -q   # isolated, no DB/torch
 cd frontend && npm ci && npm run typecheck && npm run lint && npm test && npm run build
 ```
 
-CI (`.github/workflows/ci.yml`) runs pytest and frontend typecheck/lint/test; Vercel
-runs the build on push, so run it locally too. **Not green = not done.**
+CI (`.github/workflows/ci.yml`) runs backend `ruff check` (F + E9, config in
+`backend/pyproject.toml`) + pytest with coverage, and frontend typecheck/lint/test/build.
+**Not green = not done.**
 
 ## Critical rules
 

@@ -1,6 +1,6 @@
 import multiprocessing
 import threading
-from typing import Callable, Any
+from typing import Callable
 
 class JobRunner:
     """

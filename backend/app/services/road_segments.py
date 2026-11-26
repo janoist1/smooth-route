@@ -60,7 +60,6 @@ from app.services.osm_overpass import (
     tile_of,
     tiles_for_points,
 )
-from app.core.rqi_scale import SCALE
 from app.services.segment_aggregation import (
     FrameObs,
     SegmentConfig,

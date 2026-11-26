@@ -14,4 +14,4 @@ import sys
 # Make the `app` package importable when Vercel runs this file from api/.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.main import app  # noqa: E402  (ASGI app; @vercel/python serves it)
+from app.main import app  # noqa: E402, F401  (ASGI app; @vercel/python serves it by this name)

@@ -3,10 +3,9 @@ Google Colab training provider - exports training data for Colab execution.
 """
 import json
 import os
-import shutil
 import zipfile
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 from app.core.config import settings
 

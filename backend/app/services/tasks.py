@@ -1,7 +1,6 @@
-import threading
 import traceback
 from app.core.timeutil import utcnow
-from app.services.job_service import update_job, JobStatus, create_job
+from app.services.job_service import update_job, JobStatus
 
 def refresh_road_segments(job_id: str, since=None) -> None:
     """Rebuild the road-segment layer after a job changed the frames.
