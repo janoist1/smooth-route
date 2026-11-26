@@ -105,3 +105,27 @@ generated files.
 `npm run typecheck && npm run lint && npm test && npm run build` — full gate list in
 [AGENTS.md](../AGENTS.md). Unit-test saga logic; test a module's public surface
 through its hook.
+
+## What loads first (bundle budget)
+
+Anonymous phone visitors on slow links download only the map. Keep it that way:
+
+- **Pages:** only `HomePage` is in the initial bundle; every other route is
+  `React.lazy` in `components/Routes.tsx` (each its own chunk, Hungarian
+  "Betöltés…" fallback inside `RequireAdmin`).
+- **Barrels:** code that runs at startup (`store.ts`, `sagas/router.ts`, map
+  components) imports reducers, sagas, selectors and hooks **by file**
+  (`modules/training/slice`, `modules/settings/hooks`, …), never through a module
+  barrel that also exports page components — that would pull the page back in.
+- **Clerk** lives only in `modules/auth/ClerkIsland.tsx`, a lazy chunk mounted
+  *beside* the app (not around it) that portals the sign-in / user button into the
+  nav slot (`UserMenu`). Nothing else may import `@clerk/*`. Until the island knows
+  the sign-in state, `useViewer().loading` is true; requests from a visitor with a
+  Clerk session cookie wait (≤ 10 s) for the token.
+- **Vendors:** React, Leaflet and Apollo/GraphQL are separate long-cacheable chunks
+  (`codeSplitting.groups` in `vite.config.ts`). Icons: named `lucide-react` imports
+  are tree-shaken (only used icons ship).
+
+Measured 2026-11-26 (map route, production build): 951 kB raw / 287 kB gzip in one
+file before → 780 kB / 245 kB after; Clerk (90 kB / 25 kB) and the admin pages
+(~85 kB / ~26 kB) load only when needed.

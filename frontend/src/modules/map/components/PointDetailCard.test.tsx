@@ -6,7 +6,7 @@ import type { RoadPointDetail } from '../types'
 // The card only needs these two module hooks; stub them so the test needs no
 // Redux store or Clerk provider.
 vi.mock('../../auth', () => ({ useViewer: () => ({ isAdmin: false }) }))
-vi.mock('../../settings', () => ({ useRqiDisplaySource: () => 'dino' }))
+vi.mock('../../settings/hooks', () => ({ useRqiDisplaySource: () => 'dino' }))
 
 const detail = (capture_date: string | null): RoadPointDetail => ({
   id: 1,

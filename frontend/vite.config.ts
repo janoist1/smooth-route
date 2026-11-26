@@ -29,6 +29,27 @@ export default defineConfig({
       '/previews': proxied,
     },
   },
+  build: {
+    rolldownOptions: {
+      output: {
+        // Big, rarely changing vendors in their own long-cacheable chunks, so
+        // an app deploy does not make returning phone users re-download them.
+        // (Admin pages and Clerk are separate lazy chunks: components/Routes.tsx,
+        // modules/auth/AuthProvider.tsx.)
+        codeSplitting: {
+          groups: [
+            { name: 'vendor-react', test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/, priority: 30 },
+            { name: 'vendor-leaflet', test: /node_modules[\\/](leaflet|react-leaflet|@react-leaflet)[\\/]/, priority: 20 },
+            {
+              name: 'vendor-apollo',
+              test: /node_modules[\\/](@apollo|graphql|rxjs|optimism|@wry|tslib|ts-invariant)[\\/]/,
+              priority: 10,
+            },
+          ],
+        },
+      },
+    },
+  },
   optimizeDeps: {
     exclude: ['@graphql-typed-document-node/core'],
   },

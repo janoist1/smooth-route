@@ -1,7 +1,7 @@
 import React from 'react'
 import type { RoadPointDetail } from '../types'
 import { getRQIColor, resolveRqi, rqiScoreLabelHu, rqiTextColor } from '../../ui'
-import { useRqiDisplaySource } from '../../settings'
+import { useRqiDisplaySource } from '../../settings/hooks'
 import { useViewer } from '../../auth'
 import { formatCaptureAge, formatCaptureDate, isStaleCapture, STALE_AFTER_YEARS } from '../captureDate'
 

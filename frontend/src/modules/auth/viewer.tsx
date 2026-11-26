@@ -1,7 +1,8 @@
-import React from 'react'
+import React, { useSyncExternalStore } from 'react'
 import { gql } from '../graphql'
 import { useQuery } from '@apollo/client/react'
 import { ViewerContext } from './viewerContext'
+import { isAuthSettled, subscribeAuthSettled } from './tokenBridge'
 
 // Role comes from our users table (via the me query), not from Clerk:
 // admins are promoted in the DB, so the token alone never grants admin UI.
@@ -20,9 +21,12 @@ export const ViewerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     fetchPolicy: 'no-cache',
     errorPolicy: 'all',
   })
+  // Not settled = the lazily loaded Clerk island does not know the sign-in
+  // state yet; RequireAdmin must not decide on an anonymous answer.
+  const settled = useSyncExternalStore(subscribeAuthSettled, isAuthSettled, isAuthSettled)
   const viewer = data?.me ?? null
   return (
-    <ViewerContext.Provider value={{ viewer, isAdmin: viewer?.role === 'admin', loading }}>
+    <ViewerContext.Provider value={{ viewer, isAdmin: viewer?.role === 'admin', loading: loading || !settled }}>
       {children}
     </ViewerContext.Provider>
   )
