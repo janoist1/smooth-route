@@ -499,11 +499,19 @@ def age_factor(newest_capture: Optional[dt.date], today: dt.date, a: AgeConfig) 
     return 0.5 ** (max(0.0, years - a.grace_years) / a.half_life_years)
 
 
+# The cap sits one displayed percent below the next level's threshold: the API
+# rounds confidence to 3 decimals and the card shows whole percents, so a cap of
+# nextafter(0.8, 0) came out as `confidence: 0.8` / "közepes (80%)" — exactly
+# the "high" threshold, contradicting its own level.
+UNLABELLED_CAP_MARGIN = 0.01
+
+
 def unlabelled_cap(cfg: SegmentConfig) -> float:
-    """The highest confidence that still reads as ``unlabelled_area.cap_level``."""
+    """The confidence an unlabelled-area segment is capped at: clearly inside
+    ``unlabelled_area.cap_level``, also after API rounding and as a percent."""
     edge = (cfg.confidence.high if cfg.unlabelled_area.cap_level == LEVEL_MEDIUM
             else cfg.confidence.medium)
-    return max(0.0, math.nextafter(edge, 0.0))
+    return max(0.0, round(edge - UNLABELLED_CAP_MARGIN, 3))
 
 
 def apply_unlabelled_area(

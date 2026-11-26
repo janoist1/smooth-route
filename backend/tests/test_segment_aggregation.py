@@ -499,9 +499,20 @@ def test_unlabelled_cap_sits_at_the_top_of_its_level():
     med = make_config(unlabelled_area={"radius_km": 3, "cap_level": "medium"})
     low = make_config(unlabelled_area={"radius_km": 3, "cap_level": "low"})
     assert confidence_level(unlabelled_cap(med), 10, med) == "medium"
-    assert unlabelled_cap(med) == pytest.approx(med.confidence.high)
+    assert unlabelled_cap(med) == pytest.approx(med.confidence.high - 0.01)
     assert confidence_level(unlabelled_cap(low), 10, low) == "low"
-    assert unlabelled_cap(low) == pytest.approx(low.confidence.medium)
+    assert unlabelled_cap(low) == pytest.approx(low.confidence.medium - 0.01)
+
+
+def test_unlabelled_cap_stays_below_the_threshold_once_rounded():
+    # The API rounds confidence to 3 decimals and the card shows whole
+    # percents; neither may land on the next level's threshold.
+    for level in ("medium", "low"):
+        cfg = make_config(unlabelled_area={"radius_km": 3, "cap_level": level})
+        edge = cfg.confidence.high if level == "medium" else cfg.confidence.medium
+        cap = unlabelled_cap(cfg)
+        assert confidence_level(round(cap, 3), 10, cfg) == level
+        assert round(cap * 100) < round(edge * 100)
 
 
 def test_apply_unlabelled_area_only_caps_when_it_lowers():

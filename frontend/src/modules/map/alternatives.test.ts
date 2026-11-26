@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import reducer, { actions } from './slice'
-import { defaultRouteIndex, extraDurationLabel, formatDuration, type RouteAlternative } from './alternatives'
+import { defaultRouteIndex, extraDurationLabel, formatDuration, routePlanErrorMessage, type RouteAlternative } from './alternatives'
 
 const quality = { totalLengthM: 1000, coveredLengthM: 800, lengthByRqi: [800, 0, 0, 0], meanScore: 4, worstSegments: [] }
 const route = (index: number, durationS: number, extra: Partial<RouteAlternative> = {}): RouteAlternative => ({
@@ -48,5 +48,20 @@ describe('map slice: alternatives', () => {
     s = reducer(s, actions.clearRoute())
     expect(s.routeAlternatives).toBeNull()
     expect(s.routePoints).toBeNull()
+  })
+})
+
+describe('routePlanErrorMessage', () => {
+  it('asks to sign in when the API refuses an anonymous plan', () => {
+    // Apollo 4 CombinedGraphQLErrors shape for { code: UNAUTHENTICATED }.
+    const error = { errors: [{ message: 'Authentication required', extensions: { code: 'UNAUTHENTICATED' } }] }
+    expect(routePlanErrorMessage(error)).toBe('Az útvonaltervezéshez jelentkezz be.')
+  })
+
+  it('falls back to a plain Hungarian message (network error, no data, unknown)', () => {
+    const generic = 'Az útvonaltervezés nem sikerült, próbáld újra később.'
+    expect(routePlanErrorMessage(new Error('Failed to fetch'))).toBe(generic)
+    expect(routePlanErrorMessage(undefined)).toBe(generic)
+    expect(routePlanErrorMessage({ errors: [{ extensions: { code: 'INTERNAL' } }] })).toBe(generic)
   })
 })
