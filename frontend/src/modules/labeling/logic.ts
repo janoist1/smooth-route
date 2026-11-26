@@ -1,35 +1,28 @@
 // Pure helpers for the quick-rate screen (unit-tested in logic.test.ts).
+import { RQI_LEVELS, rqiLevel } from '../ui'
+import type { RqiLevel } from '../ui'
 import type { HistoryEntry, LabelStrategy, QueueItem } from './types'
 
-export interface RqiClass {
-  rqi: 1 | 2 | 3 | 4
-  label: string
-  hint: string
-  color: string
-}
+/**
+ * The rating buttons, best → worst: names, colours, rubric text and numeric
+ * values all come from the canonical scale (shared/rqi_scale.json via
+ * modules/ui rqiScale). Nothing about the scale is hard-coded on this page,
+ * so a change of levels or numeric direction there needs no change here.
+ */
+export const RATING_LEVELS: readonly RqiLevel[] = RQI_LEVELS
 
-// Scale definition from docs/TrainingGuide.md (1 = best). 5 is not used.
-export const RQI_CLASSES: RqiClass[] = [
-  { rqi: 1, label: 'Kiváló', hint: 'Új vagy friss burkolat, nincs látható hiba.', color: '#22c55e' },
-  {
-    rqi: 2,
-    label: 'Jó',
-    hint: 'Kis kopás, apró repedés, jó foltozás – a vezetést nem zavarja.',
-    color: '#84cc16',
-  },
-  {
-    rqi: 3,
-    label: 'Közepes',
-    hint: 'Közepes kopás, hálós repedés, kisebb, észrevehető kátyúk.',
-    color: '#f59e0b',
-  },
-  { rqi: 4, label: 'Rossz', hint: 'Jelentős kár, mély kátyúk, nagyon egyenetlen felület.', color: '#ef4444' },
-]
+/** The scale level for a stored / predicted value (undefined when unknown). */
+export const levelOf = (value: number | null | undefined): RqiLevel | undefined =>
+  value == null ? undefined : rqiLevel(value)
+
+const levelValues = RATING_LEVELS.map(l => l.value)
+/** "1–5": the digit keys that rate, as shown in the help text. */
+export const RATING_KEY_RANGE = `${Math.min(...levelValues)}–${Math.max(...levelValues)}`
 
 export const STRATEGIES: { value: LabelStrategy; label: string; hint: string }[] = [
   { value: 'MIXED', label: 'Vegyes', hint: 'Felváltva új helyek és bizonytalan képek' },
   { value: 'DIVERSE', label: 'Új helyek', hint: 'Címkézetlen 1 km-es cellák, Budapest elöl' },
-  { value: 'UNCERTAIN', label: 'Bizonytalan', hint: 'Ahol a modell egy határon áll (1|2, 2|3, 3|4)' },
+  { value: 'UNCERTAIN', label: 'Bizonytalan', hint: 'Ahol a modell két szint határán áll' },
 ]
 
 export const QUEUE_BATCH = 20
@@ -48,9 +41,6 @@ const AREA_LABELS: Record<string, string> = {
 
 export const areaLabel = (area: string): string => AREA_LABELS[area] ?? area
 
-export const rqiClass = (rqi: number | null | undefined): RqiClass | undefined =>
-  RQI_CLASSES.find(c => c.rqi === rqi)
-
 /** Short Hungarian chip: why this frame is in the queue. */
 export const reasonLabel = (item: Pick<QueueItem, 'reason' | 'area' | 'cellLabels' | 'boundary'>): string => {
   if (item.reason === 'uncertain') {
@@ -68,13 +58,13 @@ export type KeyAction =
   | { type: 'zoom' }
   | null
 
-/** Desktop shortcuts: 1–4 rate, → / S skip, ← / Backspace / Z undo, M model, Space zoom. */
+/** Desktop shortcuts: a level's number rates it, → / S skip, ← / Backspace / Z undo, M model, Space zoom. */
 export const keyToAction = (
   key: string,
   modifiers: { ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean } = {},
 ): KeyAction => {
   if (modifiers.ctrlKey || modifiers.metaKey || modifiers.altKey) return null
-  if (key >= '1' && key <= '4' && key.length === 1) return { type: 'rate', rqi: Number(key) }
+  if (/^\d$/.test(key) && levelOf(Number(key))) return { type: 'rate', rqi: Number(key) }
   switch (key) {
     case 'ArrowRight':
     case 's':

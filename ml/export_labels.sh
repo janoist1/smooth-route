@@ -45,11 +45,18 @@ for i in $(seq 1 30); do
   [ "$i" = "30" ] && { echo "ERROR: DB did not become ready." >&2; exit 1; }
 done
 
+# ml/labels.csv is in the ML *severity* orientation (1 = best), whatever the
+# canonical direction in shared/rqi_scale.json is; ml/rqi_scale.py gives the SQL
+# that converts (plain `manual_rqi` today, `(6 - manual_rqi)` after a flip).
+PY="${PY:-.venv/bin/python}"
+[ -x "$PY" ] || PY=python3
+RQI_EXPR=$("$PY" ml/rqi_scale.py --sql td.manual_rqi)
+
 OUT="${OUT:-ml/labels.csv}"
 DB_NAME="${DB_NAME:-smooth_route}"
-echo ">> Dumping labelled rows from $DB_NAME to $OUT ..."
+echo ">> Dumping labelled rows from $DB_NAME to $OUT (manual_rqi := $RQI_EXPR) ..."
 $DC exec -T db psql -U postgres -d "$DB_NAME" -v ON_ERROR_STOP=1 -c \
-"\copy (SELECT td.image_filename, td.manual_rqi, td.tags, td.comment, svi.id AS svi_id, svi.latitude, svi.longitude, CASE WHEN (td.meta_data::jsonb) ? 'quick_label' THEN 'quick' ELSE 'review' END AS source FROM training_data td LEFT JOIN street_view_images svi ON svi.image_url = 'images/' || td.image_filename WHERE td.manual_rqi IS NOT NULL ORDER BY td.image_filename) TO STDOUT WITH CSV HEADER" > "$OUT"
+"\copy (SELECT td.image_filename, $RQI_EXPR AS manual_rqi, td.tags, td.comment, svi.id AS svi_id, svi.latitude, svi.longitude, CASE WHEN (td.meta_data::jsonb) ? 'quick_label' THEN 'quick' ELSE 'review' END AS source FROM training_data td LEFT JOIN street_view_images svi ON svi.image_url = 'images/' || td.image_filename WHERE td.manual_rqi IS NOT NULL ORDER BY td.image_filename) TO STDOUT WITH CSV HEADER" > "$OUT"
 
 N=$(($(wc -l < "$OUT") - 1))
 Q=$(grep -c ',quick$' "$OUT" || true)

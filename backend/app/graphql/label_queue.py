@@ -4,6 +4,7 @@ Own module (merged into the root Query/Mutation in schema.py) so it does not
 collide with other work in queries.py / mutations.py. Everything here is
 admin-only, like the review page; it is not part of the public read schema.
 Logic: app/services/label_queue.py (pure) + label_queue_store.py (DB).
+RQI values here are canonical levels of shared/rqi_scale.json (app.core.rqi_scale).
 """
 from __future__ import annotations
 
@@ -37,9 +38,10 @@ class LabelQueueItem:
     area: str
     uncertainty: Optional[float]
     cell_labels: int
-    boundary: Optional[str]  # nearest decision boundary, e.g. "2|3"
-    # The model's guess. The UI keeps it hidden until the frame is rated
-    # (anchoring bias); it is here so the reveal needs no extra round trip.
+    boundary: Optional[str]  # nearest model decision boundary, e.g. "2|3" (canonical levels)
+    # The model's guess, on the canonical scale (it only predicts the scale's
+    # model_levels). The UI keeps it hidden until the frame is rated (anchoring
+    # bias); it is here so the reveal needs no extra round trip.
     model_score: Optional[float]
     model_rqi: Optional[int]
     model_p_bad: Optional[float]
@@ -70,7 +72,7 @@ class LabelExample:
 @strawberry.input
 class QuickLabelInput:
     point_id: int
-    rqi: int
+    rqi: int  # a level of shared/rqi_scale.json (1..5 today, 1 = Kiváló)
     strategy: Optional[str] = None
     reason: Optional[str] = None
     revealed_model: bool = False
@@ -136,8 +138,8 @@ class LabelQueueQuery:
                 area=it.area,
                 uncertainty=None if it.uncertainty is None else round(it.uncertainty, 3),
                 cell_labels=it.cell_labels,
-                boundary=it.boundary,
-                model_score=None if f.score is None else round(f.score, 3),
+                boundary=store.canonical_boundary(it.boundary),
+                model_score=None if f.score is None else round(store.canonical_score(f.score), 3),
                 model_rqi=store.model_rqi(f.score, cuts),
                 model_p_bad=None if f.p_bad is None else round(f.p_bad, 3),
             ))
@@ -150,7 +152,7 @@ class LabelQueueQuery:
 
     @strawberry.field(permission_classes=[IsAdmin])
     def label_examples(self, per_class: int = 1) -> List[LabelExample]:
-        """Rubric thumbnails: clear, already-labelled exemplars per RQI 1-4."""
+        """Rubric thumbnails: clear, already-labelled exemplars for every RQI level."""
         from app.services import label_queue_store as store
 
         db = get_db_session()
@@ -166,7 +168,7 @@ class LabelQueueQuery:
 class LabelQueueMutation:
     @strawberry.mutation(permission_classes=[IsAdmin])
     def quick_label(self, info: strawberry.Info, input: QuickLabelInput) -> QuickLabelResult:
-        """Write manual_rqi (1-4) for one frame into training_data."""
+        """Write manual_rqi (any level of the RQI scale) for one frame into training_data."""
         from app.services import label_queue_store as store
 
         context = {k: v for k, v in {

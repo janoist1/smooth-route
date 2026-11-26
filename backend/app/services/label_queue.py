@@ -20,6 +20,10 @@ already-labelled street teaches the model almost nothing.
   labels.
 - ``mixed`` (default): diverse and uncertain picks interleaved.
 
+Orientation: scores and cut-points here are in the model's fixed severity
+orientation (1 = best); the GraphQL layer converts to the canonical scale
+(shared/rqi_scale.json).
+
 Every strategy drops frames closer than ``LABEL_RADIUS_M`` to a labelled frame
 and never returns two frames from the same panorama or closer than
 ``DUP_RADIUS_M`` to each other (or to the ids the client already holds).

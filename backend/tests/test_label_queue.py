@@ -261,6 +261,34 @@ def test_model_rqi_uses_the_cut_points():
     assert model_rqi(3.9, CUTS) == 4
 
 
+def test_every_scale_level_can_be_labelled_and_nothing_else():
+    from app.core.rqi_scale import SCALE
+    from app.services import label_queue_store as store
+
+    assert store.VALID_RQI == tuple(SCALE.values)
+    assert SCALE.worst in store.VALID_RQI  # Nagyon rossz: never predicted, still labelable
+    for bad in (SCALE.best - 1, SCALE.worst + 1):
+        # Validation runs before any DB access (db=None would fail later).
+        with pytest.raises(store.QuickLabelError):
+            store.save_quick_label(None, 1, bad)
+
+
+def test_model_outputs_are_converted_to_the_canonical_direction(monkeypatch):
+    from app.core.rqi_scale import SCALE
+    from app.services import label_queue_store as store
+
+    # Today the canonical scale is the severity orientation: identities.
+    assert store.canonical_boundary("2|3") == "2|3"
+    assert store.canonical_score(2.4) == pytest.approx(2.4)
+    # After a direction flip only the conversion changes, not the queue logic.
+    monkeypatch.setattr(store, "SCALE", SCALE.mirrored())
+    lo, hi = SCALE.best, SCALE.worst
+    assert store.model_rqi(1.0, CUTS) == lo + hi - 1
+    assert store.canonical_boundary("1|2") == f"{lo + hi - 1}|{lo + hi - 2}"
+    assert store.canonical_score(1.0) == pytest.approx(lo + hi - 1.0)
+    assert store.canonical_boundary(None) is None
+
+
 # --- GraphQL wiring (guards fire before any resolver touches the DB) --------
 
 @pytest.fixture(scope="module")

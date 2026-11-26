@@ -41,8 +41,8 @@ is **not** on the public read schema.
 | Operation | Purpose |
 |---|---|
 | `labelQueue(strategy: MIXED\|UNCERTAIN\|DIVERSE, limit, excludeIds)` | next frames + why (`reason`, `area`, `boundary`, `uncertainty`, `cellLabels`) + the model guess (`modelScore/modelRqi/modelPBad`, hidden in the UI until rated) + `stats` |
-| `labelExamples(perClass)` | rubric thumbnails: integer-labelled frames whose out-of-fold prediction agrees best with the label (`ml/cache/oof_table.csv`) |
-| `quickLabel(input: {pointId, rqi 1–4, strategy, reason, revealedModel, elapsedMs})` | upserts `training_data.manual_rqi` (same row shape as `saveTrainingData`; annotations/tags/comment kept); context in `meta_data.quick_label` |
+| `labelExamples(perClass)` | rubric thumbnails for every scale level: integer-labelled frames whose out-of-fold prediction agrees best with the label (`ml/cache/oof_table.csv`); levels without OOF rows (Nagyon rossz) fall back to the live model score |
+| `quickLabel(input: {pointId, rqi, strategy, reason, revealedModel, elapsedMs})` — `rqi` is any level of `shared/rqi_scale.json` (1 = Kiváló … 5 = Nagyon rossz today) | upserts `training_data.manual_rqi` (same row shape as `saveTrainingData`; annotations/tags/comment kept); context in `meta_data.quick_label` |
 | `undoQuickLabel(pointId)` | reverts a quick label: deletes a row it created (if nobody annotated it), else restores the previous `manual_rqi`; never touches review-page labels |
 
 Selection (pure logic, `app/services/label_queue.py`, tested in
@@ -53,7 +53,10 @@ ordinal cut-point, round-robin over the 1|2, 2|3, 3|4 boundaries, near-ties
 Budapest first. **diverse** = ≥ 150 m thinning, one frame per 1 km cell per
 round (the spatial-CV grid of `ml/spatial_cv.py`), emptiest cell first,
 Budapest first, then areas with the fewest labels. **mixed** (default)
-interleaves the two. Scores: `analysis_metadata.dino_score` when present,
+interleaves the two. Model outputs (`modelScore`, `modelRqi`, `boundary`) are
+converted from the model's severity orientation to the canonical scale direction
+(`app.core.rqi_scale`); the model only predicts the scale's `model_levels` (1–4),
+which is why the queue is also how Nagyon rossz labels get collected. Scores: `analysis_metadata.dino_score` when present,
 else `data/cache/frame_scores.csv` (`backend/scripts/score_frames.py`, same
 v2 artifact, DB untouched).
 

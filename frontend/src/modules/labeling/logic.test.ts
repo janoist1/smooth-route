@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
+import { RQI_LEVELS } from '../ui'
 import {
   agreement,
   canUndo,
@@ -6,12 +7,15 @@ import {
   imageSrc,
   isOldCapture,
   keyToAction,
+  levelOf,
   loadSkipped,
   loadStrategy,
   mergeQueue,
   needsRefill,
   prefetchUrls,
   pushHistory,
+  RATING_KEY_RANGE,
+  RATING_LEVELS,
   reasonLabel,
   REFILL_AT,
   saveSkipped,
@@ -32,12 +36,28 @@ export const item = (id: number, extra: Partial<QueueItem> = {}): QueueItem => (
   ...extra,
 })
 
+describe('rating levels come from the shared scale', () => {
+  it('uses every level of the canonical scale, best to worst', () => {
+    expect(RATING_LEVELS).toBe(RQI_LEVELS)
+    expect(RATING_LEVELS.map(l => l.label_hu)).toEqual(['Kiváló', 'Jó', 'Közepes', 'Rossz', 'Nagyon rossz'])
+  })
+
+  it('looks levels up by stored value', () => {
+    for (const level of RATING_LEVELS) expect(levelOf(level.value)).toBe(level)
+    expect(levelOf(null)).toBeUndefined()
+    expect(levelOf(99)).toBeUndefined()
+  })
+})
+
 describe('keyToAction', () => {
-  it('maps 1-4 to ratings and ignores other digits', () => {
-    expect(keyToAction('1')).toEqual({ type: 'rate', rqi: 1 })
-    expect(keyToAction('4')).toEqual({ type: 'rate', rqi: 4 })
-    expect(keyToAction('5')).toBeNull()
+  it('maps the digit of every scale level to a rating, other digits to nothing', () => {
+    for (const level of RATING_LEVELS) {
+      expect(keyToAction(String(level.value))).toEqual({ type: 'rate', rqi: level.value })
+    }
+    const values = RATING_LEVELS.map(l => l.value)
+    expect(keyToAction(String(Math.max(...values) + 1))).toBeNull()
     expect(keyToAction('0')).toBeNull()
+    expect(RATING_KEY_RANGE).toBe(`${Math.min(...values)}–${Math.max(...values)}`)
   })
 
   it('maps arrows and letters to skip / undo / reveal / zoom', () => {

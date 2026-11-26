@@ -11,6 +11,11 @@
   comments on a row are kept; the quick-label context goes into
   ``meta_data.quick_label`` so undo can restore the previous state.
 
+Scale: label values are the canonical levels of shared/rqi_scale.json
+(``app.core.rqi_scale.SCALE``, 1..5 today, 5 = Nagyon rossz). Model scores,
+cut-points and the OOF table are in the fixed *severity* orientation (1 = best)
+and are converted with ``SCALE.from_severity`` before they leave this module.
+
 Torch-free: the cut-points are read from the joblib artifact (sklearn only).
 """
 from __future__ import annotations
@@ -28,12 +33,13 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.paths import data_path
+from app.core.rqi_scale import SCALE
 from app.core.timeutil import utcnow
 from app.services import label_queue as lq
 
 SCORE_CACHE_FIELDS = ["image_filename", "score", "p_bad", "model_version"]
 QUICK_LABEL_AGENT = "quick-label"
-VALID_RQI = (1, 2, 3, 4)
+VALID_RQI = tuple(SCALE.values)  # every level can be labelled, incl. ones the model never predicts
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 MODEL_PATH = _PROJECT_ROOT / "ml" / "cache" / "rqi_model.joblib"
@@ -67,10 +73,24 @@ def cut_points() -> tuple[float, ...]:
 
 
 def model_rqi(score: Optional[float], cuts: Iterable[float]) -> Optional[int]:
-    """RQI class from a continuous score, same rule as dino_service.rqi_from_score."""
+    """Canonical RQI level of a continuous severity score (same cut rule as
+    dino_service.rqi_from_score, then converted to the scale's direction)."""
     if score is None:
         return None
-    return 1 + sum(1 for c in cuts if score >= c)
+    return int(SCALE.from_severity(1 + sum(1 for c in cuts if score >= c)))
+
+
+def canonical_score(score: Optional[float]) -> Optional[float]:
+    """Continuous severity score (1 = best) on the canonical scale."""
+    return None if score is None else float(SCALE.from_severity(score))
+
+
+def canonical_boundary(label: Optional[str]) -> Optional[str]:
+    """Severity boundary "2|3" on the canonical scale (identity today)."""
+    if not label:
+        return label
+    a, b = (int(x) for x in label.split("|"))
+    return f"{SCALE.from_severity(a)}|{SCALE.from_severity(b)}"
 
 
 # --- score cache + image listing ---------------------------------------------
@@ -338,30 +358,41 @@ def _oof_errors() -> dict[str, float]:
 
 
 def label_examples(db: Session, per_class: int = 1) -> list[tuple[int, int, str]]:
-    """(rqi, point id, filename) of clear labelled exemplars per class 1-4.
+    """(level, point id, filename) of clear labelled exemplars for every level.
 
     Integer labels only. "Clear" = the honest out-of-fold model prediction
-    agrees best with the human label (the least ambiguous frames), so the
-    rubric shows textbook cases, not borderline ones. Several examples of one
-    class are at least EXAMPLE_SPACING_M apart (not the same street twice).
-    Without the OOF table, the oldest labels are used.
+    agrees best with the human label (ml/cache/oof_table.csv); levels the model
+    was not trained on (Nagyon rossz) fall back to the live model score, so the
+    most severe-looking labelled frame wins instead of a mislabelled non-road
+    image. Several examples of one level are EXAMPLE_SPACING_M apart.
     """
     per_class = max(1, min(int(per_class), 6))
     rows = db.execute(text(
-        "SELECT td.manual_rqi, svi.id, td.image_filename, svi.latitude, svi.longitude "
+        "SELECT td.manual_rqi, svi.id, td.image_filename, svi.latitude, svi.longitude, "
+        "svi.analysis_metadata->>'dino_score' "
         "FROM training_data td "
         "JOIN street_view_images svi ON svi.image_url = 'images/' || td.image_filename "
-        "WHERE td.manual_rqi IN (1, 2, 3, 4) "
+        "WHERE td.manual_rqi = ANY(:levels) "
         "ORDER BY td.created_at, td.id"
-    )).all()
+    ), {"levels": [float(v) for v in VALID_RQI]}).all()
     files = image_files()
     errors = _oof_errors()
+    cache = load_score_cache()
     by_class: dict[int, list[tuple[float, int, int, str, float, float]]] = {
         r: [] for r in VALID_RQI}
-    for order, (rqi, pid, name, lat, lon) in enumerate(rows):
+    for order, (rqi, pid, name, lat, lon, score) in enumerate(rows):
         if name not in files:
             continue
-        by_class[int(rqi)].append((errors.get(name, 9.0), order, pid, name, lat, lon))
+        # Honest OOF agreement first (|severity difference| is direction-free);
+        # the live model score (in-sample for training images, so optimistic)
+        # only ranks frames without an OOF row, e.g. every Nagyon rossz label.
+        gap = errors.get(name)
+        if gap is None:
+            s = _float(score)
+            if s is None and name in cache:
+                s = cache[name][0]
+            gap = 10.0 + (abs(canonical_score(s) - rqi) if s is not None else 9.0)
+        by_class[int(rqi)].append((gap, order, pid, name, lat, lon))
     out = []
     for rqi in VALID_RQI:
         taken = lq.PointIndex(EXAMPLE_SPACING_M)

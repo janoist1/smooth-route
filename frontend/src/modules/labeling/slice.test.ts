@@ -45,6 +45,11 @@ describe('rating', () => {
     expect(s.lastResult?.item.id).toBe(1)
   })
 
+  it('accepts every scale level, including one the model never predicts', () => {
+    const s = reducer(withQueue([1, 2]), actions.rate({ id: 1, rqi: 5 }))
+    expect(s.outbox[0]).toMatchObject({ kind: 'save', rqi: 5 })
+  })
+
   it('ignores a double tap (stale id) so the next frame is not rated by accident', () => {
     let s = reducer(withQueue([1, 2]), actions.rate({ id: 1, rqi: 3 }))
     s = reducer(s, actions.rate({ id: 1, rqi: 4 }))

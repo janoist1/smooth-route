@@ -19,10 +19,12 @@ import {
   isOldCapture,
   keyToAction,
   reasonLabel,
-  rqiClass,
-  RQI_CLASSES,
+  levelOf,
+  RATING_KEY_RANGE,
+  RATING_LEVELS,
   STRATEGIES,
 } from '../logic'
+import type { RqiLevel } from 'modules/ui'
 import type { LabelExample, QueueItem } from '../types'
 
 interface QuickLabelViewProps {
@@ -85,9 +87,9 @@ const Kbd: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 
 const modelLine = (item: QueueItem): string => {
   if (item.modelRqi == null || item.modelScore == null) return 'Modell: nincs becslés'
-  const cls = rqiClass(item.modelRqi)
+  const level = levelOf(item.modelRqi)
   const pBad = item.modelPBad == null ? '' : ` · P(rossz) ${Math.round(item.modelPBad * 100)}%`
-  return `Modell: ${item.modelRqi} ${cls?.label ?? ''} (${item.modelScore.toFixed(2)})${pBad}`
+  return `Modell: ${level?.label_hu ?? item.modelRqi} (${item.modelScore.toFixed(2)})${pBad}`
 }
 
 const Frame: React.FC<{ item: QueueItem; zoom: boolean; reveal: boolean; onToggleZoom: () => void }> = ({
@@ -148,61 +150,75 @@ const LastResultLine: React.FC<{ last: { item: QueueItem; rqi: number } | null }
   if (!last) {
     return <span style={{ color: '#64748b' }}>Értékelés után itt látod a modell tippjét.</span>
   }
-  const human = rqiClass(last.rqi)
+  const human = levelOf(last.rqi)
   const verdict = agreement(last.rqi, last.item.modelRqi)
   const color = verdict === 'same' ? '#4ade80' : verdict === 'near' ? '#fbbf24' : verdict === 'far' ? '#f87171' : '#94a3b8'
   return (
     <span>
-      Előző: <b style={{ color: human?.color }}>{last.rqi} {human?.label}</b>
+      Előző: <b style={{ color: human?.color }}>{human?.label_hu ?? last.rqi}</b>
       <span style={{ color }}> · {modelLine(last.item)}</span>
     </span>
   )
 }
 
+// Name first (that is what the rater decides on), the stored number secondary.
 const RateButton: React.FC<{
-  rqi: number
+  level: RqiLevel
   example?: LabelExample
   disabled: boolean
   onRate: (rqi: number) => void
-}> = ({ rqi, example, disabled, onRate }) => {
-  const cls = rqiClass(rqi)!
-  return (
-    <button
-      className="ql-btn"
-      disabled={disabled}
-      onClick={() => onRate(rqi)}
-      aria-label={`${rqi} – ${cls.label}`}
+}> = ({ level, example, disabled, onRate }) => (
+  <button
+    className="ql-btn"
+    disabled={disabled}
+    onClick={() => onRate(level.value)}
+    aria-label={level.label_hu}
+    title={`${level.label_hu} (${level.value})`}
+    style={{
+      position: 'relative',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'stretch',
+      gap: 4,
+      padding: 3,
+      minHeight: 84,
+      borderRadius: 12,
+      border: `2px solid ${level.color}`,
+      background: `${level.color}26`,
+      color: '#fff',
+      overflow: 'hidden',
+    }}>
+    {example ? (
+      <img
+        src={imageSrc(example.imageUrl)}
+        alt=""
+        draggable={false}
+        style={{ width: '100%', height: 'clamp(34px, 7.5dvh, 84px)', objectFit: 'cover', objectPosition: '50% 85%', borderRadius: 8 }}
+      />
+    ) : (
+      <div style={{ height: 'clamp(34px, 7.5dvh, 84px)' }} />
+    )}
+    <span
       style={{
+        flex: 1,
         display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'stretch',
-        gap: 4,
-        padding: 4,
-        minHeight: 76,
-        borderRadius: 12,
-        border: `2px solid ${cls.color}`,
-        background: `${cls.color}26`,
-        color: '#fff',
-        overflow: 'hidden',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: 'clamp(12px, 3.6vw, 16px)',
+        fontWeight: 700,
+        lineHeight: 1.1,
+        textAlign: 'center',
+        overflowWrap: 'anywhere',
       }}>
-      {example ? (
-        <img
-          src={imageSrc(example.imageUrl)}
-          alt=""
-          draggable={false}
-          style={{ width: '100%', height: 'clamp(36px, 8dvh, 84px)', objectFit: 'cover', objectPosition: '50% 85%', borderRadius: 8 }}
-        />
-      ) : (
-        <div style={{ height: 'clamp(36px, 8dvh, 84px)' }} />
-      )}
-      <span style={{ fontSize: 20, fontWeight: 700, lineHeight: 1 }}>
-        {rqi}
-        <Kbd>{rqi}</Kbd>
-      </span>
-      <span style={{ fontSize: 12, fontWeight: 600, color: cls.color }}>{cls.label}</span>
-    </button>
-  )
-}
+      {level.label_hu}
+    </span>
+    <span
+      aria-hidden="true"
+      style={{ position: 'absolute', top: 5, left: 6, fontSize: 11, fontWeight: 600, color: '#fff', opacity: 0.85, textShadow: '0 0 3px #000' }}>
+      {level.value}
+    </span>
+  </button>
+)
 
 const Rubric: React.FC<{ examples: LabelExample[]; onClose: () => void }> = ({ examples, onClose }) => (
   <div
@@ -222,32 +238,32 @@ const Rubric: React.FC<{ examples: LabelExample[]; onClose: () => void }> = ({ e
         padding: '12px 12px calc(12px + env(safe-area-inset-bottom))',
       }}>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
-        <b style={{ fontSize: 15 }}>Skála (1 = legjobb)</b>
+        <b style={{ fontSize: 15 }}>Skála – a legjobbtól a legrosszabbig</b>
         <button className="ql-btn" onClick={onClose} aria-label="Bezárás" style={{ marginLeft: 'auto', background: 'none', color: '#cbd5e1', padding: 6 }}>
           <X size={20} />
         </button>
       </div>
-      {RQI_CLASSES.map(cls => {
-        const ex = examples.find(e => e.rqi === cls.rqi)
+      {RATING_LEVELS.map(level => {
+        const ex = examples.find(e => e.rqi === level.value)
         return (
-          <div key={cls.rqi} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '6px 0', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+          <div key={level.value} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '6px 0', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
             {ex ? (
-              <img src={imageSrc(ex.imageUrl)} alt={`Példa: ${cls.label}`} style={{ width: 132, height: 88, objectFit: 'cover', borderRadius: 8, flexShrink: 0 }} />
+              <img src={imageSrc(ex.imageUrl)} alt={`Példa: ${level.label_hu}`} style={{ width: 132, height: 88, objectFit: 'cover', borderRadius: 8, flexShrink: 0 }} />
             ) : (
               <div style={{ width: 132, height: 88, borderRadius: 8, background: '#1f2937', flexShrink: 0 }} />
             )}
             <div>
-              <div style={{ fontWeight: 700, color: cls.color }}>
-                {cls.rqi} – {cls.label}
+              <div style={{ fontWeight: 700, color: level.color }}>
+                {level.label_hu} <span style={{ color: '#94a3b8', fontWeight: 400, fontSize: 12 }}>({level.value})</span>
               </div>
-              <div style={{ fontSize: 13, color: '#cbd5e1' }}>{cls.hint}</div>
+              <div style={{ fontSize: 13, color: '#cbd5e1' }}>{level.rubric_hu}</div>
             </div>
           </div>
         )
       })}
       <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 8 }}>
         A kép alsó részét (az útfelületet) értékeld. Nem út, takarja egy autó, vagy nem eldönthető? → Kihagyás.
-        Billentyűk: 1–4 értékel, → kihagy, ← visszavon, M modell, szóköz nagyít.
+        Billentyűk: a gomb sarkában lévő szám ({RATING_KEY_RANGE}) értékel, → kihagy, ← visszavon, M modell, szóköz nagyít.
       </div>
     </div>
   </div>
@@ -355,12 +371,19 @@ export const QuickLabelView: React.FC<QuickLabelViewProps> = ({ onBack }) => {
         <LastResultLine last={q.lastResult} />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 6, padding: '6px 12px', ...rowWidth }}>
-        {RQI_CLASSES.map(cls => (
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: `repeat(${RATING_LEVELS.length}, minmax(0, 1fr))`,
+          gap: 4,
+          padding: '6px 10px',
+          ...rowWidth,
+        }}>
+        {RATING_LEVELS.map(level => (
           <RateButton
-            key={cls.rqi}
-            rqi={cls.rqi}
-            example={q.examples.find(e => e.rqi === cls.rqi)}
+            key={level.value}
+            level={level}
+            example={q.examples.find(e => e.rqi === level.value)}
             disabled={!current}
             onRate={q.rate}
           />
