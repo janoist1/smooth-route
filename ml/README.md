@@ -85,6 +85,10 @@ vágópont-hangolás. Minden kép koordinátája az `ml/image_coords.csv` fájlb
   (különösen Budapest); a 2-es osztály élesítése; szakaszszintű aggregálás a
   termékben. Részletek:
   [../docs/MODEL_EXPERIMENTS.md](../docs/MODEL_EXPERIMENTS.md) (6. korszak).
+- **Segment-level aggregation (2026-11-26):** `ml/segment_eval.py` measures how
+  per-frame predictions turn into road-segment quality under the same spatial
+  protocol; the recipe the backend applies is `ml/segment_recipe.json`. See
+  [../docs/MODEL_EXPERIMENTS.md](../docs/MODEL_EXPERIMENTS.md) (Era 7).
 
 ### v2 (2026-07-03, DINOv2-small CLS+patch + hangolt SVR-RBF, 5-fold CV)
 
@@ -139,6 +143,7 @@ bash ml/export_labels.sh                       # -> ml/labels.csv (Docker kell)
 .venv/bin/python ml/compare_candidates.py      # kihívók páros összevetése a bajnokkal
 .venv/bin/python ml/save_model_v2.py           # végső artifact -> ml/cache/rqi_model.joblib
 .venv/bin/python ml/evaluate_artifact.py       # ÉLESÍTÉSI KAPU: PASS kell a shiphez
+.venv/bin/python ml/segment_eval.py            # segment-level evaluation (--write-recipe -> ml/segment_recipe.json)
 ```
 
 Régi (v1) szkriptek: `ml/legacy/` (`extract_features.py`, `train.py`, `save_model.py`) —

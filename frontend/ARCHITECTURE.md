@@ -1,207 +1,107 @@
-# Frontend Framework Architektúra
+# Frontend architecture
 
-Ez a dokumentum a Smooth Route frontend rendszerének technikai alapjait és tervezési filozófiáját írja le. Célja, hogy bevezesse az új fejlesztőket a "Framework First" gondolkodásmódba, amely megkülönbözteti ezt a projektet a hagyományos React alkalmazásoktól.
+Everything needed for work in `frontend/`; for the backend API see
+[docs/API_SURFACE.md](../docs/API_SURFACE.md). Stack: React 19, Vite 8, Redux
+Toolkit + redux-saga (`saga-toolkit`), Apollo Client 4 (transport only),
+react-leaflet, Clerk, Vitest 4. Node 22+. UI text is Hungarian; code and comments
+are English.
 
----
-
-## 1. Tervezési Filozófia: Inversion of Control
-
-Egy hagyományos kliens oldali alkalmazásban gyakran a UI komponensek vezérlik az üzleti logikát (pl. `useEffect`-ben indított adatlekérések). Ez azonban skálázódási problémákhoz, "Waterfall" betöltéshez és nehezen tesztelhető kódhoz vezet.
-
-Ebben a projektben **megfordítottuk a vezérlést (Inversion of Control)**:
-
-- **A Keretrendszer (The Engine)**: Felelős az alkalmazás életciklusáért, a navigáció koordinálásáért és az erőforrások menedzseléséért.
-- **A Modulok (Feature Modules)**: Kizárólag a domén-specifikus szabályokat és a megjelenítést tartalmazzák, reagálva a Keretrendszer utasításaira.
-
----
-
-## 2. Architektúrális Pillérek
-
-### A. Universal Modular Architecture (UMA)
-
-A kódbázis nem technikai rétegek (views, controllers), hanem **üzleti funkciók** szerint szerveződik. Minden modul egy önálló egység, szigorúan definiált határokkal.
+## Layout: two levels
 
 ```text
-src/modules/training/
-├── components/       # UI (Buta komponensek)
-│   └── TrainingView.tsx
-├── hooks.ts          # Controller (Public API a UI felé)
-├── index.ts          # Gatekeeper (Public API a rendszer felé)
-├── sagas.ts          # Side Effects (API hívás, mentés)
-├── slice.ts          # State (Redux)
-└── types.ts          # TypeScript interfészek
+src/
+├── components/        # Level 0 — view assembly: App, Routes, pages/
+├── sagas/             # Level 0 — cross-module flows (app start, router)
+├── store.ts, routes.ts
+└── modules/<name>/    # Level 1 — feature modules: map, training, settings, auth, api, app, graphql, routing, ui
+    ├── slice.ts       # state + actions
+    ├── sagas.ts       # side effects (API calls); exports an ARRAY of effects, not a generator
+    ├── selectors.ts
+    ├── hooks.ts       # the module's public face to React ("power hook": useMap, useTraining, …)
+    ├── components/    # the module's dumb UI components
+    └── index.ts       # gatekeeper: only what is exported here is public
 ```
 
-**Szabály**: Komponens sosem importálhat a `slice.ts`-ből vagy `sagas.ts`-ből. Kizárólag a `hooks.ts` és `index.ts` érhető el kívülről.
+A new module can start as a single `index.ts`; add folders only when needed.
 
-### B. Központi Saga Vezérlés (Orchestration)
+## Rules (mandatory)
 
-#### 1. Blocking App Start (Initialization Guard)
+1. **Dependency direction:** Level 1 (`modules/*`) never imports from Level 0.
+2. **Public API only:** modules and components reach a module only through its
+   `index.ts` / `hooks.ts`. Components never import `slice`, `sagas` or
+   `selectors` — enforced by the ESLint `no-restricted-imports` rule.
+3. **Data sovereignty:** a module's state is changed only by its own reducer;
+   everyone else dispatches actions.
+4. **Smart sagas, dumb components:** components do not fetch in `useEffect`; they
+   render what the hook returns.
+5. **Type safety:** no `@ts-ignore`.
 
-Az alkalmazás indításakor a UI (`App.tsx`) jelez a rendszernek, hogy készen áll. Ez indítja el a blokkoló szinkronizációs folyamatot.
+## Established patterns
 
-```typescript
-// App.tsx
+- **Navigation-driven fetching.** `sagas/router.ts` waits for app start
+  (`waitForAppStart`), then on `LOCATION_CHANGE` dispatches the per-route load
+  action (e.g. `/training/:id/review` → `trainingActions.fetchImage`). This gives
+  deep links for free and avoids component fetch waterfalls.
+- **Redux is the single source of truth; Apollo is transport.** The client runs
+  with `fetchPolicy: 'no-cache'` (`modules/graphql/client.ts`); sagas put responses
+  straight into the store and the UI reads from there.
+- **Async vs. signal actions.** When the UI needs `pending/fulfilled/rejected`:
+  `createSagaAction<Result, Arg>` (note the generic order: *output, input*) +
+  `takeLatestAsync`. Fire-and-forget (e.g. `reconnectJob`): plain `createAction` +
+  `takeLatest`.
+- **Job polling (long background jobs).** (1) On cancel, the `finally` block checks
+  `yield cancelled()` → clean up only, never dispatch a result. (2) A poller forked
+  under `takeLatestAsync` is *attached*: the parent's `fulfilled` runs after the
+  poller, so it must not rewrite the job status. (3) The reducer refuses
+  `completed → running` (only a new job id may restart). (4) After a page reload a
+  finished job is not shown again — only jobs that are actually running.
+- **Derived state:** compute derivable values (e.g. `loading`) in selectors/hooks;
+  don't store them.
+- **DevTools:** the action/state sanitizers in `store.ts` truncate big point
+  payloads; they only speed up DevTools.
+- **RQI display logic** lives in one place: `modules/ui/utils/rqi.ts`.
 
-const AppContent: React.FC = () => {
-  useAppStart() // 2. App start esemény
-  const app = useApp()
+## Map layers and road segments
 
-  if (app.loading) {
-    return <div style={{ color: 'white', padding: 20 }}>Loading...</div>
-  }
-  ...
-}
+What the map draws depends on the zoom (single rule: `layersForZoom` in
+`modules/map/segments/style.ts`, used by both the router saga and `MapView`):
 
-// routerSaga.ts (The Guard)
-function* routerSaga() {
-  // 1. Várakozás a rendszer felállására (BLOCKING)
-  yield call(waitForAppStart)
+| Zoom | Layer | Source |
+|---|---|---|
+| < 13 | quality grid (average RQI per cell) | `roadQualityGrid` |
+| 13–15 | road segments | `roadSegments(bbox, zoom)` |
+| ≥ 16 | road segments + clickable frame dots | `roadSegments` + `points` |
 
-  // 3. Csak ezután indulhat a navigáció figyelése
-  yield takeLatest(LOCATION_CHANGE, handleLocationChange)
-}
-```
+Below zoom 16 the frame dots only appear around a selected segment. If the
+backend does not know `roadSegments` (older deploy), the first failed request
+flips `roads.supported` and the map keeps the legacy split (grid < 14, dots ≥ 14).
 
-#### 2. Navigation Driven Data Fetching
+`modules/map/segments/` is a sub-module of `modules/map` with the usual layout
+(own slice under the store key `roads`, sagas, selectors, `hooks.ts`):
 
-Az adatbetöltés nem komponens életciklushoz, hanem útvonalváltáshoz kötött.
+- `style.ts`, `labels.ts`, `routeSummary.ts`, `geometry.ts` — pure rules
+  (drawing, Hungarian wording, route maths); unit-tested, no React/Leaflet.
+- `api.ts` — the GraphQL documents. Hand-typed `TypedDocumentNode`s until
+  `npm run codegen` has seen the new schema; then drop the manual types.
+- `sagas.ts` — `fetchSegments` is debounced and cancelled (`takeLatestAsync` +
+  `delay`); `fetchRouteQuality` runs when `planRoute` succeeds.
+- `mock.ts` — deterministic stand-in for the two queries. Enable with
+  `VITE_MOCK_SEGMENTS=1`, or in the dev server with `?mockSegments=1`
+  (`&mockCoverage=0` shows the "no data" route summary).
 
-```typescript
-// routerSaga.ts
-function* handleLocationChange(action) {
-  const { pathname } = action.payload
+Components: `SegmentLayer` (imperative Leaflet layer on the shared canvas),
+`SegmentDetailCard`, `RouteQualityCard` (inside `RoutePlanner`), `MapLegend`.
+Layout that changes on a phone lives in `components/roadCards.css` (breakpoint
+600 px, mirrored by `modules/map/screen.ts`).
 
-  // Ha a training oldalra léptünk...
-  if (matchPath(pathname, '/training/:id')) {
-    const id = extractId(pathname)
+## GraphQL types
 
-    // ...utasítjuk a modult az inicializálásra.
-    // A komponensnek nem kell tudnia róla, hogy ez most történik.
-    yield put(trainingActions.fetchImage(id))
-  }
-}
-```
+Types are generated (`modules/graphql/generated/`): with the backend running,
+`npm run codegen` (the `postcodegen` step runs `patch-apollo.sh`). Never hand-edit
+generated files.
 
-### C. Type-Safe Tooling
+## Gates
 
-A `saga-toolkit` segítségével összekötjük az Action-t a Saga Handlerrel, így a típusosság végig megmarad.
-
-```typescript
-// Definíció (slice.ts)
-// Input: number (ID) -> Output: TrainingData
-export const fetchImage = createSagaAction<number, TrainingData>('training/fetch')
-
-// Használat (sagas.ts)
-// A rendszer automatikusan tudja, hogy a payload 'number'
-yield takeLatestAsync(fetchImage.type, function* (action) {
-  const id = action.payload // number
-  // ...
-})
-```
-
-### D. Saga Pattern: Array of Effects
-
-A redundáns csomagolás (`function* rootSaga() { yield all(...) }`) elkerülése érdekében a modulok sagái **nem generator függvényt**, hanem **effekt tömböt** (`ForkEffect[]`) exportálnak.
-
-```typescript
-// modules/myModule/sagas.ts
-export default [
-  takeLatest(actions.fetch.type, fetchWorker),
-  takeLatest(actions.save.type, saveWorker),
-]
-
-// store.ts
-function* rootSaga() {
-  yield all([...mapSagas, ...trainingSagas])
-}
-```
-
-Ez tisztább, deklaratívabb kódot eredményez és könnyebb összeilleszteni a modulokat a főágban.
-
----
-
-## 3. Implementációs Útmutató (Workflow)
-
-Új funkció fejlesztésekor kövesd szigorúan ezt a lépéssort:
-
-### 1. Adatmodell (`slice.ts`)
-
-Definiáld az állapotot és a szinkron módosítókat. Használd a `createSagaAction`-t aszinkron műveletekhez.
-
-```typescript
-const slice = createSlice({
-  name: 'training',
-  initialState,
-  reducers: {}, // Csak szinkron műveletek
-  extraReducers: builder => {
-    // Reagálás az aszinkron folyamatokra
-    builder.addCase(fetchImage.pending, state => {
-      state.loading = true // Azonnali feedback
-    })
-    builder.addCase(fetchImage.fulfilled, (state, { payload }) => {
-      state.data = payload
-      state.loading = false
-    })
-  },
-})
-```
-
-### 2. Üzleti Logika (`sagas.ts`)
-
-Implementáld a mellékhatásokat. Itt történik az API kommunikáció és a komplex logika.
-
-```typescript
-function* fetchImageWorker(action) {
-  try {
-    // GraphQL hívás
-    const data = yield call(api.getTrainingData, action.payload)
-    // Siker -> Reducer frissítése
-    yield put(fetchImage.fulfilled(data))
-  } catch (e) {
-    yield put(fetchImage.rejected(e))
-  }
-}
-```
-
-### 3. Controller (`hooks.ts`)
-
-Csomagold be a logikát egy Hook-ba. Ez az EGYETLEN felület, amit a React komponens láthat.
-
-```typescript
-export const useTraining = () => {
-  const dispatch = useDispatch()
-  // Selectorok használata
-  const data = useSelector(selectTrainingData)
-
-  return {
-    data,
-    // A komponens nem tudja, hogy ez saga vagy reducer, csak "menteni" akar.
-    save: id => dispatch(saveTraining(id)),
-  }
-}
-```
-
-### 4. View (`components/MyView.tsx`)
-
-A komponens kizárólag a Hook-ból származó adatokat jeleníti meg. Nincs `useEffect` adatlekérésre!
-
-```typescript
-const TrainingView = () => {
-  const { data, loading } = useTraining();
-
-  if (loading) return <GlobalLoader />;
-
-  return <div>{data.title}</div>;
-};
-```
-
----
-
-## 4. Összegzés
-
-Ez az architektúra nagyobb kezdeti fegyelmet igényel, de cserébe:
-
-1.  **Kiszámítható**: Mindig tudod, hol keresd a logikát (Saga) és hol az állapotot (Slice).
-2.  **Típusbiztos**: A `saga-toolkit` végigvezeti a típusokat a rendszeren.
-3.  **Skálázható**: Az új modulok nem lassítják a régieket, mivel teljesen izoláltak.
+`npm run typecheck && npm run lint && npm test && npm run build` — full gate list in
+[AGENTS.md](../AGENTS.md). Unit-test saga logic; test a module's public surface
+through its hook.

@@ -113,6 +113,7 @@ type Point {
   manualAnnotations: JSON
   manualComment: String
   streetViewUrl: String!
+  segmentId: ID
   captureDate: String
   localImagePath: String
   dinoPBad: Float
@@ -134,6 +135,9 @@ type Query {
   point(id: Int!): Point
   points(bbox: [Float!] = null, limit: Int! = 100, offset: Int! = 0): [Point!]!
   roadQualityGrid(zoom: Int!, bbox: [Float!] = null): JSON!
+  roadSegments(bbox: [Float!]!, zoom: Int!): [RoadSegment!]!
+  routeQuality(path: [[Float!]!]!): RouteQuality!
+  segmentFrames(segmentId: ID!): [Point!]!
   adminStats: AdminStats!
   trainingPoints(mode: FilterMode! = ALL, limit: Int! = 20, offset: Int! = 0, model: String! = "yolo"): TrainingPointsResponse!
   trainingStats(mode: FilterMode! = ALL, isDino: Boolean! = false): TrainingStats!
@@ -154,8 +158,34 @@ type ReviewActionResult {
   annotations: [Annotation!]
 }
 
+type RoadSegment {
+  id: ID!
+  path: [[Float!]!]!
+  rqi: Int
+  score: Float
+  pBad: Float
+  confidence: Float!
+  confidenceLevel: String!
+  nImages: Int!
+  lengthM: Float!
+  roadName: String
+  highway: String
+  captureDateMin: String
+  captureDateMax: String
+  confidenceReason: String
+  streetViewUrl: String
+}
+
 type RouteData {
   points: [RouteStep!]!
+}
+
+type RouteQuality {
+  totalLengthM: Float!
+  coveredLengthM: Float!
+  lengthByRqi: [Float!]!
+  meanScore: Float
+  worstSegments: [RoadSegment!]!
 }
 
 type RouteStep {

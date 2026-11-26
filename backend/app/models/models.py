@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import CheckConstraint, Column, Date, Integer, String, Float, DateTime, JSON, Uuid, func
+from sqlalchemy import BigInteger, CheckConstraint, Column, Date, Integer, String, Float, DateTime, JSON, UniqueConstraint, Uuid, func
 from sqlalchemy.orm import declarative_base
 from geoalchemy2 import Geometry
 
@@ -67,6 +67,41 @@ class StreetViewImage(Base):
     )  # Detailed analysis info (edge_density, variance, damage_score, etc.)
     # DINO Analysis
     dino_rqi_score = Column(Float, nullable=True, index=True)
+
+class RoadSegment(Base):
+    """
+    A ~150 m piece of an OSM way with the quality aggregated from the Street
+    View frames snapped onto it (see app/services/road_segments.py).
+
+    Derived data: `backend/scripts/build_segments.py` rebuilds the table from
+    street_view_images + cached OSM geometry, so it is safe to wipe.
+    Geometry © OpenStreetMap contributors (ODbL).
+    """
+
+    __tablename__ = "road_segments"
+    __table_args__ = (
+        UniqueConstraint("osm_way_id", "piece_index", name="uq_road_segments_way_piece"),
+    )
+
+    # "<osm_way_id>:<piece_index>" — stable across rebuilds, so client caches
+    # keyed by id stay valid.
+    id = Column(String, primary_key=True)
+    osm_way_id = Column(BigInteger, nullable=False, index=True)
+    piece_index = Column(Integer, nullable=False)
+    geom = Column(Geometry("LINESTRING", srid=4326), nullable=False)
+    length_m = Column(Float, nullable=False)
+    road_name = Column(String, nullable=True)
+    highway = Column(String, nullable=True)  # OSM highway class
+    # Aggregates; score/rqi/p_bad are NULL for a piece without frames.
+    n_images = Column(Integer, nullable=False, default=0, server_default="0")
+    score = Column(Float, nullable=True)  # aggregated continuous score, 1–4
+    rqi = Column(Integer, nullable=True)  # class 1–4 (1 = excellent, 4 = poor)
+    p_bad = Column(Float, nullable=True)
+    confidence = Column(Float, nullable=False, default=0.0, server_default="0")
+    capture_date_min = Column(Date, nullable=True)
+    capture_date_max = Column(Date, nullable=True)
+    updated_at = Column(DateTime, nullable=False, default=utcnow, server_default=func.now())
+
 
 class Job(Base):
     """
