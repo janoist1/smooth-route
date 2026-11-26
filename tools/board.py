@@ -10,7 +10,8 @@ Usage (from any worktree):
     python3 tools/board.py add "Title" [--status todo] [--who backend] [--branch b] [--note "…"]
     python3 tools/board.py move T-7 doing|review|owner|done|todo [--note "…"]
     python3 tools/board.py note T-7 "short progress note"
-    python3 tools/board.py set T-7 --who qa --branch claude/x --title "…"
+    python3 tools/board.py set T-7 --who qa --branch claude/x --title "…" \
+        --goal "why" --context "background" --ac "criterion 1; criterion 2"
     python3 tools/board.py render
 
 Columns: todo → doing → review (ready to merge / in QA) → done; "owner" = waiting
@@ -95,10 +96,22 @@ def find(data, tid: str) -> dict:
     sys.exit(f"no such ticket: {tid}")
 
 
+def split_ac(ac):
+    return [x.strip() for x in ac.split(";") if x.strip()] if ac else []
+
+
 def render(data) -> None:
     def card(t):
         meta = " · ".join(html.escape(x) for x in (t.get("who") or "", t.get("branch") or "") if x)
         note = f'<p class="note">{html.escape(t["note"])}</p>' if t.get("note") else ""
+        det = ""
+        if t.get("goal") or t.get("context") or t.get("ac"):
+            ac = "".join(f"<li>{html.escape(x)}</li>" for x in t.get("ac") or [])
+            det = ("<details><summary>details</summary>"
+                   + (f'<p><b>Goal:</b> {html.escape(t["goal"])}</p>' if t.get("goal") else "")
+                   + (f'<p><b>Context:</b> {html.escape(t["context"])}</p>' if t.get("context") else "")
+                   + (f"<p><b>Done when:</b></p><ul>{ac}</ul>" if ac else "") + "</details>")
+        note += det
         return (f'<article class="card"><header><b>{t["id"]}</b><time>{t["updated"]}</time></header>'
                 f'<h3>{html.escape(t["title"])}</h3>{note}'
                 f'{f"<footer>{meta}</footer>" if meta else ""}</article>')
@@ -127,6 +140,7 @@ main{{display:grid;grid-template-columns:repeat(5,minmax(200px,1fr));gap:12px;al
 .card{{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:8px}}
 .card header{{display:flex;justify-content:space-between;color:var(--muted);font-size:12px}}
 .card h3{{font-size:14px;margin:4px 0}}.note{{margin:4px 0;color:var(--muted);font-size:13px}}
+details{{font-size:13px;margin:4px 0}}details summary{{cursor:pointer;color:var(--muted)}}details p,details ul{{margin:4px 0}}details ul{{padding-left:18px}}
 .card footer{{font-size:12px;color:var(--muted);word-break:break-all}}.owner .card{{border-color:var(--owner)}}
 </style></head><body><h1>Team board <small>updated {now()} · auto-refresh 30 s</small></h1>
 <main>{''.join(cols)}</main></body></html>"""
@@ -140,9 +154,12 @@ def main() -> None:
     sub = p.add_subparsers(dest="cmd", required=True)
     a = sub.add_parser("add"); a.add_argument("title"); a.add_argument("--status", default="todo", choices=KEYS)
     a.add_argument("--who"); a.add_argument("--branch"); a.add_argument("--note")
+    for x in (a,):
+        x.add_argument("--goal"); x.add_argument("--context"); x.add_argument("--ac", help="acceptance criteria, ';'-separated")
     m = sub.add_parser("move"); m.add_argument("id"); m.add_argument("status", choices=KEYS); m.add_argument("--note")
     n = sub.add_parser("note"); n.add_argument("id"); n.add_argument("text")
     s = sub.add_parser("set"); s.add_argument("id"); s.add_argument("--who"); s.add_argument("--branch"); s.add_argument("--title")
+    s.add_argument("--goal"); s.add_argument("--context"); s.add_argument("--ac", help="acceptance criteria, ';'-separated")
     ls = sub.add_parser("list"); ls.add_argument("--status", choices=KEYS)
     sub.add_parser("render")
     args = p.parse_args()
@@ -161,7 +178,8 @@ def main() -> None:
     with Board(write=True) as data:
         if args.cmd == "add":
             t = {"id": f'T-{data["next_id"]}', "title": args.title, "status": args.status, "who": args.who,
-                 "branch": args.branch, "note": args.note, "created": now(), "updated": now(),
+                 "branch": args.branch, "note": args.note, "goal": args.goal, "context": args.context,
+                 "ac": split_ac(args.ac), "created": now(), "updated": now(),
                  "history": [[now(), args.status]]}
             data["next_id"] += 1
             data["tickets"].append(t)
@@ -176,9 +194,11 @@ def main() -> None:
         elif args.cmd == "note":
             t["note"] = args.text
         elif args.cmd == "set":
-            for k in ("who", "branch", "title"):
+            for k in ("who", "branch", "title", "goal", "context"):
                 if getattr(args, k):
                     t[k] = getattr(args, k)
+            if args.ac:
+                t["ac"] = split_ac(args.ac)
         t["updated"] = now()
         print(f'{t["id"]} -> {t["status"]}')
 
