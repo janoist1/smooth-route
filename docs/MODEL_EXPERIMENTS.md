@@ -945,3 +945,204 @@ Reproduce:
 5. **A kalibrált valószínűség többet ér, mint a nyers osztályzat** — a
    "92%-ban helyes jó/rossz döntés + megmondja, mennyire biztos" a termék
    valódi ígérete.
+
+---
+
+## Era 9 — VLM attributes as features (2026-11-26)
+
+> **TL;DR:** Fable (Claude VLM) subagents described all 1903 labelled frames
+> with 15 fixed, structured pavement attributes. Fed to a ridge stacker **next
+> to the champion's score**, they give the first challenger that is
+> **measurably better** on the official spatial CV: **QWK 0.805 / MAE 0.344 /
+> bad-AUC 0.940** vs 0.774 / 0.405 / 0.934. ΔQWK is +0.031 [+0.006, +0.056],
+> positive on all 5 shifted grids and with its CI above 0 on 4 of 5. Class-2
+> recall rises from 0.43 to 0.56. Most of the gain is on cracked motorways,
+> rural lanes and dappled shadow. **Budapest does not improve** (QWK 0.40 →
+> 0.42). The gain **needs a VLM call per frame**: distilling the attributes
+> into DINO heads keeps none of it. The gate PASSes and the candidate is
+> saved as `ml/cache/rqi_model_vlm_candidate.joblib`, but it is **not
+> promoted**, because the backend cannot produce the attributes.
+
+### Setup
+
+- **Schema** (`ml/vlm_attribute_prompt.md`, the same text for every worker,
+  one JSON line per frame): road_visible, road_type, surface, cracks
+  (none … alligator_extensive), patches, potholes, ravelling, edge_damage,
+  rutting, markings, lighting, wet, obstruction_pct, rqi_guess (pilot
+  rubric), confidence, plus a ≤12-word note. Workers judge the camera's own
+  road, mainly the lower 40% of the frame. `ml/vlm_attributes.py` encodes
+  these into 30 columns: ordinal severities plus one-hot levels, with levels
+  under 1% dropped (`MODEL_COLUMNS`).
+- **Blinding:** frames were hard-linked under random ids into 16 shuffled
+  batches of about 118. Each worker could open only its own images, the 12
+  calibration anchors (`anchor_<RQI>_<k>.jpg`, as in the pilot) and its own
+  output file. Outputs are in `data/vlm/attributes/out/*.jsonl` (resumable)
+  and the merge is in `ml/cache/vlm_attributes.csv` (committed).
+- **Anchor leakage, found and fixed during the run.** Consecutive frames
+  about 10 m apart are often the *same panorama*: the 1903 frames contain 70
+  pixel-identical pairs. One worker recognised an anchor's twin in its batch.
+  So all 100 frames within 50 m of an anchor, plus the anchors themselves,
+  were re-rated by a worker that saw no anchors (batch b00), and that row is
+  the one used. The check shows why this mattered. On those 100 frames, the
+  anchored rating matched the expert 61% of the time (QWK 0.78), the
+  anchor-free rating only 41% (QWK 0.54). Part of the gap is calibration:
+  anchor-free guesses run about 0.3 lower.
+- **Consistency:** two independent workers on the same 30 pilot frames agreed
+  on 83–100% of attribute values, and their rqi_guess values agreed at QWK
+  0.85. A pilot worker and a full-run worker on the same frames agreed on
+  0.73 (cracks, patches) to 1.00.
+- **Cost:** 19 Fable workers, 2.7 M subagent tokens (~1.26 k per frame
+  including the anchors), about 6.5 min per 118-frame worker, about 25 min
+  wall-clock in two waves of 8.
+- **What the VLM saw:** motorway 764, rural road 402, urban main 378,
+  residential 234, rural lane 123. Surface was asphalt in 1899 of 1903 frames,
+  so **no cobblestone in this dataset**. Dappled shadow 186, wet 7. The
+  rqi_guess distribution was 430 / 951 / 496 / 26 against the human
+  540 / 780 / 381 / 202, so like the pilot it under-calls 4.
+
+### Results (official spatial CV, paired cell bootstrap vs the champion)
+
+`ml/vlm_feature_eval.py`. Every stacker, blend weight and distillation head is
+fit inside the training folds only. The champion score fed to a stacker is
+inner-OOF, and the cut-points are nested.
+
+| candidate | QWK | MAE | AUC | ΔQWK [95% CI] | Budapest QWK | class-2 recall |
+|---|---|---|---|---|---|---|
+| champion: DINO cls+patch → SVR | 0.774 | 0.405 | 0.934 | – | 0.404 | 0.43 |
+| (0) VLM rqi_guess used as the label | 0.613 | 0.490 | 0.796 | −0.161 [−0.231, −0.093] | 0.262 | 0.67 |
+| (a) attributes alone → ridge | 0.777 | 0.377 | 0.919 | +0.002 [−0.035, +0.039] | 0.291 | 0.52 |
+| (a) attributes without rqi_guess → ridge | 0.774 | 0.377 | 0.918 | −0.001 [−0.039, +0.040] | 0.343 | 0.54 |
+| (b) DINO + attributes (block ×5.1) → SVR | 0.797 | 0.362 | 0.933 | +0.022 [−0.004, +0.047] | 0.411 | 0.51 |
+| (b) DINO + attributes → ordinal logit | 0.783 | 0.394 | 0.941 | +0.009 [−0.009, +0.028] | 0.520 | 0.47 |
+| (c) champion score + attributes → ridge | 0.802 | 0.347 | 0.941 | **+0.028 [+0.005, +0.056]** | 0.417 | 0.54 |
+| (c) champion score + attributes → HistGB | 0.797 | 0.345 | 0.940 | +0.023 [−0.004, +0.056] | 0.442 | 0.57 |
+| (d) blend champion + rqi_guess (α ≈ 0.26) | 0.788 | 0.378 | 0.941 | +0.014 [−0.010, +0.038] | 0.454 | 0.52 |
+| **(c) as gate artifact** (`StackedVLMHead`) | **0.805** | **0.344** | **0.940** | **+0.031 [+0.006, +0.056]** | 0.424 | 0.56 |
+
+- **Robustness of the artifact head on 5 shifted 1 km grids:** ΔQWK +0.024,
+  +0.033, +0.009, +0.022, +0.027, with the CI above 0 on 4 of 5; ΔMAE −0.03
+  to −0.08, with the CI below 0 on 4 of 5; ΔAUC +0.001 to +0.008 (not
+  significant). The evaluation-script stacker (c) gave ΔQWK +0.018, +0.033,
+  −0.001, +0.013, +0.032. For comparison, Era 6's best challenger had its CI
+  above 0 on 1 of 6 grids.
+- **The 1–4 decision improves more than the good/bad decision.** AUC moves
+  only +0.006. The candidate's confusion matrix gives recall
+  0.83 / 0.56 / 0.63 / 0.70 for classes 1–4 (champion 0.83 / 0.43 / 0.67 /
+  0.60).
+- **Attributes alone match DINO** (QWK 0.777). That is an independent view
+  with equal skill, but its errors correlate with the champion's, so only
+  stacking helps. The VLM's own rqi_guess is a weak labeller (QWK 0.61), as
+  in the pilot.
+
+### Where the gain comes from (do the attributes explain the errors?)
+
+Champion OOF error by VLM attribute, next to the stacked model's (official
+folds; bias = predicted − true):
+
+| subgroup | n | champion MAE / bias | stacked MAE / bias |
+|---|---|---|---|
+| motorway with cracks | 473 | 0.52 / −0.30 | 0.40 / −0.11 |
+| many longitudinal cracks | 328 | 0.51 / −0.25 | 0.43 / +0.02 |
+| many transverse cracks | 60 | 0.55 / −0.42 | 0.42 / +0.05 |
+| dappled shadow | 186 | 0.49 / +0.04 | 0.39 / +0.15 |
+| rural lane | 123 | 0.43 / −0.12 | 0.37 / −0.01 |
+| residential street | 234 | 0.42 / +0.32 | 0.38 / +0.29 |
+| urban main road | 378 | 0.44 / +0.09 | 0.44 / +0.10 |
+| Budapest | 229 | 0.40 / +0.13 | 0.39 / +0.04 |
+| human class 2 | 780 | 0.59 / −0.06 | 0.48 / +0.05 |
+| human class 4 | 202 | 0.44 / −0.44 | 0.40 / −0.40 |
+
+- **Sealed-crack motorways are the champion's biggest systematic miss.** The
+  expert calls them 2; DINO sees a smooth motorway and says 1. The VLM's
+  crack pattern fixes most of this. The stacker's standardised weights are
+  champion score +0.42, patches +0.15, rural_lane +0.10, rqi_guess +0.09,
+  motorway −0.07, ravelling +0.07.
+- **Dappled shadow:** the champion's MAE on these frames is ~20% above
+  average (0.49). The attributes bring it down to the champion's own
+  normal-lighting level (0.39).
+- **Cobblestone** cannot be tested here, because no frame has it.
+- **Still unsolved:** residential streets are over-predicted (+0.29), and
+  urban main roads and Budapest do not improve. Class 4 is still under-called,
+  and the VLM shares that bias.
+
+### Distillation (the production path without a VLM)
+
+Ridge heads on DINO cls+patch, trained on the training fold's VLM attributes,
+predict many attributes well. Spatial OOF r: road_type=motorway 0.87,
+edge_damage 0.86, dappled shadow 0.82, rqi_guess 0.75, patches 0.74,
+ravelling 0.73; fine crack patterns only 0.2–0.4. But **none of the gain
+survives** when the predicted attributes replace the VLM ones:
+
+| distilled variant (no VLM at inference) | QWK | MAE | ΔQWK [95% CI] |
+|---|---|---|---|
+| distilled attributes alone → ridge | 0.753 | 0.440 | −0.022 [−0.072, +0.023] |
+| DINO + distilled attributes → SVR | 0.787 | 0.391 | +0.012 [−0.002, +0.028] |
+| champion score + distilled → ridge / HistGB | 0.758 / 0.772 | 0.415 / 0.383 | −0.016 / −0.002 |
+| blend champion + distilled rqi_guess | 0.783 | 0.396 | +0.009 [−0.008, +0.026] |
+| *control:* DINO + ridge-distilled **human** label → SVR | 0.775 | 0.407 | +0.001 [−0.006, +0.007] |
+
+The stacking gain goes from +0.028 to between −0.016 and −0.002, so **0%
+survives**. The best distilled variant (+0.012, not significant) is barely
+above the control, which pushes the human label through the same ridge
+channel. The useful VLM information is the part that DINO features do not
+encode. A function of DINO cannot carry it, however well it imitates the
+attributes. A distilled student would need a stronger image model and many
+more VLM-rated frames (for example the ~15 k unlabelled frames under
+`data/images`). That has not been tested.
+
+### Label audit (by-product, no labels changed)
+
+`data/vlm/label_audit.csv` has 60 rows for the owner to re-check:
+
+- 5 frames where the VLM and the model are both ≥ 2 off the human label.
+- 12 where a high-confidence VLM and the model agree against the human. These
+  are mostly smooth motorway frames labelled 2 that both call 1.
+- **9 pairs of pixel-identical frames (same panorama ~10 m apart) with
+  different human labels** (18 frames). These are the cheapest fixes, and
+  label noise the CV counts as model error.
+- 25 rows to fill the list: medium-confidence VLM = model ≠ human, ranked by
+  how far the model's score is from the label.
+
+### Verdict and production implication
+
+- **Measurably better, gate PASS:**
+  `evaluate_artifact.py ml/cache/rqi_model_vlm_candidate.joblib` → PASS,
+  "measurably better: YES". This is the first such result on the spatial
+  protocol. **Not promoted:** `rqi_model.joblib` is unchanged, and
+  `dino_service` cannot build the `vlm` key of the `cls+patch+vlm` recipe.
+- **What inference would need:**
+  1. For each new frame, one VLM request with `ml/vlm_attribute_prompt.md`
+     plus the 12 anchor images (a cacheable prefix) and the frame.
+  2. Validate the JSON (`vlm_attributes.validate`) and encode it
+     (`MODEL_COLUMNS`).
+  3. Call `pipeline.predict` on `[cls+patch | attributes]` (head
+     `ml/vlm_heads.py`, which must be importable).
+  4. Fall back to the champion when the VLM is unavailable, and cache
+     results per `pano_id`, since neighbouring frames often share a
+     panorama.
+
+  The cost is about 1.3 k tokens per frame. The attributes come from one
+  model and one prompt, so changing either means re-rating the training set.
+- **Cheaper options worth testing next:**
+  - Run the VLM only on frames where the champion is unsure (P(bad) near
+    0.5, the 1|2 and 2|3 bands).
+  - Run it on 1–2 frames per 100–200 m segment.
+  - Use the VLM offline to rate unlabelled frames for a stronger student
+    (the open distillation question above).
+  - Average two VLM passes per frame to cut rater noise (retest agreement on
+    cracks and patches is only ~0.75).
+
+Reproduce:
+
+```bash
+.venv/bin/python ml/vlm_attributes.py prepare        # blinded batches + prompts
+.venv/bin/python ml/vlm_attributes.py anchor_free    # anchor twins -> anchor-free batch b00
+# ... run one Fable worker per data/vlm/attributes/prompts/<batch>.md ...
+.venv/bin/python ml/vlm_attributes.py merge          # -> ml/cache/vlm_attributes.csv
+.venv/bin/python ml/vlm_attributes.py pilot          # A-vs-B consistency
+.venv/bin/python ml/vlm_attributes.py anchor_check   # leakage + retest
+.venv/bin/python ml/vlm_feature_eval.py              # table above + label audit
+.venv/bin/python ml/vlm_feature_eval.py --shift "(c) champion score + attrs -> ridge" --grid 0
+.venv/bin/python ml/save_model_v2.py --recipe cls+patch+vlm --head stack-vlm --out rqi_model_vlm_candidate.joblib
+.venv/bin/python ml/evaluate_artifact.py ml/cache/rqi_model_vlm_candidate.joblib
+```
