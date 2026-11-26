@@ -205,6 +205,38 @@ Can we tell in advance where predictions are unreliable?
   capped at "medium" confidence (`unlabelled_area` in `segment_aggregation.json`,
   reason `unlabelled_area`). An honesty rule, not a fitted factor.
 
+## OSM `smoothness` / `surface` tags (T-52, 2026-11-26)
+
+Could OpenStreetMap's crowd-sourced `smoothness=` and `surface=` tags serve as free
+labels (e.g. for Budapest) or as model context? `ml/osm_tags.py`, offline: cached
+Overpass tiles (101 k highway ways), frames snapped to the nearest heading-compatible
+way within 20 m (the segment builder's rule).
+
+- **Coverage.** `smoothness` is on 12.6% of ways: 13% of labelled frames (85% in
+  Budapest, 0% around Tapolca and Törökbálint), 16% of today's new frames.
+  `surface` is on 90% of labelled frames — and almost all of it is `asphalt`
+  (1705 of 1903; the rest untagged). No labelled or new frame is on `sett`,
+  `cobblestone` or `paving_stones`.
+- **Agreement with the human label is weak** (252 tagged frames on 47 ways):
+  Spearman 0.48, QWK 0.42, exact 60%; the model on the same frames reaches QWK 0.66.
+  In Budapest alone: OSM QWK 0.36 / bad-road AUC 0.71 vs the model's 0.50 / 0.83.
+  OSM never says worse than `intermediate` on these roads, so it cannot mark Rossz,
+  and one tag covers a whole way (often kilometres) while the road changes every
+  ~100 m.
+- **Surface does not explain T-43.** All six urban over-rating frames lie on ways
+  tagged `asphalt` (two of them `good` / `excellent`): the setts and markings the
+  model reacts to are crossings and tram areas inside an asphalt way, invisible to
+  OSM tags.
+- **As features** (champion score + surface one-hot + smoothness → ridge stack,
+  same harness as Era 9): QWK 0.772 / MAE 0.414 / AUC
+  0.924, ΔQWK −0.002 [−0.017, +0.016] — no gain; in Budapest it is worse (QWK
+  0.40 → 0.25, AUC 0.78 → 0.63).
+
+**Decision:** OSM tags are **not** used as labels, features or a validation set: too
+sparse outside Budapest, too coarse (per way), mostly "asphalt", and less accurate
+than the model where they exist. An "OSM says …" line on the segment card is not
+worth the confusion of a second, weaker opinion. Budapest still needs human labels.
+
 ## Lessons
 
 1. **With little data the recipe matters, not model size** — the same backbone gave
