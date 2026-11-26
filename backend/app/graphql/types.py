@@ -347,3 +347,5 @@ class RouteQuality:
     impact_score: Optional[float] = None
     # Up to 5, worst first; segments with "low" confidence excluded.
     worst_segments: List[RoadSegment]
+    # Class of the unrounded mean, using the same cut-points as segments.
+    mean_rqi: Optional[int] = None

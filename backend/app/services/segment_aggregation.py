@@ -60,6 +60,8 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
+from app.services.map_matching import ROUTE_BUFFER_M
+
 CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "segment_aggregation.json"
 
 AGGREGATORS = ("median_score", "mean_score", "trimmed_mean_score", "mean_p_bad")
@@ -181,6 +183,7 @@ class SegmentConfig:
     # Scale-independent tuning.
     version: int = 1
     segment_length_m: float = 150.0
+    unmeasured_neighbourhood_m: float = 2 * ROUTE_BUFFER_M
     aggregator: str = "median_score"
     trim_fraction: float = 0.1
     p_bad_threshold: float = 0.5
@@ -252,6 +255,8 @@ def config_from_dict(data: Mapping[str, Any]) -> SegmentConfig:
             scale=scale,
             version=int(data.get("version", f["version"].default)),
             segment_length_m=float(data.get("segment_length_m", f["segment_length_m"].default)),
+            unmeasured_neighbourhood_m=float(data.get(
+                "unmeasured_neighbourhood_m", f["unmeasured_neighbourhood_m"].default)),
             aggregator=str(data.get("aggregator", f["aggregator"].default)),
             trim_fraction=float(data.get("trim_fraction", f["trim_fraction"].default)),
             p_bad_threshold=float(data.get("p_bad_threshold", f["p_bad_threshold"].default)),
@@ -267,6 +272,9 @@ def config_from_dict(data: Mapping[str, Any]) -> SegmentConfig:
         raise ValueError(f"aggregator must be one of {AGGREGATORS}, got {cfg.aggregator!r}")
     if cfg.segment_length_m <= 0:
         raise ValueError("segment_length_m must be > 0")
+    if (not math.isfinite(cfg.unmeasured_neighbourhood_m)
+            or cfg.unmeasured_neighbourhood_m < 2 * ROUTE_BUFFER_M):
+        raise ValueError(f"unmeasured_neighbourhood_m must be finite and >= {2 * ROUTE_BUFFER_M:g}")
     if list(cfg.thresholds) != sorted(cfg.thresholds):
         raise ValueError("thresholds must be ascending")
     if len(cfg.thresholds) != len(scale.classes) - 1:
@@ -297,6 +305,7 @@ def config_to_dict(cfg: SegmentConfig) -> dict:
     return {
         "version": cfg.version,
         "segment_length_m": cfg.segment_length_m,
+        "unmeasured_neighbourhood_m": cfg.unmeasured_neighbourhood_m,
         "aggregator": cfg.aggregator,
         "trim_fraction": cfg.trim_fraction,
         "thresholds": list(cfg.thresholds),

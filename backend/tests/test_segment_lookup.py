@@ -65,7 +65,7 @@ def test_box_query_sends_the_boxes_as_four_parallel_arrays():
                       "east": [19.1, 20.5], "north": [47.1, 46.5],
                       "cap": MAX_SEGMENT_CANDIDATES + 1}
     assert "LIMIT :cap" in sql
-    assert "s.n_images > 0" in sql and "DISTINCT ON (s.id)" in sql      # only segments with data
+    assert "s.n_images > 0" not in sql and "DISTINCT ON (s.id)" in sql  # all matching geometry
     assert [r.id for r in records] == ["1:0", "1:1"]
     start, end = records[0].path                                         # (lat, lng) order
     assert start == pytest.approx(at(0, 0)) and end == pytest.approx(at(200, 0))
@@ -136,3 +136,38 @@ def test_segment_frames_are_loaded_around_its_bbox_and_matched(monkeypatch):
     _, params = db.calls[1]                             # twice the pad: rival segments too
     assert params["west"] == [pytest.approx(west - 2 * PAD)]
     assert params["north"] == [pytest.approx(north + 2 * PAD)]
+
+
+def test_path_lookup_keeps_unmeasured_parallel_geometry():
+    measured, unmeasured = row("1:0", 0, 200), row("2:0", 0, 200, north=10)
+    unmeasured.n_images, unmeasured.rqi, unmeasured.score = 0, None, None
+    db = FakeDb([measured, unmeasured])
+    records = fetch_segments_near_path(db, [at(0, 10), at(200, 10)], CFG)
+    assert {r.id for r in records} == {"1:0", "2:0"}
+    assert segment_read.summarize_route([at(0, 10), at(200, 10)], records, CFG).covered_length_m == 0
+    assert "s.n_images > 0" not in db.calls[0][0]
+
+
+@pytest.mark.parametrize("missing", ["images", "score", "class"])
+def test_map_query_excludes_unmeasured_rows(missing):
+    measured, empty = row("1:0", 0, 200), row("2:0", 0, 200, north=10)
+    if missing == "images":
+        empty.n_images = 0
+    elif missing == "score":
+        empty.score = None
+    else:
+        empty.rqi = None
+    db = FakeDb([measured, empty])
+    records = segment_read.fetch_segments_in_bbox(db, [19.0, 47.0, 19.1, 47.6], 15, CFG)
+    assert [r.id for r in records] == [measured.id]
+    sql = db.calls[0][0]
+    assert "s.n_images > 0" in sql
+    assert "s.score IS NOT NULL" in sql and "s.rqi IS NOT NULL" in sql
+
+
+def test_segment_frames_query_rejects_unmeasured_target():
+    db = FakeDb(first=None)
+    assert frame_ids_on_segment(db, "empty:0") == []
+    sql = db.calls[0][0]
+    assert "n_images > 0" in sql
+    assert "score IS NOT NULL" in sql and "rqi IS NOT NULL" in sql

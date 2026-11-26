@@ -34,6 +34,8 @@ from app.services.segment_geometry import (
 
 DEFAULT_MAX_DISTANCE_M = 20.0
 DEFAULT_MAX_BEARING_DIFF_DEG = 45.0
+# Shared with the builder's minimum disambiguation neighbourhood (twice this).
+ROUTE_BUFFER_M = 15.0
 
 # Grid cell in degrees (~56 m N-S, ~38 m E-W at 47°N): larger than the snapping
 # radius, so a lookup touches at most a 3×3 block of cells.

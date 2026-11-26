@@ -7,11 +7,13 @@ Usage (from backend/):
 
 - Full rebuild by default: consecutive OSM ways of the same road are stitched
   into lines, every scored Street View frame is snapped to the nearest
-  bearing-compatible line (20 m, |Δ| < 45° mod 180), each line with frames is
-  cut into ~segment_length_m pieces and aggregated per piece, and the table
-  is replaced in one transaction. Idempotent — safe to re-run.
+  bearing-compatible line (20 m, |Δ| < 45° mod 180), every line is
+  cut into ~segment_length_m pieces and aggregated per piece. Measured pieces
+  and unmeasured pieces within unmeasured_neighbourhood_m of them are stored;
+  the table is replaced in one transaction. Idempotent — safe to re-run.
 - ``--bbox minLng,minLat,maxLng,maxLat`` (same order as the GraphQL bbox)
-  rewrites only the lines touching that box. It turns into a full rebuild by
+  rewrites the lines touching that box and their potential unmeasured
+  neighbours, using all measurements. It turns into a full rebuild by
   itself when the OSM tiles / config changed since the last full rebuild.
 - ``--prefetch-bbox minLng,minLat,maxLng,maxLat`` only downloads the OSM
   tiles covering that box into the cache (one request at a time) and exits:
@@ -27,7 +29,8 @@ Usage (from backend/):
 - Aggregation parameters: backend/config/segment_aggregation.json
   (see app/services/segment_aggregation.py). The two flags override it for
   experiments without editing the file.
-- ``--dry-run`` computes and prints the stats but writes nothing.
+- Writes by default. ``--dry-run`` computes and prints the stats without
+  replacing the derived table.
 
 Needs the local DB (table from Alembic revision 0005). Geometry
 © OpenStreetMap contributors (ODbL).
@@ -83,7 +86,7 @@ def prefetch_tiles(bounds: tuple[float, float, float, float]) -> int:
     return 1 if failed else 0
 
 
-def main() -> None:
+def parse_args(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--bbox", type=parse_bbox, default=None,
                     help="minLng,minLat,maxLng,maxLat — rebuild only this area")
@@ -102,7 +105,11 @@ def main() -> None:
                     help="override segment_length_m")
     ap.add_argument("--aggregator", choices=AGGREGATORS, default=None,
                     help="override aggregator")
-    args = ap.parse_args()
+    return ap.parse_args(argv)
+
+
+def main() -> None:
+    args = parse_args()
 
     if args.prefetch_bbox is not None:
         sys.exit(prefetch_tiles(args.prefetch_bbox))

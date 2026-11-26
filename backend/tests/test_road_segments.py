@@ -46,7 +46,7 @@ def main_frames():
 def test_frames_are_split_between_pieces_by_linear_reference():
     rows, stats = build_rows(WAYS, main_frames(), DEFAULT_CONFIG, TODAY)
     by_id = {r["id"]: r for r in rows}
-    assert set(by_id) == {"100:0", "100:1"}          # lines without frames are not stored
+    assert set(by_id) == {"100:0", "100:1", "200:0"}
 
     first, second = by_id["100:0"], by_id["100:1"]
     assert (first["n_images"], first["rqi"], first["score"]) == (8, 2, 1.8)
@@ -62,7 +62,7 @@ def test_frames_are_split_between_pieces_by_linear_reference():
 
     assert (stats.frames_matched, stats.frames_unmatched) == (12, 0)
     assert (stats.lines, stats.lines_with_frames) == (3, 1)
-    assert (stats.pieces, stats.segments) == (2, 2)
+    assert (stats.pieces, stats.segments) == (3, 2)
     assert stats.class_counts == {2: 1, 4: 1}
     assert stats.km == pytest.approx(0.3, abs=0.001)
     assert stats.median_images == 6 and stats.median_length_m == pytest.approx(150, abs=0.2)
@@ -79,11 +79,13 @@ def test_unmatched_frames_are_counted_not_forced_onto_a_road():
     assert sum(r["n_images"] for r in rows) == 12
 
 
-def test_piece_without_frames_is_not_stored():
+def test_pieces_without_frames_are_stored_with_null_quality():
     rows, stats = build_rows(WAYS, main_frames()[:8], DEFAULT_CONFIG, TODAY)   # only the first half
-    assert [r["id"] for r in rows] == ["100:0"]
-    assert (stats.pieces, stats.segments) == (2, 1)
-    assert all(r["n_images"] > 0 and r["rqi"] is not None for r in rows)
+    assert [r["id"] for r in rows] == ["100:0", "100:1", "200:0"]
+    assert (stats.pieces, stats.segments) == (3, 1)
+    assert rows[0]["n_images"] > 0
+    assert all(r["n_images"] == 0 and r["rqi"] is None and r["score"] is None
+               and r["confidence"] == 0 for r in rows[1:])
 
 
 def test_junction_frames_follow_their_heading():
@@ -105,8 +107,8 @@ def test_junction_frames_follow_their_heading():
 
 def test_segment_length_from_config_drives_the_split():
     rows, _ = build_rows(WAYS, main_frames(), with_overrides(DEFAULT_CONFIG, segment_length_m=100), TODAY)
-    assert [r["id"] for r in rows] == ["100:0", "100:1", "100:2"]
-    assert all(r["length_m"] == pytest.approx(100, abs=0.2) for r in rows)
+    assert [r["id"] for r in rows if r["osm_way_id"] == MAIN.id] == ["100:0", "100:1", "100:2"]
+    assert all(r["length_m"] == pytest.approx(100, abs=0.2) for r in rows if r["osm_way_id"] == MAIN.id)
     assert sum(r["n_images"] for r in rows) == 12
 
 
@@ -181,7 +183,7 @@ def test_stats_list_the_classes_of_the_configured_scale():
     mirrored = [Frame(f.id, f.lat, f.lon, f.heading, 6 - f.score) for f in main_frames()]
     rows, stats = build_rows(WAYS, mirrored, flipped, TODAY)
     assert stats.classes == (2, 3, 4, 5)
-    assert {r["id"]: r["rqi"] for r in rows} == {"100:0": 4, "100:1": 2}     # 6 − (2, 4)
+    assert {r["id"]: r["rqi"] for r in rows if r["n_images"]} == {"100:0": 4, "100:1": 2}     # 6 − (2, 4)
     assert "RQI 5:" in "\n".join(stats.report())
 
 
@@ -229,7 +231,7 @@ def test_frames_carry_continuous_score_and_scale_aware_p_bad():
 def test_helpers():
     assert segment_id(123456789012, 3) == "123456789012:3"
     assert linestring_wkt([(47.5, 19.05), (47.6, 19.15)]) == (
-        "LINESTRING(19.0500000 47.5000000, 19.1500000 47.6000000)"      # lon lat order
+        "LINESTRING(19.05 47.5, 19.15 47.6)"      # lon lat order
     )
     assert bounds_of([(47.5, 19.1), (47.4, 19.3)]) == (47.4, 19.1, 47.5, 19.3)
     assert bounds_of([]) is None
@@ -413,3 +415,147 @@ def test_build_rows_without_labels_leaves_the_rule_off():
     rows, stats = build_rows(WAYS, main_frames(), cfg, TODAY)
     assert stats.labelled_points is None
     assert not any(r["unlabelled_area"] for r in rows)
+
+
+def test_rebuild_cli_writes_by_default_and_dry_run_is_explicit():
+    from scripts.build_segments import parse_args
+
+    assert parse_args([]).dry_run is False
+    assert parse_args(["--offline"]).dry_run is False
+    assert parse_args(["--dry-run"]).dry_run is True
+    with pytest.raises(SystemExit):
+        parse_args(["--apply"])
+
+
+def test_far_unmeasured_roads_are_not_stored():
+    rows, stats = build_rows(WAYS, main_frames(), DEFAULT_CONFIG, TODAY)
+    assert not any(r["osm_way_id"] == FAR.id for r in rows)
+    assert stats.unmeasured_omitted == 2
+    assert "1.50x measured" in "\n".join(stats.report())
+
+
+def test_only_nearby_pieces_of_a_long_unmeasured_road_are_stored():
+    rival = Way(400, (at(150, 10), at(150, 2010)), "Rival", "residential")
+    rows, stats = build_rows({MAIN.id: MAIN, rival.id: rival}, main_frames(), DEFAULT_CONFIG, TODAY)
+    assert [r["id"] for r in rows if r["osm_way_id"] == rival.id] == ["400:0"]
+    assert stats.unmeasured_omitted > 0
+
+
+def test_neighbourhood_is_around_measured_pieces_not_the_entire_chain():
+    long_road = Way(100, (at(0, 0), at(3000, 0)), "Long road", "secondary")
+    rows, _ = build_rows({100: long_road}, main_frames()[:1], DEFAULT_CONFIG, TODAY)
+    assert [r["id"] for r in rows] == ["100:0", "100:1"]
+
+
+def test_neighbourhood_preserves_crossings_with_distant_vertices():
+    crossing = Way(400, (at(150, -1000), at(150, 1000)), "Crossing", "secondary")
+    rows, _ = build_rows({MAIN.id: MAIN, crossing.id: crossing}, main_frames(), DEFAULT_CONFIG, TODAY)
+    assert [r["id"] for r in rows if r["osm_way_id"] == crossing.id] == ["400:6"]
+
+
+def test_neighbourhood_uses_edge_distance_not_overlapping_bounding_boxes():
+    measured = Way(100, (at(-100, -100), at(100, 100)), "Measured", "secondary")
+    distant = Way(400, (at(-100, 0), at(0, 100)), "Distant", "secondary")
+    rows, _ = build_rows({100: measured, 400: distant}, [frame(1, 100, 100, None, 2.0)],
+                         DEFAULT_CONFIG, TODAY)
+    assert all(r["osm_way_id"] == measured.id for r in rows)
+
+
+def test_neighbourhood_radius_is_configurable():
+    rival = Way(400, (at(0, 45), at(300, 45)), "Rival", "secondary")
+    roads = {100: MAIN, 400: rival}
+    rows, _ = build_rows(roads, main_frames(), DEFAULT_CONFIG, TODAY)
+    assert not any(r["osm_way_id"] == rival.id for r in rows)
+    larger = with_overrides(DEFAULT_CONFIG, unmeasured_neighbourhood_m=60)
+    rows, _ = build_rows(roads, main_frames(), larger, TODAY)
+    assert [r["id"] for r in rows if r["osm_way_id"] == rival.id] == ["400:0", "400:1"]
+    assert build_fingerprint({}, DEFAULT_CONFIG, True) != build_fingerprint({}, larger, True)
+
+
+def test_no_measured_pieces_means_no_stored_geometry():
+    rows, stats = build_rows(WAYS, [], DEFAULT_CONFIG, TODAY)
+    assert rows == []
+    assert stats.pieces == stats.segments == 0
+    assert stats.unmeasured_omitted == 5
+
+
+def test_partial_build_retains_unmeasured_rivals_of_measured_lines_outside_write_set():
+    rival = Way(400, (at(0, 10), at(300, 10)), "Rival", "secondary")
+    roads = {100: MAIN, 400: rival}
+    full, _ = build_rows(roads, main_frames(), DEFAULT_CONFIG, TODAY)
+    partial, _ = build_rows(roads, main_frames(), DEFAULT_CONFIG, TODAY, only_ids={400})
+    assert partial == [r for r in full if r["osm_way_id"] == rival.id]
+    assert len(partial) == 2 and all(r["score"] is None for r in partial)
+
+
+def test_bbox_rebuild_also_rewrites_neighbours_beyond_the_job_box(monkeypatch, tmp_path):
+    from app.services import road_segments
+
+    main = Way(100, (at(0, 0), at(800, 0)), "Main", "secondary")
+    rival = Way(400, (at(700, 10), at(700, 200)), "Rival", "secondary")
+    roads = {100: main, 400: rival, FAR.id: FAR}
+    frames = [frame(1, 50, 0, 90, 2.0), frame(2, 750, 0, 90, 2.0)]
+    tile = (950, 381)
+    fingerprint = build_fingerprint({tile: 1}, DEFAULT_CONFIG, True)
+    monkeypatch.setattr(road_segments, "occupied_tiles", lambda *a: {tile})
+    monkeypatch.setattr(road_segments, "stored_fingerprint", lambda *a: fingerprint)
+    monkeypatch.setattr(road_segments, "cache_path", lambda *a: SimpleNamespace(
+        stat=lambda: SimpleNamespace(st_size=1)))
+    seen = {}
+
+    def load(db, cfg, bounds=None):
+        seen["frame_bounds"] = bounds
+        return road_segments.FrameLoad(frames=frames)
+
+    def write(db, rows, only_ids, fingerprint):
+        seen.update(rows=rows, only_ids=only_ids)
+
+    monkeypatch.setattr(road_segments, "load_frames", load)
+    monkeypatch.setattr(road_segments, "write_rows", write)
+    client = SimpleNamespace(tile_deg=0.05, cache_dir=tmp_path, load_ways=lambda *a, **kw: roads)
+    south, west = at(0, 0)
+    north, east = at(10, 10)
+    stats = road_segments.rebuild_segments(object(), bbox=(south, west, north, east),
+                                           cfg=DEFAULT_CONFIG, client=client, log=lambda _: None)
+    assert seen["frame_bounds"] is None
+    assert seen["only_ids"] == {100, 400}
+    full, _ = build_rows(roads, frames, DEFAULT_CONFIG)
+    assert seen["rows"] == [r for r in full if r["osm_way_id"] in {100, 400}]
+    assert any(r["osm_way_id"] == rival.id and r["score"] is None for r in seen["rows"])
+    assert stats.written
+
+
+@pytest.mark.parametrize("preview", [False, True])
+def test_offline_rebuild_cli_passes_the_expected_write_mode(monkeypatch, preview):
+    import sqlalchemy
+    from app.core import database
+    from app.services import road_segments
+    from scripts import build_segments
+
+    seen = {}
+
+    def rebuild(db, **kwargs):
+        seen.update(kwargs)
+        return road_segments.BuildStats(written=not kwargs["dry_run"])
+
+    monkeypatch.setattr(road_segments, "rebuild_segments", rebuild)
+    monkeypatch.setattr(database, "SessionLocal", lambda: SimpleNamespace(close=lambda: None))
+    monkeypatch.setattr(sqlalchemy, "inspect", lambda _: SimpleNamespace(has_table=lambda _: True))
+    monkeypatch.setattr(build_segments.sys, "argv", ["build_segments.py", "--offline"]
+                        + (["--dry-run"] if preview else []))
+    build_segments.main()
+    assert seen["dry_run"] is preview
+    assert seen["allow_fetch"] is False
+
+
+@pytest.mark.parametrize("distant_count", [0, 100])
+def test_parallel_corridor_storage_multiplier_is_independent_of_distant_roads(distant_count):
+    parallel = Way(400, (at(0, 10), at(300, 10)), "Parallel", "secondary")
+    roads = {MAIN.id: MAIN, parallel.id: parallel}
+    roads.update({1000 + i: Way(1000 + i, (at(0, 500 + 100 * i), at(300, 500 + 100 * i)),
+                                "Distant", "secondary") for i in range(distant_count)})
+    rows, stats = build_rows(roads, main_frames(), DEFAULT_CONFIG, TODAY)
+    assert len(rows) == stats.pieces == 4
+    assert stats.segments == 2
+    assert stats.unmeasured_omitted == 2 * distant_count
+    assert "2.00x measured" in "\n".join(stats.report())

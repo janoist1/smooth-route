@@ -133,3 +133,24 @@ describe('summarizeRouteQuality', () => {
     expect(s.unknownShare).toBeCloseTo(0.6)
   })
 })
+
+it('uses the backend segment class for the route badge at tuned cut-points', () => {
+  const summary = summarizeRouteQuality(quality({
+    meanScore: sv(1.55),
+    meanRqi: rqiValue('excellent'),
+    lengthByRqi: [6000, 0, 0, 0],
+  }))
+  expect(summary.meanScore).toBe(sv(1.55))
+  expect(summary.meanLabel).toBe('Kiváló')
+  expect(summary.meanColor).toBe(colorOf('excellent'))
+})
+
+it('ignores the backend mean class without measured coverage', () => {
+  const summary = summarizeRouteQuality(quality({
+    coveredLengthM: 0,
+    lengthByRqi: [],
+    meanRqi: rqiValue('excellent'),
+  }))
+  expect(summary.meanLabel).toBe(RQI_UNKNOWN.label_hu)
+  expect(summary.meanColor).toBe(RQI_UNKNOWN.color)
+})

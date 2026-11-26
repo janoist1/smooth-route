@@ -77,4 +77,4 @@ def test_osm_parsing_and_chains_keep_the_speed_limit():
     ways = parse_ways(payload)
     assert [w.maxspeed for w in ways] == [70, None]
     merged = osm_chains.merge_ways({w.id: w for w in ways})
-    assert [w.maxspeed for w in merged.values()] == [70]  # chained: the anchor's limit
+    assert [w.maxspeed for w in merged.values()] == [70, None]  # speed boundary preserved

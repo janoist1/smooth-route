@@ -15,7 +15,8 @@ continuation of each other:
 - both ways are unnamed, share the ``highway`` class, and nothing else ends
   at the node (a plain continuation, not a junction).
 
-Both cases also require a deflection below 60 degrees at the joint.
+Both cases also require the same speed limit and a deflection below 60
+degrees at the joint. A speed boundary must remain a segment boundary.
 
 Node identity is the vertex coordinate: Overpass returns the same node with
 bit-identical lat/lon in every way that uses it.
@@ -87,6 +88,8 @@ def _links(ways: Mapping[int, Way]) -> dict[End, End]:
             if name is None and len(ends) != 2:
                 continue  # unnamed roads only continue where nothing else ends
             a, b = group
+            if ways[a[0]].maxspeed != ways[b[0]].maxspeed:
+                continue
             if not _continues(ways[a[0]], a[1], ways[b[0]], b[1]):
                 continue
             links[a] = b
@@ -147,7 +150,7 @@ def merge_ways(ways: Mapping[int, Way]) -> dict[int, Way]:
             pts = ways[way_id].coords[::-1] if reverse else ways[way_id].coords
             coords.extend(pts if not coords else pts[1:])   # shared node once
         base = ways[anchor]
-        # A chain shares name and class; its speed limit is the anchor way's.
+        # Every member shares name, class and speed limit.
         merged[anchor] = Way(id=anchor, coords=tuple(coords), name=base.name, highway=base.highway,
                              maxspeed=base.maxspeed)
     return merged

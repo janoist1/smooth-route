@@ -79,7 +79,7 @@ def test_get_routes_is_one_directions_call_with_alternatives():
 class TestResolver:
     QUERY = ('{ routeAlternatives(origin: "47.5,19.05", destination: "47.48,19.08") '
              "{ fastestIndex smoothestIndex routes { index isFastest isSmoothest coverage "
-             "durationS summary quality { meanScore coveredLengthM } points { lat } } } }")
+             "durationS summary quality { meanScore meanRqi coveredLengthM } points { lat } } } }")
 
     def test_marks_fastest_and_smoothest_from_one_google_call(self, monkeypatch):
         import app.graphql.route_alternatives as mod
@@ -98,7 +98,8 @@ class TestResolver:
             better = len(path) == 3
             score = toward_best(MID, 1) if better else MID
             return SimpleNamespace(total_length_m=1000.0, length_by_rqi=[900.0, 0, 0, 0],
-                                   mean_score=score, worst_segments=[])
+                                   mean_score=score, mean_rqi=segment_read.load_config().classify(score),
+                                   worst_segments=[])
 
         monkeypatch.setattr(google_maps.google_maps_service, "get_routes", fake_routes)
         monkeypatch.setattr(segment_read, "route_quality", fake_quality)
@@ -112,6 +113,9 @@ class TestResolver:
         assert data["fastestIndex"] == 0 and data["smoothestIndex"] == 1
         assert [r["isSmoothest"] for r in data["routes"]] == [False, True]
         assert data["routes"][1]["coverage"] == pytest.approx(0.9)
+        assert [r["quality"]["meanRqi"] for r in data["routes"]] == [
+            segment_read.load_config().classify(score) for score in (MID, toward_best(MID, 1))
+        ]
 
     def test_anonymous_is_denied_on_the_full_schema(self):
         from app.graphql.schema import schema

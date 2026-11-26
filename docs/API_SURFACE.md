@@ -144,6 +144,7 @@ type RouteQuality {
   meanScore: Float          # length-weighted, on the score scale; null if nothing covered
   impactScore: Float        # speed-weighted impact, lower is better (see Routes)
   worstSegments: [RoadSegment!]!
+  meanRqi: Int              # unrounded mean classified with segment cut-points
 }
 # Query
 roadSegments(bbox: [Float!]!, zoom: Int!): [RoadSegment!]!
@@ -158,8 +159,8 @@ segmentId: ID
 it returns `[]` (the quality grid is the overview there); at most 5000
 segments per call (best-supported first). Geometry is simplified with
 `ST_Simplify` (Douglas-Peucker, collapsed pieces kept) at half a screen pixel for the zoom, unsimplified
-from zoom 18. Only stretches we have frames for are stored, so `rqi` / `score`
-are in practice never null; the types stay nullable as the contract says.
+from zoom 18. Unmeasured geometry is stored for matching but excluded from
+this map query, so returned `rqi` / `score` are in practice never null.
 
 - `confidenceReason` — the factor of the confidence formula that limits it
   most (the smallest of the four factors); `few_images` whenever the segment
@@ -175,11 +176,17 @@ are in practice never null; the types stay nullable as the contract says.
 **15 m** whose direction is within **45°** of the route's (modulo 180°, so
 both travel directions count). Samples more than 5 m past a segment's end do
 not count, so a data gap is not credited to its neighbours.
+Matching includes unmeasured roads; matching one leaves that sample uncovered
+instead of borrowing a nearby measured road's score.
+Only unmeasured pieces within `unmeasured_neighbourhood_m` of measured geometry
+are stored (default/minimum 30 m = twice the 15 m match radius).
 
 - `coveredLengthM` is by definition `sum(lengthByRqi)` — length that runs
   along a segment without a class is not "covered".
 - `meanScore` is the length-weighted mean of the segments' `score` over the
   covered part; `null` when `coveredLengthM` is 0.
+- `meanRqi` classifies the unrounded mean using the segment cut-points, so
+  the route badge agrees with segment colours; `null` without coverage.
 - `worstSegments`: up to 5, **worst first**, **excluding
   `confidenceLevel = "low"`**, only segments the route really runs along
   (≥ 25 m, or half of a shorter segment). Same `id`s as `roadSegments`.
@@ -194,6 +201,10 @@ frames of a parallel or crossing road are not picked up. Only frames the
 builder uses are listed (scored, not marked unusable). `Point.segmentId` costs
 one small query per point — request it on a single `point`, not on a long
 `points` list.
+At a shared piece endpoint, the frame belongs to the following piece in the
+chain's stored orientation, in either travel direction (the final end is closed).
+Unmeasured pieces participate in matching but return no frames, and a match
+to one gives `Point.segmentId = null`; they cannot become a detail card.
 
 **How a segment's numbers come about** (all tunable in
 `backend/config/segment_aggregation.json`, currently the ML recipe from
@@ -256,18 +267,20 @@ is an error, not a silent default. Stored values were converted by Alembic
 - Table `road_segments` (Alembic `0005`, additive): `id`, `osm_way_id`,
   `piece_index`, `geom` (LineString 4326, GiST), `length_m`, `road_name`,
   `highway`, `n_images`, `score`, `rqi`, `p_bad`, `confidence`,
-  `unlabelled_area` (`0007`), `capture_date_min/max`, `updated_at`. Derived data — safe to rebuild. Only
-  pieces with frames are stored. `osm_way_id` is the smallest OSM way id of
-  the stitched road.
-- Builder: `cd backend && ../.venv/bin/python scripts/build_segments.py`
+  `unlabelled_area` (`0007`), `capture_date_min/max`, `updated_at`. Derived data —
+  safe to rebuild. Measured pieces and unmeasured pieces within the configured
+  neighbourhood are stored. `osm_way_id` is the smallest OSM way id of the stitched road.
+- Builder: `cd backend && ../.venv/bin/python scripts/build_segments.py` (writes)
+  and add `--dry-run` to preview without replacing the derived table
   (`--bbox minLng,minLat,maxLng,maxLat`, `--dry-run`, `--offline`,
   `--cached-only`, `--no-merge`, `--segment-length`, `--aggregator`).
   Consecutive OSM ways of one road (same name + class, unique continuation at
-  the node) are stitched first; each scored frame is snapped to the nearest
+  the node, equal speed limits) are stitched first; each scored frame is snapped to the nearest
   road within 20 m whose bearing fits the frame heading (|Δ| < 45° mod 180);
   prints match / class / confidence stats; replaces the rows in one
-  transaction. Idempotent. A `--bbox` run rewrites only the roads touching the
-  box and turns itself into a full rebuild when the OSM tiles, the config or
+  transaction. Idempotent. A `--bbox` run rewrites the roads touching the box
+  and their potential unmeasured neighbours; all frames are read so neighbourhood
+  membership agrees with a full build. It turns into a full rebuild when the OSM tiles, the config or
   the engine changed since the last full one. **Re-run it after changing the
   config.**
 - OSM geometry comes from the public Overpass API, fetched per 0.05° tile
@@ -281,7 +294,9 @@ is an error, not a silent default. Stored values were converted by Alembic
   skipped, the job still succeeds, and the next builder run catches up.
 - Publishing: `scripts/publish.py` full-replaces `road_segments` on the target
   together with `street_view_images` (`--dry-run` reports without touching
-  the target). Run the builder before publishing.
+  the target). This includes the bounded null-score neighbours needed by
+  public `routeQuality`; dropping them would restore false parallel-road coverage.
+  Run the builder before publishing.
 
 **Attribution (required).** The geometry is © OpenStreetMap contributors,
 ODbL. Any map that draws `RoadSegment.path` must show

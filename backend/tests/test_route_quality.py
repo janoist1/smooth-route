@@ -161,3 +161,22 @@ def test_flipped_scale_reverses_worst_and_reindexes_classes():
     assert stats.length_by_rqi[3] > 100          # class 2 (worst the model gives)
     assert sum(stats.length_by_rqi) == pytest.approx(stats.covered_length_m)
     assert worst_segment_ids(stats, road, flipped) == ["b", "d", "a"]
+
+
+def test_unmeasured_parallel_road_does_not_inherit_measured_quality():
+    from app.services.segment_aggregation import load_config
+
+    scale = load_config().scale
+    best = scale.best_to_worst[0]
+    measured = seg("measured", 0, 300, best, float(best))
+    unmeasured = seg("unmeasured", 0, 300, None, None, north=10)
+    stats = compute_route_stats([at(0, 10), at(300, 10)], [measured, unmeasured], scale)
+    assert stats.total_length_m == pytest.approx(300, abs=0.1)
+    assert stats.covered_length_m == 0
+    assert stats.mean_score is None and stats.impact_score is None
+    assert stats.matched_m == {}
+    assert not any(stats.length_by_rqi)
+    # The measured road still receives its own quality.
+    own = compute_route_stats([at(0, 0), at(300, 0)], [unmeasured, measured], scale)
+    assert own.covered_length_m == own.total_length_m
+    assert own.mean_score == pytest.approx(best)

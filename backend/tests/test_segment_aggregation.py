@@ -539,3 +539,18 @@ def test_shipped_config_enables_the_unlabelled_area_rule():
     from app.services.segment_aggregation import load_config
     u = load_config().unlabelled_area
     assert u.radius_km == 3 and u.cap_level == "medium"
+
+
+def test_unmeasured_neighbourhood_defaults_to_twice_route_matching_radius():
+    from app.services.route_quality import ROUTE_BUFFER_M
+
+    assert CFG.unmeasured_neighbourhood_m == 2 * ROUTE_BUFFER_M
+    assert load_config().unmeasured_neighbourhood_m == 2 * ROUTE_BUFFER_M
+    enlarged = with_overrides(CFG, unmeasured_neighbourhood_m=4 * ROUTE_BUFFER_M)
+    assert config_from_dict(config_to_dict(enlarged)) == enlarged
+
+
+@pytest.mark.parametrize("radius", [-1, 0, 29, float("nan"), float("inf")])
+def test_unmeasured_neighbourhood_must_be_finite_and_cover_route_disambiguation(radius):
+    with pytest.raises(ValueError, match="unmeasured_neighbourhood_m"):
+        make_config(unmeasured_neighbourhood_m=radius)

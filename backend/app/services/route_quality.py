@@ -29,11 +29,10 @@ from dataclasses import dataclass, field
 from typing import Hashable, Optional, Sequence
 
 from app.services import route_scoring
-from app.services.map_matching import LineIndex
+from app.services.map_matching import ROUTE_BUFFER_M, LineIndex
 from app.services.segment_aggregation import RqiScale
 from app.services.segment_geometry import LatLon, densify
 
-ROUTE_BUFFER_M = 15.0
 ROUTE_MAX_BEARING_DIFF_DEG = 45.0
 ROUTE_SAMPLE_STEP_M = 10.0
 # The buffer is cut (almost) flat at a segment's ends: a sample further than
@@ -83,14 +82,14 @@ def compute_route_stats(
 ) -> RouteStats:
     """Match ``path`` (``[(lat, lon), ...]``) to ``segments`` and add it up.
 
-    Segments without data (``rqi`` / ``score`` None, or a class the scale does
-    not know) are ignored: a stretch covered only by them counts as uncovered.
+    Match against ALL geometry, including unmeasured roads. Only after
+    matching does a known class and score count towards coverage; a nearby
+    measured road must never lend its quality to the road actually driven.
     """
     classes = scale.best_to_worst
     stats = RouteStats(length_by_rqi=[0.0] * len(classes))
-    usable = [s for s in segments if s.rqi in classes and s.score is not None]
-    by_id = {s.id: s for s in usable}
-    index = LineIndex(usable)
+    by_id = {s.id: s for s in segments}
+    index = LineIndex(segments)
 
     weighted_score = 0.0
     impact = 0.0
@@ -105,9 +104,10 @@ def compute_route_stats(
         if match is None:
             continue
         seg = by_id[match.line_id]
+        if seg.rqi not in classes or seg.score is None:
+            continue
         stats.covered_length_m += length
         stats.length_by_rqi[classes.index(seg.rqi)] += length
-        assert seg.score is not None  # `usable` keeps only scored segments
         weighted_score += seg.score * length
         speed = seg.speed_kmh if seg.speed_kmh else route_scoring.speed_kmh(None, None)
         impact += route_scoring.badness(seg.score, best) * route_scoring.speed_factor(speed) * length

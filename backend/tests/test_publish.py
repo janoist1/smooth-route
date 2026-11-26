@@ -98,3 +98,35 @@ def test_app_engine_pings_pooled_connections():
     from app.core.database import engine
 
     assert engine.pool._pre_ping is True
+
+
+def test_publish_keeps_bounded_unmeasured_rivals_for_public_route_quality(publish, monkeypatch):
+    from types import SimpleNamespace
+    from app.core.rqi_scale import SCALE
+
+    columns = publish.SEGMENT_COLUMNS
+    measured = {c: None for c in columns}
+    measured.update(id="1:0", n_images=1, score=float(SCALE.best), rqi=SCALE.best)
+    unmeasured = {c: None for c in columns}
+    unmeasured.update(id="2:0", n_images=0)
+    payload = [measured, unmeasured]
+    statements = []
+
+    class FakeSession:
+        def __init__(self, engine):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def execute(self, statement):
+            statements.append(statement)
+            return SimpleNamespace(all=lambda: [tuple(r[c] for c in columns) for r in payload])
+
+    monkeypatch.setattr(publish, "inspect", lambda _: SimpleNamespace(has_table=lambda _: True))
+    monkeypatch.setattr(publish, "Session", FakeSession)
+    assert publish.read_segments(object()) == payload
+    assert statements[0].whereclause is None  # null-score rivals must reach the public matcher

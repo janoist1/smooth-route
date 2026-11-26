@@ -46,6 +46,8 @@ export interface RouteQuality {
   /** Metres of the route in quality class 1..4 (index 0 = class 1). */
   lengthByRqi: number[]
   meanScore: number | null
+  /** Backend class of meanScore, using the segment cut-points. */
+  meanRqi?: number | null
   /** Speed-weighted impact (lower = better, 0 = all Kiváló); ranks "Legsimább". */
   impactScore?: number | null
   worstSegments: RoadSegment[]
