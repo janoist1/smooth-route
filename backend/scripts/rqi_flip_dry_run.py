@@ -26,6 +26,7 @@ warnings.filterwarnings("ignore", message="Did not recognize type")  # PostGIS c
 BACKEND = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MIGRATION = os.path.join(BACKEND, "alembic", "pending", "rqi_flip_direction.py")
 BAD_FROM_OLD = 3  # bad road today: value >= 3; after the flip: value <= 6 - 3
+TOLERANCE = 1e-9  # accepted round-trip deviation for continuous double columns
 
 
 def load_migration():
@@ -50,9 +51,12 @@ def _fmt(d):
 def check_target(conn, M, table, value_expr, where, label, decimals=None):
     """Before/after report for one stored value; returns list of failures.
 
-    decimals=None: a float column, mirrored as M - x (exact for the k/2 values
-    we store; checked per row). decimals=k: a JSON value mirrored through
-    numeric and round(.., k) (lossless iff no value has more than k decimals).
+    decimals=None: a float column, mirrored as M - x in double precision. The
+    round trip is bit-exact for the level / half-step values we store, and
+    within ~1 ulp (1e-15) for arbitrary continuous doubles such as
+    road_segments.score: accepted up to TOLERANCE, reported either way.
+    decimals=k: a JSON value mirrored through numeric and round(.., k), which
+    is lossless iff no value has more than k decimals.
     """
     fails = []
     after_expr = f"({M.MIRROR} - {value_expr})"
@@ -68,13 +72,16 @@ def check_target(conn, M, table, value_expr, where, label, decimals=None):
     before = _dist(conn, table, value_expr, where, digits)
     after = _dist(conn, table, after_expr, where, digits)
     if decimals is None:
-        lossy = conn.execute(sa.text(
-            f"SELECT count(*) FROM {table} WHERE {where} AND "
-            f"({M.MIRROR} - {after_expr}) <> {value_expr}")).scalar()
+        inexact, max_dev = conn.execute(sa.text(
+            f"SELECT count(*) FILTER (WHERE ({M.MIRROR} - {after_expr}) <> {value_expr}), "
+            f"coalesce(max(abs(({M.MIRROR} - {after_expr}) - {value_expr})), 0) "
+            f"FROM {table} WHERE {where}")).one()
+        lossy = 0 if float(max_dev) <= TOLERANCE else inexact
     else:
-        lossy = conn.execute(sa.text(
+        inexact = lossy = conn.execute(sa.text(
             f"SELECT count(*) FROM {table} WHERE {where} AND "
             f"{value_expr} <> round({value_expr}, {decimals})")).scalar()
+        max_dev = 0
     print(f"\n== {label}  ({table}: {total} rows, {nonnull} with a value -> {nonnull} updated)")
     if nonnull:
         print(f"   before: min {float(bmin):g}  max {float(bmax):g}  mean {float(bavg):.3f}  "
@@ -84,8 +91,14 @@ def check_target(conn, M, table, value_expr, where, label, decimals=None):
     binned = "" if decimals is None else " (0.1 bins)"
     print(f"   before dist{binned}: {_fmt(before)}")
     print(f"   after  dist{binned}: {_fmt(after)}")
-    print(f"   reversible (downgrade restores every value exactly): "
-          f"{'yes' if lossy == 0 else f'NO, {lossy} rows'}")
+    if lossy:
+        verdict = f"NO, {lossy} rows"
+    elif inexact:
+        verdict = (f"yes within {TOLERANCE:g} ({inexact} continuous values differ by "
+                   f"<= {float(max_dev):.1e}, float rounding)")
+    else:
+        verdict = "yes, exactly"
+    print(f"   reversible (downgrade restores every value): {verdict}")
     if bbad != abad:
         fails.append(f"{label}: bad-road count changes {bbad} -> {abad}")
     if lossy:
