@@ -30,7 +30,7 @@ from app.services.segment_aggregation import (
     confidence_level,
     load_config,
 )
-from app.services.segment_geometry import LatLon
+from app.services.segment_geometry import LatLon, polyline_length_m
 
 # Below this Leaflet zoom the segment layer returns nothing: a screen then
 # spans tens of kilometres and the quality grid (roadQualityGrid) is the
@@ -43,6 +43,11 @@ _NO_SIMPLIFY_ZOOM = 18
 
 # routeQuality input guards (anonymous endpoint).
 MAX_PATH_POINTS = 20000
+# The path is sampled every ROUTE_SAMPLE_STEP_M, so work grows with its
+# length, not its point count: 20 000 points zig-zagging across the country
+# would mean millions of samples per anonymous request. No drivable route the
+# app plans comes near this (Hungary is ~530 km across).
+MAX_PATH_LENGTH_M = 2_000_000
 # A path is covered by many small envelopes instead of one huge bbox, so a
 # long diagonal route does not pull in every segment of the country.
 _ENVELOPE_MAX_SPAN_DEG = 0.02
@@ -109,6 +114,8 @@ def normalize_path(path: Sequence[Sequence[float]]) -> list[LatLon]:
         if not (math.isfinite(lat) and math.isfinite(lng)) or abs(lat) > 90 or abs(lng) > 180:
             raise ValueError("path point out of range (expected [lat, lng])")
         out.append((lat, lng))
+    if polyline_length_m(out) > MAX_PATH_LENGTH_M:
+        raise ValueError(f"path is too long (max {MAX_PATH_LENGTH_M // 1000} km)")
     return out
 
 

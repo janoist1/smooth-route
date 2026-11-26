@@ -75,7 +75,8 @@ segments per call (best-supported first). Geometry is simplified with
 from zoom 18. Only stretches we have frames for exist, so `rqi` / `score` are
 in practice never null; the types stay nullable as the contract says.
 
-**`routeQuality`** — `path` = `[[lat, lng], ...]` (at most 20 000 points). The
+**`routeQuality`** — `path` = `[[lat, lng], ...]` (at most 20 000 points and
+2 000 km: the cost grows with the length, sampled every 10 m). The
 path is sampled every 10 m; a sample belongs to the nearest segment within
 **15 m** whose direction is within **45°** of the route's (modulo 180°, so
 both travel directions count). Samples more than 5 m past a segment's end do
