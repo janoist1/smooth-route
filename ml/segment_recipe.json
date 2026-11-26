@@ -11,6 +11,14 @@
   "p_bad_threshold": 0.5,
   "min_images": 2,
   "recommended_frame_spacing_m": 30,
+  "sampling": {
+    "base_spacing_m": 50,
+    "dense_spacing_m": 30,
+    "densify_if": [
+      "low_confidence"
+    ],
+    "single_pass_spacing_m": 30
+  },
   "confidence": {
     "n_ref": 0.5,
     "spread_ref": 2.0,

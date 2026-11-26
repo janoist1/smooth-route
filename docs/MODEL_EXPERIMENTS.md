@@ -431,11 +431,12 @@ Reprodukálás:
 > bad-road AUC 0.94 → 0.97**. The gain is real but modest, because
 > neighbouring frames share most of their error: averaging cannot remove an
 > error that the whole segment has in common. Two useful consequences:
-> **(1)** a few frames per segment are as good as twenty, so frames can be
-> collected every **~30 m instead of ~10 m** with no measurable loss (3× map
-> coverage per image quota); **(2)** how sure we are about a segment depends
-> on how far its score is from the nearest cut-point, hardly on the number of
-> frames or their spread. One limit: in **Budapest**, the region the model
+> **(1)** a few frames per segment are as good as twenty: a frame every
+> **50 m, plus a second pass at 30 m on the low-confidence fifth of the
+> road**, gives the same segment quality as today's 10 m with **26% of the
+> frames** (a plain 30 m spacing: 33%); **(2)** how sure we are about a
+> segment depends on how far its score is from the nearest cut-point, hardly
+> on the number of frames or their spread. One limit: in **Budapest**, the region the model
 > already reads worst, aggregation does not help. The recipe for the backend
 > is `ml/segment_recipe.json`. No model was changed.
 
@@ -637,28 +638,114 @@ would be more informative than the n and IQR terms of the current formula.
 
 ### How dense must the frames be?
 
-The collector takes a frame every ~10 m, and every frame costs Street View
-quota. Keeping only every k-th labelled frame (same 200 m segments, same
-truth, same cut-points):
+The collector takes a frame every ~10 m (`route_collector.py`,
+`interval_meters=10`), and every frame costs Street View quota. We thinned the
+labelled runs and re-measured the 200 m recipe: same segments, same truth
+(the median of *all* human labels), same cut-points; only the frames the
+model may use change. Every number is the mean of the 3 segmentations and of
+all offsets of the thinning; intervals resample cells; Δ is the paired
+difference to the dense result on the same segments. Bad-segment recall =
+share of the truly bad segment length that is predicted bad.
 
-| frames kept | ≈ spacing | frames / segment | QWK | MAE | exact | bad AUC | good/bad acc. | ΔQWK vs dense [95% CI] |
-|---|---|---|---|---|---|---|---|---|
-| all | 10 m | 18.8 | 0.843 | 0.292 | 70.8% | 0.968 | 89.4% | – |
-| every 2nd | 20 m | 9.4 | 0.845 | 0.282 | 72.1% | 0.965 | 90.6% | −0.005 [−0.027, +0.015] |
-| **every 3rd** | **30 m** | 6.3 | **0.848** | 0.276 | 72.6% | 0.965 | 91.0% | **+0.005 [−0.010, +0.025]** |
-| every 5th | 50 m | 3.8 | 0.824 | 0.315 | 68.9% | 0.962 | 89.2% | −0.027 [−0.058, −0.003] |
-| every 10th | 100 m | 2.0 | 0.808 | 0.329 | 67.9% | 0.952 | 88.2% | −0.043 [−0.093, −0.014] |
+**(a) Uniform spacing**
 
-(Main columns: mean of the 3 segmentations. Δ: paired bootstrap on the
-unshifted segmentation.) **30 m spacing loses nothing measurable** and
-triples the road covered per image. At 50 m a small loss appears (about
-−0.02 QWK), at 100 m it is clear (−0.04) and a segment holds only two frames.
-The confidence levels keep their meaning at 30 m (P(class correct) 0.89 /
-0.71 / 0.61 for high / medium / low). The picture is the same for shorter
-segments (100 m: QWK 0.819 → 0.809 at 30 m → 0.774 at 100 m). Caveat: this
-is thinning of dense, hand-checked runs; real sparse collection also meets
-frames the labelled set does not contain (junk views, occlusions), which is
-why the recipe uses the median and asks for at least 2 frames.
+| spacing | frames used | QWK | MAE | exact | bad AUC | bad-segment recall |
+|---|---|---|---|---|---|---|
+| 10 m (today) | 100% | 0.843 [0.74, 0.91] | 0.292 [0.21, 0.37] | 70.8% | 0.968 [0.91, 1.00] | 0.81 [0.60, 0.95] |
+| 20 m | 50% | 0.845 [0.75, 0.91] | 0.282 [0.21, 0.35] | 72.1% | 0.965 [0.91, 0.99] | 0.85 [0.69, 0.95] |
+| 30 m | 33% | 0.848 [0.75, 0.91] | 0.276 [0.20, 0.34] | 72.6% | 0.965 [0.91, 1.00] | 0.85 [0.67, 0.95] |
+| 50 m | 20% | 0.824 [0.71, 0.89] | 0.315 [0.24, 0.39] | 68.9% | 0.962 [0.91, 0.99] | 0.82 [0.66, 0.94] |
+| 100 m | 10% | 0.808 [0.68, 0.88] | 0.329 [0.26, 0.40] | 67.9% | 0.952 [0.89, 0.99] | 0.82 [0.64, 0.94] |
+
+| paired difference to 10 m | ΔQWK | ΔMAE | ΔAUC | Δ bad-segment recall |
+|---|---|---|---|---|
+| 20 m | +0.004 [−0.017, +0.026] | −0.012 [−0.046, +0.019] | −0.002 [−0.007, +0.002] | +0.042 [−0.026, +0.123] |
+| 30 m | +0.008 [−0.010, +0.030] | −0.019 [−0.052, +0.011] | −0.002 [−0.006, +0.002] | +0.037 [−0.013, +0.102] |
+| 50 m | −0.014 [−0.039, +0.010] | +0.020 [−0.020, +0.057] | −0.005 [−0.012, +0.001] | +0.015 [−0.049, +0.093] |
+| 100 m | −0.023 [−0.050, +0.006] | +0.034 [−0.012, +0.073] | −0.012 [−0.026, −0.002] | +0.025 [−0.041, +0.105] |
+
+- **50 m is not measurably worse than 10 m.** Every interval contains zero,
+  and bad segments are found as often as with dense frames.
+- **It is not proven equal either.** The interval still allows a loss of 0.04
+  QWK. 20 m and 30 m are safely within 0.02 of dense. At 100 m a loss shows
+  in the AUC.
+- The two-pass results below settle it: frames added only on the unsure
+  fifth of the road improve on the 50 m pass by +0.019 [+0.007, +0.034]. So
+  uniform 50 m does leave about 0.02 QWK on the table; the direct comparison
+  to 10 m is just too noisy to show it.
+
+**(b) Two-pass collection.** A sparse first pass, then a denser second pass
+only on the segments the first pass is unsure about. Triggers, all computed
+from the first-pass frames: *low* = confidence < 0.55 (the formula above),
+*near a cut-point* = margin < 0.15, *bad* = class ≥ 3.
+
+| strategy | frames used | road re-visited | QWK | ΔQWK vs 10 m | ΔQWK vs its first pass alone | Δ bad-segment recall vs 10 m | bad frames photographed |
+|---|---|---|---|---|---|---|---|
+| 50 → 10 m if low, near a cut-point or bad (the proposed rule) | 60% | 52% | 0.838 | +0.001 [−0.004, +0.006] | +0.014 [−0.007, +0.038] | −0.002 [−0.005, 0.000] | 84% |
+| 50 → 10 m if low or bad | 53% | 42% | 0.840 | +0.003 [−0.002, +0.010] | +0.016 [−0.003, +0.040] | −0.003 [−0.009, 0.000] | 80% |
+| 50 → 10 m if bad | 43% | 29% | 0.832 | −0.005 [−0.020, +0.009] | +0.008 [−0.009, +0.025] | **−0.032 [−0.069, 0.000]** | 75% |
+| 50 → 10 m if low | 36% | 21% | 0.840 | +0.003 [−0.007, +0.015] | +0.016 [+0.001, +0.037] | +0.020 [−0.006, +0.055] | 38% |
+| **50 → 30 m if low** | **26%** | 21% | 0.843 | +0.005 [−0.012, +0.029] | **+0.019 [+0.007, +0.034]** | +0.028 [−0.038, +0.099] | 27% |
+| 100 → 30 m if low | 17% | 25% | 0.833 | +0.002 [−0.016, +0.028] | +0.025 [+0.013, +0.041] | +0.018 [−0.055, +0.093] | 18% |
+| uniform 30 m | 33% | – | 0.848 | +0.008 [−0.010, +0.030] | – | +0.037 [−0.013, +0.102] | 33% |
+| uniform 50 m | 20% | – | 0.824 | −0.014 [−0.039, +0.010] | – | +0.015 [−0.049, +0.093] | 20% |
+
+- **The second pass works, and "low confidence" is the trigger that does the
+  work.** It provably improves on the first pass alone and brings the result
+  back to the dense one.
+- **Adding "near a cut-point" and "bad" to the trigger buys nothing for
+  segment quality.** The re-visited share of the road goes from 21% to 52%
+  and the frames from 36% to 60%, for the same result. Re-visiting *only* the
+  bad segments is harmful: bad-segment recall drops by 3 points, because a
+  one-sided re-check can only take bad flags away.
+- **30 m is dense enough for the second pass.** Going down to 10 m costs 36%
+  instead of 26% of the frames and changes nothing.
+- **Per frame spent.** Call a strategy proven if the lower end of its ΔQWK
+  interval is above −0.02. The cheapest proven ones are 100 → 30 m if low
+  (17% of the frames), 50 → 30 m if low (26%) and uniform 30 m (33%).
+  Uniform 50 m and 100 m are not proven. The differences among the proven
+  ones are within noise.
+
+**Recommendation: 50 m everywhere, then 30 m on the low-confidence
+segments.** It needs 26% of today's frames (about 4× the road per quota), is
+provably better than 50 m alone and cannot be told from 10 m. If a second
+pass is not worth building, **uniform 30 m** (33%) is the single-pass
+equivalent. A 100 m first pass is cheaper still and passes the same test, but
+we do not recommend it: two frames per segment leave the median no protection
+against a junk frame (production does not filter non-road views, and the
+labelled set contains none), and it sees the fewest short defects.
+
+**Short defects.** A defect visible in only one or two frames is a different
+question from segment quality. Runs of consecutive human-bad frames:
+
+| run of bad frames | runs | share of all bad road | the model calls such a frame bad | its 200 m segment is painted bad (dense frames) | run photographed at 30 / 50 / 100 m |
+|---|---|---|---|---|---|
+| 1 frame (~10 m) | 46 | 8% | 69% | 49% | 33% / 20% / 10% |
+| 2 frames | 21 | 7% | 91% | 64% | 67% / 40% / 20% |
+| 3–4 frames | 25 | 16% | 81% | 62% | 100% / 68% / 34% |
+| 5–9 frames | 25 | 28% | 96% | 84% | 100% / 100% / 62% |
+| 10+ frames (100 m+) | 11 | 41% | 87% | 81% | 100% / 100% / 100% |
+
+- 85% of the bad road is in runs of at least 30 m. That is what a segment
+  colour can show, and it is found equally well at every spacing up to 50 m.
+- Defects one or two frames long are 15% of the bad road. **A 200 m segment
+  hides a third to a half of them even with dense frames**, because its class
+  is the median. Sparse sampling is not what loses them at segment level.
+- Showing them needs a separate frame-level defect layer, and that layer does
+  need the frames: at 30 m a third of the single-frame defects are
+  photographed, at 50 m a fifth. The proposed rule (50 → 10 m if low, near a
+  cut-point or bad) photographs 84% of all bad frames and 55% of the isolated
+  ones for 60% of the frames; the rest lie in segments that look confidently
+  good. If single defects must be on the map, that is the strategy to use.
+  For segment quality alone it spends more than twice the frames for nothing.
+
+The confidence levels keep their meaning with fewer frames (P(class correct)
+for high / medium / low: 0.89 / 0.71 / 0.61 at 30 m, 0.88 / 0.69 / 0.51 at
+50 m). The picture is the same for shorter segments (100 m: QWK 0.819 → 0.809
+at 30 m → 0.774 at 100 m). Caveat: this is thinning of dense, hand-checked
+runs; real sparse collection also meets frames the labelled set does not
+contain (junk views, occlusions), which is why the recipe uses the median and
+asks for at least 2 frames.
 
 ### Regions: does the bias survive aggregation?
 
@@ -735,6 +822,7 @@ one that still protects against a junk frame when a segment has only three.
   "p_bad_threshold": 0.5,
   "min_images": 2,
   "recommended_frame_spacing_m": 30,
+  "sampling": {"base_spacing_m": 50, "dense_spacing_m": 30, "densify_if": ["low_confidence"], "single_pass_spacing_m": 30},
   "confidence": {"n_ref": 0.5, "spread_ref": 2.0, "margin_ref": 0.6, "high": 0.8, "medium": 0.55},
   "integer_class_fallback": {"aggregator": "mean_class", "thresholds": [1.511, 2.52, 3.207]}
 }
@@ -764,7 +852,12 @@ How the backend should read it:
    the mean of the integer classes with its own cut-points is as good for the
    class (QWK 0.842 / MAE 0.295 at 200 m), but the margin-based confidence is
    not calibrated for it. Backfilling `dino_score` is the proper fix.
-7. Where the cuts fall does not matter (QWK ±0.015 between segmentations),
+7. **`sampling`**: collect a frame every `base_spacing_m`; compute the
+   segments and their confidence; on segments whose confidence is "low"
+   (< `confidence.medium`) add frames every `dense_spacing_m` and recompute.
+   With a single pass, use `single_pass_spacing_m`
+   (= `recommended_frame_spacing_m`).
+8. Where the cuts fall does not matter (QWK ±0.015 between segmentations),
    so the backend can segment along routes or streets as is convenient;
    chains should break at gaps > 40 m and at sharp turns.
 
@@ -786,8 +879,10 @@ Other lengths, same recipe (use these if a finer map is wanted):
   right in 93%, good/bad never wrong in our data). A quarter is "low": there
   the class is little better than a coin flip between two neighbours and the
   good/bad call is wrong one time in four, so it should look uncertain.
-- **Collect every ~30 m.** Same segment quality, three times the coverage per
-  quota.
+- **Collect sparsely, then look again where unsure.** A frame every 50 m and
+  a second pass at 30 m on low-confidence segments gives the same segment
+  quality with a quarter of the frames (uniform 30 m: a third). Single
+  defects are a separate layer and need dense frames where they matter.
 - **What aggregation cannot fix:** a whole stretch judged wrongly, a region
   the model reads differently (a constant offset around Tapolca, the good|bad
   decision in Budapest), and old images. Those need more varied labels and a

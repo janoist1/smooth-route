@@ -35,7 +35,9 @@ What it does (nothing here ever sees a test label before predicting it):
                         * (0.5 + 0.5*min(1, margin/margin_ref)), 0, 1)
      parameters fitted (Brier score vs "segment class correct") and checked
      cross-fold: fitted on four folds' segments, tabulated on the fifth.
-  7. Frame spacing: keep every 2nd/3rd/5th/10th frame and re-measure.
+  7. Frame spacing: keep every 2nd/3rd/5th/10th frame and re-measure; and
+     two-pass ("adaptive") collection: a sparse first pass, a denser second
+     pass only on the segments the first pass is unsure about.
   8. Per-region bias before/after aggregation, and the recipe JSON (plus a
      fallback for frames that only store the integer class: mean frame class).
 
@@ -78,13 +80,22 @@ PHASES = [0.0, 1 / 3, 2 / 3]    # shifted segmentations of the same chains
 SUBSAMPLE_N = [1, 2, 3, 5, 8]   # confidence: thin a segment to n frames
 SUBSAMPLE_DRAWS = 2
 SPACING_STEPS = [1, 2, 3, 5, 10]   # keep every k-th frame (~10 m apart)
+NEAR_MARGIN = 0.15    # two-pass sampling: "near a cut-point"
+NEAR_T23 = 0.30       # ... "near the good|bad cut-point"
 ALTERNATIVES = [100, 150, 200]     # lengths summarised next to the recipe
 
 # ---- the recommended recipe (picked from the nested tables this script
 # ---- prints; see docs/MODEL_EXPERIMENTS.md "Era 7" for the reasoning) ----
 RECOMMENDED = {"segment_length_m": 200, "aggregator": "median_score",
                "min_images": 2, "frame_spacing_m": 30,
-               "high": 0.80, "medium": 0.55}
+               "high": 0.80, "medium": 0.55,
+               # two-pass collection: a frame every base_spacing_m, then a
+               # frame every dense_spacing_m on the segments whose first-pass
+               # confidence is "low" (< medium). single_pass_spacing_m = the
+               # uniform spacing to use if only one pass is possible.
+               "sampling": {"base_spacing_m": 50, "dense_spacing_m": 30,
+                            "densify_if": ["low_confidence"],
+                            "single_pass_spacing_m": 30}}
 
 AGG_LABEL = {"median_score": "median score", "mean_score": "mean score",
              "trimmed_mean_score": f"trimmed mean ({TRIM:.0%}/side)",
@@ -579,24 +590,22 @@ def final_cutpoints(fr, segsets, kind):
 # --------------------------------------------------------------------------
 # 6. frame spacing (how dense must the frames be?)
 # --------------------------------------------------------------------------
-def spacing_eval(fr, chain, rank, segsets, kind, ths_by_fold, par, levels,
-                 picks=None):
+def spacing_eval(fr, chain, rank, segsets, kind, ths_by_fold, par, levels):
     """Keep every k-th frame of each chain (k = SPACING_STEPS, every offset)
     and re-evaluate the recipe: same segments, same truth (the full human
-    median), same cut-points; only the frames used shrink. Point estimates
-    are the mean over the segmentations and the k offsets; the bootstrap
-    matrices (if ``picks``) are for the unshifted segmentation."""
+    median), same cut-points; only the frames used shrink. Point estimates,
+    mean over the segmentations and the k offsets (confidence intervals:
+    sampling_study)."""
     score = fr["score"].values
     in_chain = (pd.Series(rank).groupby(chain).rank(method="first")
                 .astype(int).values - 1)
     med_t, hi_t = levels
-    out, boots = [], {}
+    out = []
     for step in SPACING_STEPS:
-        acc, bsum = [], 0.0
-        for ph, (seg, st) in enumerate(segsets):
+        acc = []
+        for seg, st in segsets:
             gt, w = st["gt"].values, st["length"].values
-            cell, fold = st["cell"].values, st["fold"].values
-            lab_mean = st["lab_mean"].values
+            fold, lab_mean = st["fold"].values, st["lab_mean"].values
             for offset in range(step):
                 keep = np.flatnonzero(in_chain % step == offset)
                 rows = []
@@ -609,14 +618,8 @@ def spacing_eval(fr, chain, rank, segsets, kind, ths_by_fold, par, levels,
                 dw, dn = d["w"].values, d["n"].values
                 conf = confidence(dn, d["iqr"].values, d["margin"].values, *par)
                 m = wmetrics(d["gt"].values, d["pred"].values, d["agg"].values, dw)
-                if picks is not None and ph == 0:
-                    bsum = bsum + boot_matrix(
-                        cell[d["seg"].values], d["gt"].values, d["pred"].values,
-                        d["agg"].values, dw, picks)
                 lvl = np.where(conf >= hi_t, 2, np.where(conf >= med_t, 1, 0))
                 row = {k: m[k] for k in KEYS}
-                if ph == 0:
-                    row.update({f"{k}_0": m[k] for k in KEYS})
                 row.update({
                     "frames/seg": float(np.average(dn, weights=dw)),
                     "covered": dw.sum() / w.sum(),
@@ -639,8 +642,217 @@ def spacing_eval(fr, chain, rank, segsets, kind, ths_by_fold, par, levels,
         mean = pd.DataFrame(acc).mean().to_dict()
         mean["step"] = step
         out.append(mean)
-        boots[step] = bsum / step
-    return pd.DataFrame(out), boots
+    return pd.DataFrame(out)
+
+
+# ---- sampling strategies with confidence intervals -------------------------
+# The cell bootstrap is done on per-cell sufficient statistics (weighted
+# confusion matrix, bad-road pair matrix for the AUC), so a resample is a
+# matrix product instead of a pass over the segments.
+FAST_KEYS = ("qwk", "mae", "exact", "bad_auc", "bad_acc", "bad_recall",
+             "bad_metres")
+_I, _J = np.indices((4, 4))
+
+
+def cell_stats(cell_pos, gt, pred, score, w, bad_len, n_cells):
+    conf = np.zeros((n_cells, 4, 4))
+    np.add.at(conf, (cell_pos, gt - 1, pred - 1), w)
+    bm = np.zeros((n_cells, 2))
+    np.add.at(bm[:, 0], cell_pos, bad_len * (pred >= S.BAD_FROM))
+    np.add.at(bm[:, 1], cell_pos, bad_len)
+    pos = gt >= S.BAD_FROM
+    sp, sn = score[pos], score[~pos]
+    pair = (w[pos][:, None] * w[~pos][None, :]) * (
+        (sp[:, None] > sn[None, :]) + 0.5 * (sp[:, None] == sn[None, :]))
+    auc = np.zeros((n_cells, n_cells))
+    np.add.at(auc, (cell_pos[pos][:, None], cell_pos[~pos][None, :]), pair)
+    return {"conf": conf, "bm": bm, "auc": auc,
+            "wpos": np.bincount(cell_pos[pos], w[pos], n_cells),
+            "wneg": np.bincount(cell_pos[~pos], w[~pos], n_cells)}
+
+
+def stats_metrics(st, mult):
+    """FAST_KEYS for every row of ``mult`` (how often each cell is drawn;
+    row 0 is all ones = the point estimate). Length-weighted like wmetrics.
+    bad_recall = share of truly bad segment length predicted bad;
+    bad_metres = share of the human-bad FRAME length that lies in a segment
+    predicted bad (what the map actually paints as bad)."""
+    c = np.einsum("bc,cij->bij", mult, st["conf"])
+    n = c.sum((1, 2))
+    wq = (_I - _J) ** 2
+    with np.errstate(divide="ignore", invalid="ignore"):
+        exp = (np.einsum("bi,bj->bij", c.sum(2), c.sum(1)) * wq).sum((1, 2)) / n
+        out = {
+            "qwk": 1 - (c * wq).sum((1, 2)) / exp,
+            "mae": (c * np.abs(_I - _J)).sum((1, 2)) / n,
+            "exact": np.einsum("bii->b", c) / n,
+            "bad_auc": np.einsum("bc,cd,bd->b", mult, st["auc"], mult)
+            / ((mult @ st["wpos"]) * (mult @ st["wneg"])),
+            "bad_acc": (c[:, :2, :2].sum((1, 2)) + c[:, 2:, 2:].sum((1, 2))) / n,
+            "bad_recall": c[:, 2:, 2:].sum((1, 2)) / c[:, 2:, :].sum((1, 2)),
+            "bad_metres": (mult @ st["bm"][:, 0]) / (mult @ st["bm"][:, 1]),
+        }
+    return np.stack([out[k] for k in FAST_KEYS], 1)
+
+
+def bad_run_length(fr, chain, rank):
+    """For every frame: the length (in frames) of the run of consecutive
+    human-bad frames (label >= 3, same chain) it belongs to; 0 if not bad."""
+    o = np.lexsort((rank, chain))
+    bad = fr["human_rqi"].values[o] >= S.BAD_FROM
+    ch = chain[o]
+    start = bad & ~(np.r_[False, bad[:-1]] & (np.r_[-1, ch[:-1]] == ch))
+    run_id = np.cumsum(start)
+    size = np.bincount(run_id[bad], minlength=run_id.max() + 1)
+    out = np.zeros(len(o), dtype=int)
+    out[o[bad]] = size[run_id[bad]]
+    run = np.zeros(len(o), dtype=int)
+    run[o[bad]] = run_id[bad]
+    return out, run
+
+
+def sampling_study(fr, chain, rank, fp, segsets, kind, ths_by_fold, par,
+                   levels, picks, cells, strategies):
+    """Uniform spacings and two-pass ("adaptive") strategies, on the same
+    segments, truth and cut-points.
+
+    A strategy = (name, base, rule, dense_step): pass 1 keeps every base-th
+    frame; ``rule(pass-1 table, confidence, |score - t23|)`` marks the
+    segments that get a second pass, in which every dense_step-th frame is
+    added (1 = all frames). Reported per strategy: frames used as a share of
+    all frames, the metrics (mean over segmentations and offsets) with cell
+    bootstrap CIs, and the paired difference to the dense result on the very
+    same segments. "seen" = share of the human-bad frame length that is
+    actually photographed (all bad frames / only runs of 1-2 bad frames):
+    what a separate single-defect layer would have to work with."""
+    score = fr["score"].values
+    bad_frame = (fr["human_rqi"].values >= S.BAD_FROM).astype(float)
+    run_len, _ = bad_run_length(fr, chain, rank)
+    w_bad = fp * (run_len > 0)
+    w_iso = fp * ((run_len > 0) & (run_len <= 2))
+    in_chain = (pd.Series(rank).groupby(chain).rank(method="first")
+                .astype(int).values - 1)
+    n_cells = len(cells)
+    mult = np.ones((len(picks) + 1, n_cells))
+    pos = np.searchsorted(cells, picks)
+    for b in range(len(picks)):
+        mult[b + 1] = np.bincount(pos[b], minlength=n_cells)
+    med_t = levels[0]
+
+    prep = []
+    for seg, st in segsets:
+        frames = [g.values for _, g in
+                  pd.Series(np.arange(len(seg))).groupby(seg, sort=True)]
+        gt, fold = st["gt"].values, st["fold"].values
+        lab_mean = st["lab_mean"].values
+
+        def row(idx, s, gt=gt, fold=fold, lab_mean=lab_mean):
+            return segment_row(score[idx], ths_by_fold[int(fold[s])],
+                               int(gt[s]), float(lab_mean[s]), kind)
+
+        dense = pd.DataFrame([row(frames[s], s) for s in range(len(st))])
+        prep.append({"frames": frames, "gt": gt, "fold": fold, "row": row,
+                     "w": st["length"].values, "dense": dense,
+                     "bad_len": np.bincount(seg, fp * bad_frame,
+                                            minlength=len(st)),
+                     "cell_pos": np.searchsorted(cells, st["cell"].values),
+                     "pass1": {}})
+    # self-check of the fast metrics against the reference implementation
+    q = prep[0]
+    ref = wmetrics(q["gt"], q["dense"]["pred"].values, q["dense"]["agg"].values,
+                   q["w"])
+    fast = stats_metrics(cell_stats(q["cell_pos"], q["gt"],
+                                    q["dense"]["pred"].values,
+                                    q["dense"]["agg"].values, q["w"],
+                                    q["bad_len"], n_cells), mult[:1])[0]
+    for k in ("qwk", "mae", "exact", "bad_auc", "bad_acc"):
+        assert abs(ref[k] - fast[FAST_KEYS.index(k)]) < 1e-9, (k, ref[k])
+
+    def pass1(q, base, offset):
+        key = (base, offset)
+        if key not in q["pass1"]:
+            keep = in_chain % base == offset
+            cov, rows = [], []
+            for s, idx in enumerate(q["frames"]):
+                i1 = idx[keep[idx]]
+                if len(i1):
+                    cov.append(s)
+                    rows.append(q["row"](i1, s))
+            cov, t = np.array(cov), pd.DataFrame(rows)
+            conf = confidence(t["n"].values, t["iqr"].values,
+                              t["margin"].values, *par)
+            t23 = np.array([ths_by_fold[int(f)][1] for f in q["fold"][cov]])
+            q["pass1"][key] = (keep, cov, t, conf, np.abs(t["agg"].values - t23))
+        return q["pass1"][key]
+
+    out = []
+    for name, base, rule_fn, dense_step in strategies:
+        acc_m, acc_d, used, dens_share, seen, seen_iso = [], [], [], [], [], []
+        for q in prep:
+            for offset in range(base):
+                keep, cov, t, conf, d23 = pass1(q, base, offset)
+                agg, pred = t["agg"].values.copy(), t["pred"].values.copy()
+                dens = (rule_fn(t, conf, d23, med_t) if rule_fn is not None
+                        else np.zeros(len(cov), bool))
+                shot = keep.copy()
+                for j in np.flatnonzero(dens):
+                    idx = q["frames"][cov[j]]
+                    i2 = idx[keep[idx] | (in_chain[idx] % dense_step == 0)]
+                    r = q["row"](i2, cov[j])
+                    agg[j], pred[j] = r["agg"], r["pred"]
+                    shot[i2] = True
+                n_used = int(shot.sum())
+                seen.append(w_bad[shot].sum() / w_bad.sum())
+                seen_iso.append(w_iso[shot].sum() / w_iso.sum())
+                args = (q["cell_pos"][cov], q["gt"][cov])
+                tail = (q["w"][cov], q["bad_len"][cov], n_cells)
+                m = stats_metrics(cell_stats(*args, pred, agg, *tail), mult)
+                md = stats_metrics(cell_stats(
+                    *args, q["dense"]["pred"].values[cov],
+                    q["dense"]["agg"].values[cov], *tail), mult)
+                acc_m.append(m)
+                acc_d.append(m - md)
+                used.append(n_used / len(score))
+                dens_share.append(q["w"][cov][dens].sum() / q["w"][cov].sum())
+        with np.errstate(invalid="ignore"):
+            m, d = np.nanmean(acc_m, 0), np.nanmean(acc_d, 0)
+        out.append({"name": name, "base": base, "frames": float(np.mean(used)),
+                    "densified": float(np.mean(dens_share)), "m": m, "d": d,
+                    "seen": float(np.mean(seen)),
+                    "seen_iso": float(np.mean(seen_iso))})
+    return out
+
+
+def bad_run_table(fr, chain, rank, fp, seg, seg_pred):
+    """The owner's question: defects seen in only one or two frames. Runs of
+    consecutive human-bad frames (label >= 3) by length: how much of the bad
+    road they are, whether the model flags those frames at all, whether the
+    dense segment recipe paints them bad, and how often a sparse uniform
+    sampling photographs at least one frame of the run."""
+    run_len, run_id = bad_run_length(fr, chain, rank)
+    idx = np.flatnonzero(run_len > 0)
+    model_bad = fr["pred_rqi"].values[idx] >= S.BAD_FROM
+    seg_bad = seg_pred[seg[idx]] >= S.BAD_FROM
+    w, rl = fp[idx], run_len[idx]
+    rows = []
+    for lo, hi, label in ((1, 1, "1 frame (~10 m)"), (2, 2, "2 frames"),
+                          (3, 4, "3–4 frames"), (5, 9, "5–9 frames"),
+                          (10, 10 ** 6, "10+ frames (100 m+)")):
+        sel = (rl >= lo) & (rl <= hi)
+        if not sel.any():
+            continue
+        # one entry per run for the hit probabilities
+        r = pd.Series(rl[sel]).groupby(run_id[idx][sel]).first().values.astype(float)
+        rows.append({
+            "run of bad frames": label, "runs": len(r),
+            "share of all bad road": w[sel].sum() / w.sum(),
+            "model calls the frame bad": np.average(model_bad[sel], weights=w[sel]),
+            "segment painted bad (dense)": np.average(seg_bad[sel], weights=w[sel]),
+            "run photographed at 30 m": float(np.mean(np.minimum(1.0, r / 3))),
+            "at 50 m": float(np.mean(np.minimum(1.0, r / 5))),
+            "at 100 m": float(np.mean(np.minimum(1.0, r / 10))),
+        })
+    return pd.DataFrame(rows)
 
 
 # --------------------------------------------------------------------------
@@ -1075,38 +1287,122 @@ def main():
         rows.append(row)
     print_df(pd.DataFrame(rows))
 
-    # ---------------- 6. frame spacing ----------------
-    rule(f"6) How dense must the frames be? {lname(Lr)} + {AGG_LABEL[kr]}, "
-         "keeping every k-th frame of each chain (mean over the k offsets)")
-    sp, sp_boot = spacing_eval(fr, chain, rank, segsets[Lr], kr, rec["ths"],
-                               cs["par"], (med_t, hi_t), picks)
-    print(f"     main columns = mean of the {len(PHASES)} segmentations; "
-          "[..] and Δ = unshifted segmentation, paired cell bootstrap vs dense\n")
-    rows = []
-    for _, r in sp.iterrows():
-        step = int(r["step"])
-        dlo, dhi = ci(sp_boot[step] - sp_boot[1])
-        rows.append({
-            "every k-th": step, "≈ spacing m": round(step * float(np.median(fp))),
-            "frames/seg": r["frames/seg"], "covered": r["covered"],
-            f"n>={RECOMMENDED['min_images']}": r["n>=min_images"],
-            "QWK": r["qwk"], "MAE": r["mae"], "exact": r["exact"],
-            "bad AUC": r["bad_auc"], "bad acc": r["bad_acc"],
-            "ΔQWK vs dense": "–" if step == 1 else fmt_d(
-                r["qwk_0"] - sp["qwk_0"].values[0], dlo[0], dhi[0]),
-            "ΔMAE vs dense": "–" if step == 1 else fmt_d(
-                r["mae_0"] - sp["mae_0"].values[0], dlo[1], dhi[1]),
-            "ΔAUC vs dense": "–" if step == 1 else fmt_d(
-                r["bad_auc_0"] - sp["bad_auc_0"].values[0], dlo[4], dhi[4]),
-        })
-    print_df(pd.DataFrame(rows))
-    print("   Confidence vs spacing (final parameters):")
-    cols = ["mean conf", "high share", "medium share", "low share",
+    # ---------------- 6. frame spacing + sampling strategy ----------------
+    spacing_m = float(np.median(fp))
+    rule(f"6) How dense must the frames be? {lname(Lr)} + {AGG_LABEL[kr]}; "
+         "same segments, same truth (full human median), same cut-points")
+    print(f"     every number = mean of the {len(PHASES)} segmentations and of "
+          f"all offsets; [..] = 95% CI, cell bootstrap ({args.n_boot}); "
+          "Δ = paired difference to the dense (10 m) result on the same segments")
+    print("     bad recall = share of truly bad segment length predicted bad; "
+          "bad metres = share of the human-bad FRAME length lying in a segment "
+          "predicted bad;")
+    print("     bad frames seen / isolated bad seen = share of the human-bad "
+          "frame length (all / only runs of 1-2 bad frames) that is "
+          "photographed at all\n")
+
+    def low(t, conf, d23, med):
+        return conf < med
+
+    def bad(t, conf, d23, med):
+        return t["pred"].values >= S.BAD_FROM
+
+    def near(t, conf, d23, med):
+        return t["margin"].values < NEAR_MARGIN
+
+    def near23(t, conf, d23, med):
+        return d23 < NEAR_T23
+
+    def any_of(*fns):
+        return lambda t, conf, d23, med: np.any(
+            [f(t, conf, d23, med) for f in fns], axis=0)
+
+    uniform = [(f"uniform {round(k * spacing_m / 10) * 10} m", k, None, 1)
+               for k in SPACING_STEPS]
+    full_rule = any_of(low, near, bad)
+    two_pass = [
+        ("50 → 10 m if low confidence", 5, low, 1),
+        ("50 → 10 m if near a cut-point", 5, near, 1),
+        ("50 → 10 m if predicted bad", 5, bad, 1),
+        ("50 → 10 m if near the good|bad cut-point", 5, near23, 1),
+        ("50 → 10 m if low confidence or bad", 5, any_of(low, bad), 1),
+        ("50 → 10 m if low conf., near a cut-point or bad", 5, full_rule, 1),
+        ("50 → 30 m if low confidence", 5, low, 3),
+        ("50 → 30 m if low conf., near a cut-point or bad", 5, full_rule, 3),
+        ("100 → 10 m if low confidence", 10, low, 1),
+        ("100 → 10 m if low conf., near a cut-point or bad", 10, full_rule, 1),
+        ("100 → 30 m if low confidence", 10, low, 3),
+        ("100 → 30 m if low conf., near a cut-point or bad", 10, full_rule, 3),
+    ]
+    study = sampling_study(fr, chain, rank, fp, segsets[Lr], kr, rec["ths"],
+                           cs["par"], (med_t, hi_t), picks, cells,
+                           uniform + two_pass)
+    fk = FAST_KEYS.index
+    first_pass = {r["base"]: r for r in study[:len(uniform)]}
+
+    def study_rows(items, with_delta):
+        rows = []
+        for r in items:
+            m, d = r["m"], r["d"]
+            lo, hi = ci(m[1:])
+            dlo, dhi = ci(d[1:])
+            row = {"strategy": r["name"], "frames used": f"{r['frames']:.0%}",
+                   "2nd pass on": f"{r['densified']:.0%}",
+                   "bad frames seen": f"{r['seen']:.0%}",
+                   "isolated bad seen": f"{r['seen_iso']:.0%}"}
+            for k, lab, dec in (("qwk", "QWK", 3), ("mae", "MAE", 3),
+                                ("exact", "exact", 3), ("bad_auc", "bad AUC", 3),
+                                ("bad_recall", "bad recall", 3),
+                                ("bad_metres", "bad metres", 3)):
+                row[lab] = fmt_ci(m[0, fk(k)], lo[fk(k)], hi[fk(k)], dec)
+            if with_delta:
+                for k, lab in (("qwk", "ΔQWK"), ("mae", "ΔMAE"),
+                               ("bad_auc", "ΔAUC"), ("bad_recall", "Δbad recall"),
+                               ("bad_metres", "Δbad metres")):
+                    row[lab] = fmt_d(d[0, fk(k)], dlo[fk(k)], dhi[fk(k)])
+                # the same first pass without the second one (same segments,
+                # same resamples -> a paired difference)
+                g = d - first_pass[r["base"]]["d"]
+                glo, ghi = ci(g[1:])
+                row["ΔQWK vs 1st pass only"] = fmt_d(
+                    g[0, fk("qwk")], glo[fk("qwk")], ghi[fk("qwk")])
+            rows.append(row)
+        return pd.DataFrame(rows)
+
+    print("   (a) Uniform spacing:")
+    print_df(study_rows(study[:len(uniform)], False))
+    print("   (a) Uniform spacing, paired difference to dense:")
+    t = study_rows(study[1:len(uniform)], True)
+    print_df(t[["strategy", "frames used", "ΔQWK", "ΔMAE", "ΔAUC",
+                "Δbad recall", "Δbad metres"]])
+    print("   (b) Two-pass: sparse first pass, then a second pass only where "
+          f"the first one is unsure (low = confidence < {med_t}; near a "
+          f"cut-point = margin < {NEAR_MARGIN}; near the good|bad cut-point = "
+          f"within {NEAR_T23}; bad = class >= 3):")
+    t = study_rows(study[len(uniform):], True)
+    print_df(t[["strategy", "frames used", "2nd pass on", "QWK", "MAE", "exact",
+                "bad recall", "bad metres", "bad frames seen",
+                "isolated bad seen"]])
+    print("   (b) Two-pass, paired difference to dense (and to its own "
+          "first pass alone):")
+    print_df(t[["strategy", "frames used", "ΔQWK", "ΔMAE", "ΔAUC",
+                "Δbad recall", "Δbad metres", "ΔQWK vs 1st pass only"]])
+
+    print("   Short defects — runs of consecutive human-bad frames, by length "
+          "(dense frames, unshifted segmentation):")
+    print_df(bad_run_table(fr, chain, rank, fp, seg_r, run_r["pred"]))
+
+    sp = spacing_eval(fr, chain, rank, segsets[Lr], kr, rec["ths"], cs["par"],
+                      (med_t, hi_t))
+    print("   Coverage and confidence vs uniform spacing (final parameters):")
+    cols = ["frames/seg", "covered", "n>=min_images", "mean conf",
+            "high share", "medium share", "low share",
             "P(correct|high)", "P(correct|medium)", "P(correct|low)",
             "P(good/bad wrong|high)", "P(good/bad wrong|medium)",
             "P(good/bad wrong|low)"]
     t = sp[cols].copy()
-    t.insert(0, "every k-th", sp["step"].astype(int))
+    t.insert(0, "≈ spacing m", [round(k * spacing_m / 10) * 10
+                                for k in sp["step"].astype(int)])
     print_df(t)
 
     # ---------------- 7. regions ----------------
@@ -1200,6 +1496,7 @@ def main():
         "p_bad_threshold": round(p_thr, 2),
         "min_images": RECOMMENDED["min_images"],
         "recommended_frame_spacing_m": RECOMMENDED["frame_spacing_m"],
+        "sampling": RECOMMENDED["sampling"],
         "confidence": {"n_ref": cs["par"][0], "spread_ref": cs["par"][1],
                        "margin_ref": cs["par"][2], "high": hi_t, "medium": med_t},
         # only for frames that store the integer class but no continuous score
@@ -1228,7 +1525,7 @@ def main():
         lv = calib_table(c["rows"][c["full"]], c["conf"][c["full"]], lv_edges,
                          LEVELS).set_index("level")
         s = sp if L == Lr else spacing_eval(
-            fr, chain, rank, segsets[L], kr, r["ths"], c["par"], (med_t, hi_t))[0]
+            fr, chain, rank, segsets[L], kr, r["ths"], c["par"], (med_t, hi_t))
         row = {"L": lname(L), "cut-points": fmt_th(final_cutpoints(fr, segsets[L], kr)),
                "n_ref/spread_ref/margin_ref": "/".join(str(x) for x in c["par"])}
         for nm in LEVELS[::-1]:
