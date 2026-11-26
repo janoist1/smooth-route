@@ -1,7 +1,8 @@
 import type { SagaIterator } from 'redux-saga'
 import { takeLatest, put, call, select } from 'redux-saga/effects'
 import { matchPath, type PathMatch } from 'react-router-dom'
-import { actions as trainingActions, selectors as trainingSelectors } from 'modules/training'
+import { actions as trainingActions } from 'modules/training/slice'
+import * as trainingSelectors from 'modules/training/selectors'
 import {
   actions as mapActions,
   selectors as mapSelectors,
@@ -9,9 +10,9 @@ import {
   roadsSelectors,
   layersForZoom,
 } from 'modules/map'
-import { actions as settingsActions } from 'modules/settings'
+import * as settingsActions from 'modules/settings/slice'
 import { actions as routingActions } from 'modules/routing'
-import { actions as labelingActions } from 'modules/labeling'
+import { actions as labelingActions } from 'modules/labeling/slice'
 import { waitForAppStart } from 'modules/app'
 import { PAGE_SIZE } from '../constants'
 import { ROUTES } from '../routes'

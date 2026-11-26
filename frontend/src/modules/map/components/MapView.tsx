@@ -16,7 +16,7 @@ import RoutePlanner from './RoutePlanner'
 import type { MapStyle } from './MapStyleSwitcher'
 
 import { getRQIColor, resolveRqi } from '../../ui'
-import { useRqiDisplaySource } from '../../settings'
+import { useRqiDisplaySource } from '../../settings/hooks'
 import QualityGridLayer from './QualityGridLayer'
 import StaleImageToggle from './StaleImageToggle'
 import { BASE_MAPS } from '../baseMaps'

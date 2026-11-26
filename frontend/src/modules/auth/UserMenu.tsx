@@ -1,42 +1,12 @@
-import React from 'react'
-import { SignedIn, SignedOut, SignInButton, UserButton } from '@clerk/clerk-react'
-import { LogIn } from 'lucide-react'
+import React, { useCallback } from 'react'
 import { authEnabled } from './config'
+import { setUserMenuSlot } from './userMenuSlot'
 
-/** Sign-in pill / Clerk user button, styled to sit in the floating nav row. */
+/** Slot for the sign-in pill / Clerk user button in the floating nav row. The
+ * lazily loaded Clerk island portals the button in here (ClerkIsland.tsx);
+ * until it arrives the slot is empty, as Clerk's <SignedOut> was before load. */
 export const UserMenu: React.FC = () => {
+  const ref = useCallback((el: HTMLDivElement | null) => setUserMenuSlot(el), [])
   if (!authEnabled) return null
-
-  return (
-    <div style={{ pointerEvents: 'auto', display: 'flex', alignItems: 'center' }}>
-      <SignedOut>
-        <SignInButton mode="modal">
-          <button
-            className="fnav-btn"
-            aria-label="Sign in"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '10px 16px',
-              borderRadius: '9999px',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
-              background: 'rgba(0, 0, 0, 0.4)',
-              color: '#d1d5db',
-              backdropFilter: 'blur(12px)',
-              cursor: 'pointer',
-              fontSize: '0.875rem',
-              fontWeight: 500,
-            }}>
-            <LogIn size={20} />
-            {/* Hidden on phones by FloatingNavBar's .fnav-label rule. */}
-            <span className="fnav-label">Sign in</span>
-          </button>
-        </SignInButton>
-      </SignedOut>
-      <SignedIn>
-        <UserButton />
-      </SignedIn>
-    </div>
-  )
+  return <div ref={ref} style={{ pointerEvents: 'auto', display: 'flex', alignItems: 'center' }} />
 }

@@ -1,39 +1,30 @@
-import React, { useEffect, useRef } from 'react'
-import { ClerkProvider, useAuth } from '@clerk/clerk-react'
-import { client } from '../graphql/client'
-import { CLERK_PUBLISHABLE_KEY, authEnabled } from './config'
-import { setAuthTokenGetter } from './tokenBridge'
+import React, { Suspense, lazy } from 'react'
+import { authEnabled } from './config'
+import { expectSession, hasClerkSessionCookie, setAuthSettled } from './tokenBridge'
 
-/** Registers Clerk's getToken for the Apollo auth link and re-runs active
- * queries when the sign-in state flips (viewer/role changes with it). */
-const TokenBridge: React.FC = () => {
-  const { getToken, isSignedIn } = useAuth()
+// Clerk (~90 kB) is not in the first download: the island loads in its own
+// chunk right after the app starts, beside the app rather than around it.
+const ClerkIsland = lazy(() => import('./ClerkIsland'))
 
-  useEffect(() => {
-    setAuthTokenGetter(() => getToken())
-    return () => setAuthTokenGetter(null)
-  }, [getToken])
-
-  const firstRender = useRef(true)
-  useEffect(() => {
-    if (firstRender.current) {
-      firstRender.current = false
-      return
-    }
-    void client.refetchQueries({ include: 'active' })
-  }, [isSignedIn])
-
-  return null
+if (authEnabled && typeof document !== 'undefined') {
+  // Until the island knows the sign-in state, the viewer is "loading"; a
+  // likely-signed-in visitor's early requests wait for the token.
+  setAuthSettled(false)
+  expectSession(hasClerkSessionCookie(document.cookie))
+  // If Clerk never loads (blocked CDN, offline), stop waiting: anonymous.
+  setTimeout(() => {
+    expectSession(false)
+    setAuthSettled(true)
+  }, 15_000)
 }
 
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  if (!authEnabled) {
-    return <>{children}</>
-  }
-  return (
-    <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} afterSignOutUrl="/">
-      <TokenBridge />
-      {children}
-    </ClerkProvider>
-  )
-}
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <>
+    {children}
+    {authEnabled && (
+      <Suspense fallback={null}>
+        <ClerkIsland />
+      </Suspense>
+    )}
+  </>
+)

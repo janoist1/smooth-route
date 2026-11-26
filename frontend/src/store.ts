@@ -10,11 +10,16 @@ import {
   roadsReducer,
   roadsSagas,
 } from './modules/map'
-import { reducer as trainingReducer, sagas as trainingSagas } from './modules/training'
-import { reducer as settingsReducer, sagas as settingsSagas } from './modules/settings'
+// Reducers/sagas by file, not through the module barrels: the barrels also
+// export the admin pages' components, which must stay in their lazy chunks.
+import trainingReducer from './modules/training/slice'
+import trainingSagas from './modules/training/sagas'
+import settingsReducer from './modules/settings/slice'
+import settingsSagas from './modules/settings/sagas'
 import { reducer as appReducer } from './modules/app'
 import { reducer as apiReducer, sagas as apiSagas } from './modules/api'
-import { reducer as labelingReducer, sagas as labelingSagas } from './modules/labeling'
+import labelingReducer from './modules/labeling/slice'
+import labelingSagas from './modules/labeling/sagas'
 
 // Sagas
 import globalSagas from './sagas'
