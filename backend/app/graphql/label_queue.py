@@ -23,6 +23,7 @@ class LabelQueueStrategy(Enum):
     UNCERTAIN = "uncertain"
     DIVERSE = "diverse"
     MIXED = "mixed"
+    RECHECK = "recheck"  # already-labelled frames, served blind (old label never sent)
 
 
 @strawberry.type
@@ -53,6 +54,10 @@ class LabelQueueStats:
     labelled_today: int
     eligible: int
     scored: int
+    # Owner's self-consistency on re-checked frames (original vs re-check label).
+    rechecked: int
+    recheck_same: Optional[float]
+    recheck_within_one: Optional[float]
 
 
 @strawberry.type
@@ -119,6 +124,7 @@ class LabelQueueQuery:
         try:
             result, info, cuts = store.build(db, strategy.value, limit, exclude_ids or ())
             total, today = store.label_counts(db)
+            consistency = store.recheck_consistency(db)
         finally:
             db.close()
 
@@ -147,7 +153,10 @@ class LabelQueueQuery:
             strategy=strategy,
             items=items,
             stats=LabelQueueStats(total_labelled=total, labelled_today=today,
-                                  eligible=result.eligible, scored=result.scored),
+                                  eligible=result.eligible, scored=result.scored,
+                                  rechecked=consistency["n"],
+                                  recheck_same=consistency["same"],
+                                  recheck_within_one=consistency["within_one"]),
         )
 
     @strawberry.field(permission_classes=[IsAdmin])

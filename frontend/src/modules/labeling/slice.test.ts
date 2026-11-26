@@ -16,7 +16,7 @@ const item = (id: number, extra: Partial<QueueItem> = {}): QueueItem => ({
   ...extra,
 })
 
-const stats = { totalLabelled: 100, labelledToday: 5, eligible: 1000, scored: 900 }
+const stats = { totalLabelled: 100, labelledToday: 5, eligible: 1000, scored: 900, rechecked: 0 }
 
 const withQueue = (ids: number[], extra: Partial<LabelingState> = {}): LabelingState => ({
   ...initialState,
@@ -48,6 +48,21 @@ describe('rating', () => {
   it('accepts every scale level, including one the model never predicts', () => {
     const s = reducer(withQueue([1, 2]), actions.rate({ id: 1, rqi: 5 }))
     expect(s.outbox[0]).toMatchObject({ kind: 'save', rqi: 5 })
+  })
+
+  it('a re-check replaces a label: it does not inflate the label counters', () => {
+    let s = reducer(withQueue([1, 2]), actions.setStrategy('RECHECK'))
+    expect(s.queue).toEqual([]) // no new-label frame is left on screen in re-check mode
+    s = reducer({ ...s, queue: [item(1, { reason: 'recheck_suspicious' }), item(2)] }, actions.rate({ id: 1, rqi: 2 }))
+    expect(s.stats).toMatchObject({ totalLabelled: 100, labelledToday: 5 })
+    expect(s.outbox[0]).toMatchObject({ kind: 'save', strategy: 'RECHECK' })
+    expect(s.sessionRated).toBe(1)
+    s = reducer(s, actions.undoLast())
+    expect(s.stats).toMatchObject({ totalLabelled: 100, labelledToday: 5 })
+    expect(s.outbox.map(w => w.kind)).toEqual(['save', 'undo'])
+    // A new frame rated while in re-check mode still counts as a new label.
+    s = reducer({ ...s, queue: [item(9)] }, actions.rate({ id: 9, rqi: 2 }))
+    expect(s.stats?.totalLabelled).toBe(101)
   })
 
   it('ignores a double tap (stale id) so the next frame is not rated by accident', () => {

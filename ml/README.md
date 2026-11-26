@@ -138,6 +138,12 @@ egy-annotátoros plafonhoz.
 > `build_coords.py` takes sv_* coordinates from there first, then the old
 > `missing_labelled_mapped.csv`, then Postgres automatically. The export pins
 > `COMPOSE_PROJECT_NAME=smooth-route`, so it also works from a git worktree.
+>
+> **Label noise ceiling:** frames re-rated blind on the quick-rate screen
+> (strategy *Újraellenőrzés*) keep their history in `meta_data.relabel_history`;
+> `.venv/bin/python ml/label_consistency.py` reports the owner's self-agreement
+> (same / ±1 per level, QWK) on the random control sample — the practical
+> ceiling for the spatial-CV QWK.
 
 ```bash
 bash ml/export_labels.sh                       # -> ml/labels.csv (Docker kell)

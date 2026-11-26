@@ -1,7 +1,7 @@
 import type { PayloadAction } from '@reduxjs/toolkit'
 import { createSlice } from '@reduxjs/toolkit'
 import { createSagaAction } from 'saga-toolkit'
-import { loadSkipped, loadStrategy, mergeQueue, pushHistory, SKIP_MEMORY } from './logic'
+import { isRecheckItem, loadSkipped, loadStrategy, mergeQueue, pushHistory, SKIP_MEMORY } from './logic'
 import type { LabelExample, LabelingState, LabelQueuePage, LabelStrategy, QueueStats, RateArgs } from './types'
 
 export const initialState: LabelingState = {
@@ -58,6 +58,7 @@ const slice = createSlice({
       const current = state.queue[0]
       if (!current || current.id !== action.payload.id) return
       const seq = state.nextSeq++
+      const isNew = !isRecheckItem(current)
       state.queue.shift()
       state.history = pushHistory(state.history, {
         kind: 'rated',
@@ -66,6 +67,7 @@ const slice = createSlice({
         rqi: action.payload.rqi,
         status: 'saving',
         revealed: state.reveal,
+        isNew,
       })
       state.outbox.push({
         seq,
@@ -78,7 +80,7 @@ const slice = createSlice({
         elapsedMs: action.payload.elapsedMs,
       })
       state.sessionRated += 1
-      bumpStats(state, +1) // server truth arrives with the next queue page
+      if (isNew) bumpStats(state, +1) // server truth arrives with the next queue page
       state.lastResult = { item: current, rqi: action.payload.rqi }
       state.error = null
     },
@@ -98,7 +100,7 @@ const slice = createSlice({
       if (entry.kind === 'rated') {
         state.outbox.push({ seq: state.nextSeq++, kind: 'undo', id: entry.item.id })
         state.sessionRated = Math.max(0, state.sessionRated - 1)
-        bumpStats(state, -1)
+        if (entry.isNew) bumpStats(state, -1)
       } else {
         state.skipped = state.skipped.filter(id => id !== entry.item.id)
       }
@@ -122,16 +124,18 @@ const slice = createSlice({
         const [entry] = state.history.splice(idx, 1)
         state.queue.unshift(entry.item)
         state.sessionRated = Math.max(0, state.sessionRated - 1)
-        bumpStats(state, -1)
+        if (entry.kind === 'rated' && entry.isNew) bumpStats(state, -1)
       }
       state.lastResult = null
       state.error = `Mentés sikertelen: ${action.payload.message}`
     },
     setStrategy(state, action: PayloadAction<LabelStrategy>) {
       if (state.strategy === action.payload) return
+      const crossesRecheck = state.strategy === 'RECHECK' || action.payload === 'RECHECK'
       state.strategy = action.payload
-      // Keep the frame on screen; drop the rest of the old strategy's batch.
-      state.queue = state.queue.slice(0, 1)
+      // Keep the frame on screen and drop the rest of the old batch, unless
+      // switching into/out of re-check: new and old labels never mix.
+      state.queue = crossesRecheck ? [] : state.queue.slice(0, 1)
       state.exhausted = false
     },
     toggleReveal(state) {

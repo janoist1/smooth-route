@@ -33,7 +33,7 @@ vi.mock('../graphql', () => ({
     const page: LabelQueuePage = {
       strategy: 'MIXED',
       items: [1, 2, 3].map(item),
-      stats: { totalLabelled: 10, labelledToday: 0, eligible: 3, scored: 3 },
+      stats: { totalLabelled: 10, labelledToday: 0, eligible: 3, scored: 3, rechecked: 0 },
     }
     return { labelQueue: page }
   },

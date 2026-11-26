@@ -217,7 +217,61 @@ def load_inputs(db: Session):
     return candidates, labelled, info
 
 
+AUDIT_CSV = ("vlm", "label_audit.csv")  # under data/: suspicious human labels
+
+
+def _audit_order() -> list[str]:
+    """Filenames from data/vlm/label_audit.csv, highest priority first."""
+    try:
+        with data_path(*AUDIT_CSV).open() as fh:
+            rows = list(csv.DictReader(fh))
+    except OSError:
+        return []
+    rows.sort(key=lambda r: -(_float(r.get("priority")) or 0.0))
+    return [r["image_filename"] for r in rows if r.get("image_filename")]
+
+
+def build_recheck(db: Session, limit: int, exclude_ids: Iterable[int] = ()):
+    """Re-check queue: labelled frames not re-checked yet (the old label is
+    never returned), suspicious ones first, then a level-stratified sample."""
+    labels = {
+        name: (_float(rqi), bool(done)) for name, rqi, done in db.execute(text(
+            "SELECT image_filename, manual_rqi, (meta_data::jsonb) ? 'relabel_history' "
+            "FROM training_data WHERE manual_rqi IS NOT NULL"))
+    }
+    files = image_files()
+    cache = load_score_cache()
+    frames: list[lq.Frame] = []
+    info: dict[int, FrameInfo] = {}
+    level_of: dict[int, int] = {}
+    id_of: dict[str, int] = {}
+    for (fid, url, lat, lon, heading, pitch, pano, cdate, score, p_bad) in _frame_rows(db):
+        name = _filename(url)
+        if name not in labels or name not in files:
+            continue
+        old, done = labels[name]
+        if done:
+            continue
+        score, p_bad = _float(score), _float(p_bad)
+        if score is None and name in cache:
+            score, p_bad = cache[name]
+        frames.append(lq.Frame(id=fid, lat=lat, lon=lon, pano_id=pano, score=score, p_bad=p_bad))
+        info[fid] = FrameInfo(filename=name, heading=heading, pitch=pitch,
+                              pano_id=pano, capture_date=cdate)
+        level_of[fid] = int(SCALE.nearest(old))
+        id_of[name] = fid
+    suspicious = [id_of[n] for n in _audit_order() if n in id_of]
+    best_to_worst = sorted(SCALE.values, key=SCALE.worst_first_key, reverse=True)
+    items = lq.pick_recheck(frames, level_of, suspicious, max(0, min(int(limit), lq.MAX_LIMIT)),
+                            best_to_worst, exclude_ids)
+    result = lq.QueueResult(items=items, eligible=len(frames),
+                            scored=sum(1 for f in frames if f.score is not None))
+    return result, info, cut_points()
+
+
 def build(db: Session, strategy: str, limit: int, exclude_ids: Iterable[int] = ()):
+    if strategy == lq.Strategy.RECHECK.value:
+        return build_recheck(db, limit, exclude_ids)
     candidates, labelled, info = load_inputs(db)
     cuts = cut_points()
     result = lq.build_queue(candidates, labelled, strategy, limit,
@@ -244,6 +298,14 @@ def label_counts(db: Session) -> tuple[int, int]:
         "AND updated_at >= :since AND (meta_data::jsonb) ? 'quick_label'"),
         {"since": _local_midnight_utc()}).scalar() or 0
     return int(total), int(today)
+
+
+def recheck_consistency(db: Session) -> dict:
+    rows = db.execute(text(
+        "SELECT meta_data->'relabel_history' FROM training_data "
+        "WHERE (meta_data::jsonb) ? 'relabel_history'")).all()
+    # The random control sample only: the honest self-consistency (see lq).
+    return lq.consistency_stats((h for (h,) in rows), SCALE, reason="recheck_sample")
 
 
 # --- writes -----------------------------------------------------------------------
@@ -292,14 +354,21 @@ def save_quick_label(db: Session, point_id: int, rqi: int, *,
         ))
     else:
         meta = dict(row.meta_data or {})
-        previous = meta.get("quick_label")
-        # Re-rating a frame quick-labelled earlier keeps the original "before"
-        # state, so undo always returns to what the review page had.
-        if previous:
-            created, prev_rqi = previous.get("created_row", False), previous.get("previous_rqi")
-        else:
-            created, prev_rqi = False, row.manual_rqi
-        meta["quick_label"] = {**ql, "created_row": created, "previous_rqi": prev_rqi}
+        previous = meta.get("quick_label") or {}
+        added = row.manual_rqi is not None
+        if added:
+            # Overwriting a label (re-check): keep the old value. Values are
+            # stored with the scale direction they were written in, so a later
+            # flip (SCALE.convert) cannot misread them.
+            meta["relabel_history"] = [*meta.get("relabel_history", []), {
+                "timestamp": stamp, "old": row.manual_rqi, "new": float(rqi),
+                "strategy": (context or {}).get("strategy"),
+                "reason": (context or {}).get("reason"),
+                "direction": SCALE.direction,
+            }]
+        # One-step undo: back to the value this save replaced.
+        meta["quick_label"] = {**ql, "created_row": previous.get("created_row", False),
+                               "previous_rqi": row.manual_rqi, "history_added": added}
         row.manual_rqi = float(rqi)
         row.meta_data = meta  # new dict: JSON column change detection
         row.updated_at = now
@@ -321,10 +390,17 @@ def undo_quick_label(db: Session, point_id: int) -> bool:
     ql = meta.get("quick_label")
     if not ql:
         return False
-    if ql.get("created_row") and not row.annotations and not row.tags and not row.comment:
+    if (ql.get("created_row") and ql.get("previous_rqi") is None
+            and not row.annotations and not row.tags and not row.comment):
         db.delete(row)
     else:
         meta.pop("quick_label", None)
+        if ql.get("history_added") and meta.get("relabel_history"):
+            history = meta["relabel_history"][:-1]
+            if history:
+                meta["relabel_history"] = history
+            else:
+                meta.pop("relabel_history")
         row.manual_rqi = ql.get("previous_rqi")
         row.meta_data = meta
         row.updated_at = utcnow()

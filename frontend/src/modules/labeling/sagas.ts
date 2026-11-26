@@ -43,6 +43,9 @@ const LABEL_QUEUE = gql(`
         labelledToday
         eligible
         scored
+        rechecked
+        recheckSame
+        recheckWithinOne
       }
     }
   }
