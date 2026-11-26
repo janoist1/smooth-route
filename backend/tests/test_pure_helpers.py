@@ -195,6 +195,7 @@ def test_street_view_url_never_carries_the_key():
     assert url.startswith("https://maps.googleapis.com/maps/api/streetview?")
     assert "location=47.5,19.05" in url and "heading=90" in url and "pitch=-20" in url
     assert "key=" not in url
+    assert "return_error_code=true" in url
 
 
 def test_street_view_metadata_snaps_and_dedups(monkeypatch):
@@ -212,6 +213,13 @@ def test_street_view_metadata_snaps_and_dedups(monkeypatch):
     assert out[0]["latitude"] == 47.50001 and out[0]["heading"] == pytest.approx(0.0, abs=1e-6)
     assert out[-1]["heading"] == pytest.approx(0.0, abs=1e-6)  # last point: from previous
     assert "key=" not in out[0]["image_url"]
+    from urllib.parse import parse_qs, urlsplit
+
+    for row in out:
+        params = parse_qs(urlsplit(row["image_url"]).query)
+        assert params["pano"] == [row["pano_id"]]
+        assert params["return_error_code"] == ["true"]
+        assert "location" not in params
     assert out[0]["capture_date"] is not None and out[1]["capture_date"] is None
 
 

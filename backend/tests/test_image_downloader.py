@@ -1,9 +1,10 @@
 """Image download step with fakes: no database, no Street View, no API key.
 
-Covers the capture-date backfill at download time and the download loop's
+Covers exact-panorama capture metadata at download time and the download loop's
 stop / skip rules (quota and billing signals end the job, a single bad image
 is skipped, unfetched points keep their queued URL)."""
 import datetime as dt
+import json
 import re
 from types import SimpleNamespace
 
@@ -24,13 +25,19 @@ def point(id, **overrides):
     return SimpleNamespace(**values)
 
 
-# ------------------------------------------------------- fill_capture_metadata
+# -------------------------------------------------------- get_capture_metadata
 
-def test_known_capture_date_needs_no_lookup():
+def test_known_capture_date_is_refreshed_by_the_stored_pano():
     calls = []
     img = point(1)
-    idl.fill_capture_metadata(img, lookup=lambda *a, **k: calls.append((a, k)))
-    assert calls == [] and img.capture_date == KNOWN_DATE
+
+    def lookup(*a, **k):
+        calls.append((a, k))
+        return {"date": "2024-07", "pano_id": "pano1"}
+
+    assert idl.get_capture_metadata(img, lookup=lookup) == ("pano1", dt.date(2024, 7, 1))
+    assert calls == [((), {"pano_id": "pano1"})]
+    assert img.capture_date == KNOWN_DATE  # nothing is written before the image succeeds
 
 
 def test_lookup_by_pano_id_fills_the_capture_month():
@@ -38,13 +45,12 @@ def test_lookup_by_pano_id_fills_the_capture_month():
 
     def lookup(*args, **kwargs):
         calls.append((args, kwargs))
-        return {"date": "2023-05", "pano_id": "other"}
+        return {"date": "2023-05", "pano_id": "pano1"}
 
     img = point(1, capture_date=None)
-    idl.fill_capture_metadata(img, lookup=lookup)
+    assert idl.get_capture_metadata(img, lookup=lookup) == ("pano1", dt.date(2023, 5, 1))
     assert calls == [((), {"pano_id": "pano1"})]
-    assert img.capture_date == dt.date(2023, 5, 1)
-    assert img.pano_id == "pano1"                      # an existing pano id is kept
+    assert img.capture_date is None and img.pano_id == "pano1"
 
 
 def test_lookup_by_position_also_fills_a_missing_pano_id():
@@ -55,24 +61,27 @@ def test_lookup_by_position_also_fills_a_missing_pano_id():
         return {"date": "2021", "pano_id": "found"}
 
     img = point(1, capture_date=None, pano_id=None)
-    idl.fill_capture_metadata(img, lookup=lookup)
+    assert idl.get_capture_metadata(img, lookup=lookup) == ("found", dt.date(2021, 1, 1))
     assert calls == [((47.0, 19.0), {})]
-    assert img.capture_date == dt.date(2021, 1, 1) and img.pano_id == "found"
+    assert img.capture_date is None and img.pano_id is None
 
 
-def test_failed_or_empty_lookup_leaves_the_point_untouched():
+def test_failed_or_empty_lookup_cannot_supply_metadata():
     def failing(*args, **kwargs):
         raise RuntimeError("metadata down")
 
     img = point(1, capture_date=None, pano_id=None)
-    idl.fill_capture_metadata(img, lookup=failing)     # best-effort: never raises
-    idl.fill_capture_metadata(img, lookup=lambda *a, **k: None)
+    with pytest.raises(RuntimeError, match="metadata down"):
+        idl.get_capture_metadata(img, lookup=failing)
+    with pytest.raises(StreetViewError, match="panorama unavailable"):
+        idl.get_capture_metadata(img, lookup=lambda *a, **k: None)
     assert img.capture_date is None and img.pano_id is None
 
 
 def test_malformed_date_gives_no_capture_date():
     img = point(1, capture_date=None)
-    idl.fill_capture_metadata(img, lookup=lambda **k: {"date": "sometime"})
+    assert idl.get_capture_metadata(img, lookup=lambda **k: {
+        "pano_id": "pano1", "date": "sometime"}) == ("pano1", None)
     assert img.capture_date is None
 
 
@@ -108,12 +117,24 @@ class FakeSession:
 class FakeClient:
     """Answers per stored URL: bytes, or an exception to raise."""
 
-    def __init__(self, answers=None):
+    def __init__(self, answers=None, metadata_answers=None):
         self.answers = answers or {}
+        self.metadata_answers = metadata_answers or {}
         self.requests = []
+        self.metadata_requests = []
+        self.panos = []
 
-    def image_from_url(self, url, job=None):
+    def metadata(self, *args, **kwargs):
+        self.metadata_requests.append((args, kwargs))
+        pano_id = kwargs.get("pano_id", "resolved")
+        answer = self.metadata_answers.get(pano_id, {"pano_id": pano_id, "date": "2022-06"})
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    def image_from_url(self, url, job=None, *, pano_id):
         self.requests.append((url, job))
+        self.panos.append(pano_id)
         answer = self.answers.get(url, JPEG)
         if isinstance(answer, Exception):
             raise answer
@@ -157,6 +178,8 @@ def test_downloaded_images_are_stored_and_relinked_to_local_paths(rig):
     idl.download_images("job1", budget)
 
     assert client.requests == [(urls[0], budget), (urls[1], budget)]
+    assert client.panos == ["pano1", "pano2"]
+    assert client.metadata_requests == [((), {"pano_id": "pano1"}), ((), {"pano_id": "pano2"})]
     for row in rows:
         assert re.fullmatch(rf"images/sv_{row.id}_[0-9a-f]{{8}}\.jpg", row.image_url)
         assert (images_dir / row.image_url.split("/")[1]).read_bytes() == JPEG
@@ -216,10 +239,113 @@ def test_without_a_budget_the_job_cap_comes_from_the_environment(rig, monkeypatc
     assert isinstance(budget, JobBudget) and budget.cap == 7
 
 
-def test_download_fills_a_missing_capture_date(rig, monkeypatch):
+def test_download_fills_a_missing_capture_date(rig):
     start, _, _ = rig
-    seen = []
-    monkeypatch.setattr(idl, "fill_capture_metadata", lambda img: seen.append(img.id))
-    start([point(1, capture_date=None), point(2)])
+    rows = [point(1, capture_date=None), point(2)]
+    start(rows)
     idl.download_images("job1", JobBudget(10))
-    assert seen == [1, 2]
+    assert [r.capture_date for r in rows] == [KNOWN_DATE, KNOWN_DATE]
+
+
+def test_legacy_location_queue_resolves_pano_before_fetch_and_replaces_stale_date(rig):
+    start, _, _ = rig
+    img = point(1, pano_id=None, capture_date=dt.date(2010, 1, 1))
+    _, client = start([img])
+    idl.download_images("job1", JobBudget(10))
+    assert client.metadata_requests == [((47.0, 19.0), {})]
+    assert client.panos == ["resolved"]
+    assert img.pano_id == "resolved" and img.capture_date == KNOWN_DATE
+
+
+@pytest.mark.parametrize("metadata", [None, {}, {"pano_id": "replacement", "date": "2026-11"},
+                                      StreetViewError("metadata down")])
+def test_unavailable_or_replaced_stored_pano_stays_queued_without_an_image_request(rig, metadata):
+    start, _, images_dir = rig
+    img = point(1)
+    queued = img.image_url
+    _, client = start([img], FakeClient(metadata_answers={"pano1": metadata}))
+    idl.download_images("job1", JobBudget(10))
+    assert client.metadata_requests == [((), {"pano_id": "pano1"})]
+    assert client.requests == [] and list(images_dir.iterdir()) == []
+    assert (img.image_url, img.pano_id, img.capture_date) == (queued, "pano1", KNOWN_DATE)
+
+
+@pytest.mark.parametrize("date", [None, "invalid"])
+def test_missing_or_invalid_exact_pano_date_clears_a_stale_date(rig, date):
+    start, _, _ = rig
+    img = point(1)
+    start([img], FakeClient(metadata_answers={"pano1": {"pano_id": "pano1", "date": date}}))
+    idl.download_images("job1", JobBudget(10))
+    assert img.capture_date is None and img.pano_id == "pano1"
+
+
+def test_metadata_fatal_signal_stops_without_spending_an_image_request(rig):
+    start, _, _ = rig
+    rows = [point(1), point(2)]
+    session, client = start(rows, FakeClient(metadata_answers={"pano1": StreetViewFatal("billing")}))
+    with pytest.raises(RuntimeError, match="stopped after 0 of 2 images: billing"):
+        idl.download_images("job1", JobBudget(10))
+    assert client.requests == [] and len(client.metadata_requests) == 1
+    assert session.closed
+
+
+def test_failed_image_leaves_old_capture_metadata_untouched(rig):
+    start, _, _ = rig
+    img = point(1, pano_id=None, capture_date=dt.date(2010, 1, 1))
+    start([img], FakeClient({img.image_url: StreetViewError("gone")}))
+    idl.download_images("job1", JobBudget(10))
+    assert img.pano_id is None and img.capture_date == dt.date(2010, 1, 1)
+
+
+def test_resumed_download_fetches_only_stored_pano_and_its_capture_date(rig, tmp_path):
+    from app.services.sv_client import StreetViewClient
+    from app.services.sv_quota import StreetViewQuota
+    from test_sv_quota_client import JPEG as real_jpeg
+
+    start, _, images_dir = rig
+    calls = []
+
+    def http(url, params, timeout):
+        calls.append((url, params))
+        assert params["pano"] == "original" and "location" not in params
+        if url.endswith("/metadata"):
+            return 200, "application/json", json.dumps({
+                "status": "OK", "pano_id": "original", "date": "2018-04",
+            }).encode()
+        assert params["return_error_code"] == "true"
+        assert params["heading"] == "67.6" and params["pitch"] == "-20"
+        return 200, "image/jpeg", real_jpeg
+
+    client = StreetViewClient("KEY", StreetViewQuota(tmp_path / "quota.json"),
+                              http_get=http, sleep=lambda _: None)
+    img = point(1, pano_id="original", image_url=(
+        "https://maps.googleapis.com/maps/api/streetview?location=47,19&heading=67.6&pitch=-20"))
+    start([img], client)
+    budget = JobBudget(1)
+    idl.download_images("job1", budget)
+    assert len(calls) == 2
+    assert img.capture_date == dt.date(2018, 4, 1) and img.pano_id == "original"
+    assert (images_dir / img.image_url.split("/")[1]).read_bytes() == real_jpeg
+    assert client.quota.used() == budget.used == 1 and client.quota.used("metadata") == 1
+
+
+def test_placeholder_is_never_saved_and_a_retry_can_fetch_the_same_pano(rig, tmp_path):
+    from app.services.sv_client import StreetViewClient
+    from app.services.sv_quota import StreetViewQuota
+    from test_sv_quota_client import FakeHttp, OK_IMAGE, image_bytes, meta
+
+    start, _, images_dir = rig
+    metadata = meta(pano_id="pano1", date="2018-04")
+    http = FakeHttp(metadata, (200, "image/jpeg", image_bytes(placeholder=True)), metadata, OK_IMAGE)
+    client = StreetViewClient("KEY", StreetViewQuota(tmp_path / "quota.json"),
+                              http_get=http, sleep=lambda _: None)
+    img = point(1, image_url="https://maps.googleapis.com/maps/api/streetview?location=47,19")
+    queued = img.image_url
+    start([img], client)
+    idl.download_images("job1", JobBudget(1))
+    assert img.image_url == queued and img.capture_date == KNOWN_DATE
+    assert list(images_dir.iterdir()) == []
+    idl.download_images("job2", JobBudget(1))
+    assert img.image_url.startswith("images/sv_1_") and len(list(images_dir.iterdir())) == 1
+    assert img.capture_date == dt.date(2018, 4, 1)
+    assert client.quota.used() == 2 and client.quota.used("metadata") == 2

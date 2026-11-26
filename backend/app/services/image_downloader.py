@@ -2,6 +2,7 @@
 Image download: fetch the actual Street View JPEGs for pending points and
 rewrite their image_url to the local path.
 """
+import datetime as dt
 import os
 import uuid
 from typing import Any, Optional
@@ -15,32 +16,28 @@ from app.services.sv_client import StreetViewError, StreetViewFatal, default_cli
 from app.services.sv_quota import DEFAULT_JOB_CAP, JobBudget, QuotaExceeded, cap_from_env
 
 
-def fill_capture_metadata(img: Any, lookup=None) -> None:  # a StreetViewImage: legacy Column models type as Column[...] (see DEVELOPMENT.md)
-    """Fill pano_id / capture_date right after the image was fetched.
+def get_capture_metadata(img: Any, lookup=None) -> tuple[str, Optional[dt.date]]:
+    """Resolve the exact panorama before fetching its image.
 
-    Points collected by the current route_collector already carry both; this
-    covers older pending points. The lookup happens at download time, so the
-    live panorama IS the one in the image we just stored (unlike a later
-    backfill, which has to guard against Google replacing the pano).
+    Stored ids never fall back to a location lookup. Legacy rows without an
+    id first resolve one by position, then download that id. A missing date
+    stays unknown; a failed or mismatched lookup must leave the row queued.
     """
-    if img.capture_date is not None:
-        return
     if lookup is None:
-        from app.services.google_maps import google_maps_service
-        lookup = google_maps_service.get_panorama_metadata
-    try:
-        if img.pano_id:
-            meta = lookup(pano_id=img.pano_id)
-        else:
-            meta = lookup(img.latitude, img.longitude)
-    except Exception as e:  # metadata is best-effort; never fail the download
-        print(f"capture-date lookup failed for {img.id}: {e}")
-        return
-    if not meta:
-        return
-    img.capture_date = parse_capture_date(meta.get("date"))
-    if not img.pano_id and meta.get("pano_id"):
-        img.pano_id = meta["pano_id"]
+        lookup = default_client().metadata
+    if img.pano_id:
+        meta = lookup(pano_id=img.pano_id)
+    else:
+        if img.latitude is None or img.longitude is None:
+            raise StreetViewError("Street View metadata: no panorama id or position")
+        meta = lookup(img.latitude, img.longitude)
+    meta = meta or {}
+    pano_id = meta.get("pano_id")
+    if not isinstance(pano_id, str) or not pano_id:
+        raise StreetViewError("Street View metadata: panorama unavailable")
+    if img.pano_id and pano_id != img.pano_id:
+        raise StreetViewError("Street View metadata: panorama id mismatch")
+    return pano_id, parse_capture_date(meta.get("date"))
 
 
 def download_images(job_id: str, budget: Optional[JobBudget] = None):
@@ -78,7 +75,8 @@ def download_images(job_id: str, budget: Optional[JobBudget] = None):
         img: Any  # ORM row: legacy Column models type as Column[...] (see DEVELOPMENT.md)
         for i, img in enumerate(pending_images):
             try:
-                body = client.image_from_url(img.image_url, job=budget)
+                pano_id, capture_date = get_capture_metadata(img, lookup=client.metadata)
+                body = client.image_from_url(img.image_url, job=budget, pano_id=pano_id)
             except (QuotaExceeded, StreetViewFatal) as stop:
                 stop_reason = str(stop)
                 break
@@ -92,8 +90,9 @@ def download_images(job_id: str, budget: Optional[JobBudget] = None):
                 with open(os.path.join(save_dir, filename), 'wb') as f:
                     f.write(body)
                 img.image_url = f"images/{filename}"
+                img.pano_id = pano_id
+                img.capture_date = capture_date
                 downloaded_count += 1
-                fill_capture_metadata(img)
 
             if i % 5 == 0:
                 update_job(job_id, progress=30 + int((i / total) * 20),  # 30% -> 50%
