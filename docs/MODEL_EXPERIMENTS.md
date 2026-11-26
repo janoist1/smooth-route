@@ -25,6 +25,10 @@ pipeline and the gate: [ml/README.md](../ml/README.md). Terms: [GLOSSARY.md](GLO
   needs a VLM call per frame, Era 9).
 - **What moves the needle now is labels**, not models: more places, Budapest, a fixed
   holdout region, a sharper Jó definition.
+- **External data** (StreetSurfaceVis, Era 16) helps only in a region the model has
+  never seen (+0.05 QWK), not on the official measure and not in Budapest; not
+  promoted. Within one road type the model separates classes poorly: it leans on the
+  scene.
 
 | Component | Status | Role |
 |---|---|---|
@@ -498,6 +502,114 @@ Model = spatial-CV out-of-fold prediction (honest). Paired cell-free bootstrap.
 - **Decision:** no Codex labels for training or on the map. Codex stays on code
   work (tickets, reviews). The lever is still the owner's labels in new areas.
   Upload cost: ~35 MB of images.
+
+## Era 16 — External training data (StreetSurfaceVis) and the Budapest errors (T-58, T-43, 2026-11-26)
+
+**Questions.** Does a public labelled dataset make the model more reliable on unseen
+areas, especially Budapest, without new owner labels? And where exactly does the
+model go wrong in Budapest?
+
+**Data.** StreetSurfaceVis v1.0 (SurfaceAI, HTW Berlin, CC BY-SA 4.0; licence notes in
+[IMAGERY_SOURCES.md](IMAGERY_SOURCES.md)): 9,122 Mapillary images from Germany with
+surface type and a quality label for the road just ahead, in OSM smoothness words.
+Only `s_256.zip` (99 MB, 256 px wide) fits the 500 MB download cap. Two of its files are
+empty, so 9,120 images are used. The words map to our levels by key through
+`ml/rqi_scale.py`: excellent → Kiváló, good → Jó, intermediate → Közepes, bad → Rossz,
+very_bad → Nagyon rossz. very_bad occurs only on unpaved roads. Features come from the
+champion extractor, unchanged (dinov2-small, CLS + patch mean of the full frame).
+
+**Low resolution is not the problem.** The champion retrained and tested on our own
+frames shrunk to 256 px scores QWK 0.776 (full size: 0.774). A full-size head scoring
+256 px frames scores 0.777.
+
+**Protocol** (`ml/external_data.py`): the official spatial CV (1 km cells, nested
+cut-points), leave-one-area-out (LORO), and the Budapest bounding box held out (361
+frames: VII–VIII. plus 132 frames of the M1/M7 at Budaörs). External rows join every
+training fit and are never scored. Cut-points are always tuned on our labels.
+Comparisons are paired cell bootstraps against the champion on identical folds. The
+harness reproduces the gate exactly (0.774 / 0.405 / 0.934).
+
+| Variant (external rows, weight) | spatial QWK / MAE / AUC | spatial ΔQWK [95 % CI] | LORO QWK | LORO ΔQWK | Budapest box held out QWK | ΔQWK |
+|---|---|---|---|---|---|---|
+| champion | 0.774 / 0.405 / 0.934 | – | 0.663 | – | 0.569 | – |
+| asphalt + concrete, 0.25 | 0.770 / 0.426 / 0.941 | −0.004 [−0.033, +0.019] | 0.713 | **+0.050 [+0.004, +0.115]** | 0.485 | −0.084 [−0.146, +0.014] |
+| **asphalt + concrete, 0.5** | 0.772 / 0.420 / 0.943 | −0.002 [−0.033, +0.025] | **0.716** | **+0.054 [+0.001, +0.123]** | 0.518 | −0.050 [−0.091, +0.086] |
+| asphalt + concrete, 1.0 | 0.766 / 0.415 / 0.944 | −0.009 [−0.042, +0.026] | 0.705 | +0.042 [−0.019, +0.114] | 0.478 | −0.090 [−0.156, +0.057] |
+| asphalt only, 0.5 | 0.776 / 0.412 / 0.942 | +0.001 [−0.029, +0.023] | 0.710 | +0.048 [−0.003, +0.112] | 0.472 | −0.097 [−0.161, +0.004] |
+| all paved (+ setts, pavers), 0.25 | 0.775 / 0.414 / 0.941 | +0.001 [−0.030, +0.026] | 0.703 | +0.040 [−0.007, +0.103] | 0.434 | −0.134 [−0.219, +0.015] |
+| all incl. unpaved + very_bad, 0.5 | 0.774 / 0.419 / 0.941 | −0.001 [−0.035, +0.027] | 0.688 | +0.025 [−0.032, +0.087] | 0.446 | −0.123 [−0.199, +0.084] |
+| asphalt + concrete, 0.5, domain feature | 0.762 / 0.439 / 0.939 | −0.013 [−0.040, +0.008] | 0.709 | +0.046 [+0.004, +0.109] | 0.552 | −0.016 [−0.051, +0.064] |
+| asphalt + concrete, 0.5, labels recalibrated | 0.784 / 0.395 / 0.934 | +0.010 [−0.009, +0.026] | 0.648 | −0.015 [−0.046, +0.027] | 0.576 | +0.007 [−0.014, +0.063] |
+| German images only (no owner label in the head) | 0.688 / 0.508 / 0.896 | −0.086 [−0.157, −0.023] | 0.670 | +0.008 [−0.071, +0.092] | 0.383 | −0.186 [−0.256, +0.049] |
+
+- **On streets near labelled ones (the official measure), nothing changes.** ΔQWK is
+  between −0.013 and +0.010 for every variant. Bad-road AUC rises by about +0.008, but
+  MAE gets worse (0.412–0.426, over the gate's 0.410) unless the labels are
+  recalibrated.
+- **In a new region the model gets clearly better.** With asphalt + concrete at weight
+  0.25–0.5, LORO QWK goes 0.663 → 0.716, AUC 0.872 → 0.909 and MAE 0.491 → 0.438. In a
+  region it has never seen, the model now recognises Rossz roads: recall 0.04 → 0.29.
+  The gain comes from Székesfehérvár (0.41 → 0.64) and Tapolca (0.37 → 0.47). It grows
+  with the distance to labelled streets: ΔQWK −0.002 with 1 km cells, **+0.031
+  [+0.002, +0.069] with 3 km cells**, +0.054 with a whole area left out. The reason:
+  the champion scores the German images almost flat (2.4–2.6 at every level). They
+  sit far from our frames in feature space, so they only steer predictions where our
+  own labels are far away.
+- **Budapest does not improve; the model only gets more optimistic there.** With the
+  Budapest box held out, QWK goes 0.569 → 0.518 and the bias goes −0.24 → −0.42 (the
+  model rates roads better than the owner). Left-out Budapest (LORO) moves
+  0.23 → 0.21, with bias −0.35 → −0.58, though AUC rises 0.76 → 0.79. German "good"
+  urban asphalt resembles what the owner calls Közepes.
+- **Surfaces:** asphalt + concrete is best. Adding setts and pavers, or unpaved roads,
+  is worse on every protocol: German setts do not teach "setts are not damage".
+- **Recalibrating the labels** onto our model's scale (per fold, training rows only)
+  fixes bias and MAE (spatial 0.784 / 0.395, not significant). It also removes the
+  new-region gain. The German labels help exactly where they disagree with our model's
+  regional prior. A domain feature is no better than the plain variant.
+- **Transfer:** a head trained only on German images, without a single owner label,
+  matches the champion in a new region (0.670 vs 0.663, AUC 0.896 vs 0.872). The label
+  meanings line up.
+- **Nagyon rossz (level 1) stays out of reach.** In this dataset very_bad means unpaved
+  roads only. With those rows added, 75 % of our 12 (mostly junk) Nagyon rossz frames
+  score above the top cut-point (champion: 8 %), but they barely separate from Rossz
+  (AUC 0.61). Twelve frames cannot tune a fifth cut-point.
+
+**Budapest error analysis (T-43)** (`ml/scene_bias.py analyse`: the champion's spatial
+out-of-fold predictions joined with the Era 9 VLM attributes; 10 frames viewed):
+
+- **"Too optimistic in Budapest" is the motorway, not the city.** All the
+  owner-Jó → predicted-Kiváló cases inside the city box are the 132 M1/M7 frames at
+  Budaörs: aged asphalt with open and sealed cracks, 52 % rated better than the owner
+  rates them. Across the whole dataset, 70 % of the 284 owner-Jó motorway frames are
+  predicted Kiváló (bias −0.41).
+- **The inner city (VII–VIII., 229 frames) is not too optimistic:** 25 % are rated
+  worse than the owner, 13 % better. 44 % of owner-Jó frames come out Közepes: zebra
+  crossings, lane arrows, bike symbols and markings read as wear. Some owner-Rossz tram
+  junctions look smooth to the model.
+- **Within one road type the model barely separates the classes.** QWK: motorway 0.30,
+  urban main road 0.54, urban residential 0.26, rural lane 0.28, rural road 0.79. The
+  headline 0.77 rests largely on road type (motorway ≈ Kiváló, rural lane ≈ Rossz),
+  and road type is tied to area (Budapest 100 % urban main road, Törökbálint 84 %
+  motorway).
+- Frame-quality flags, blur, brightness and capture year carry no signal (bias within
+  ±0.1 per quartile). YOLO damage is not stored for the Budapest frames.
+- **Two cheap fixes, same protocol, neither helps.** A second view of the road just
+  ahead (the StreetSurfaceVis crop) is neutral: spatial −0.002, LORO +0.005, Budapest
+  box −0.019; on its own it is −0.046. Training weights that give every road type the
+  same class mix reach spatial +0.013 [−0.006, +0.031] and LORO +0.006, but are
+  significantly worse on the Budapest box: −0.161 [−0.244, −0.051].
+
+**Decision.** No candidate and nothing promoted: no variant passes the promotion rule
+(spatial ΔQWK CI > 0), and the plain variants also miss the MAE gate. The new-region
+gain is real but sits at the edge of its CI, Budapest gets worse, and shipping a model
+trained on CC BY-SA data is an owner decision (with T-57). `ml/evaluate_artifact.py`
+refits on our labels only, so it cannot gate a model with external rows yet. Keep the
+data (`data/external/streetsurfacevis/`) and the features
+(`ml/cache/feats_ext_ssv_small.npz`). Re-test with the owner's new labels on new
+streets, and before rating a new town, where it helped. For Budapest the lever stays
+labels: owner-Jó city streets with crossings and markings, and motorway frames with
+sealed cracks from more motorways. Era 9's VLM attributes on motorway frames only would
+target the largest single error.
 
 ## Lessons
 
