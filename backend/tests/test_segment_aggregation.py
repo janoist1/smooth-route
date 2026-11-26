@@ -1,25 +1,28 @@
-"""Aggregators, classification, confidence, age factor and config loading."""
+"""Aggregators, the RQI scale helper, confidence, age factor, config loading."""
 import datetime as dt
 import json
 import math
+import os
 
 import pytest
 
 from app.services.segment_aggregation import (
     CONFIG_PATH,
-    DEFAULT_CONFIG,
     AgeConfig,
     ConfidenceConfig,
     FrameObs,
+    RqiScale,
     age_factor,
     age_years,
     aggregate_frames,
     base_confidence,
-    classify,
     confidence_level,
+    confidence_reason,
     config_from_dict,
+    config_to_dict,
     frame_p_bad,
     frame_score,
+    frame_usable,
     iqr,
     load_config,
     median,
@@ -28,9 +31,12 @@ from app.services.segment_aggregation import (
     trimmed_mean,
     with_overrides,
 )
+from geo_helpers import BASE_CONFIG, FLIPPED_CONFIG, make_config
 
 TODAY = dt.date(2026, 11, 26)
-CFG = DEFAULT_CONFIG
+CFG = make_config()
+FLIPPED = config_from_dict(FLIPPED_CONFIG)
+SCALE = CFG.scale
 
 
 def frames(scores, p_bad=None, capture=None):
@@ -39,26 +45,41 @@ def frames(scores, p_bad=None, capture=None):
 
 # ---- config ---------------------------------------------------------------
 
-def test_shipped_config_file_equals_the_documented_defaults():
+def test_shipped_config_is_valid_and_states_the_scale_explicitly():
+    cfg = load_config()
     data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-    assert data == {
-        "version": 1, "segment_length_m": 150, "aggregator": "median_score",
-        "trim_fraction": 0.1, "thresholds": [1.51, 2.47, 3.18],
-        "p_bad_threshold": 0.5, "min_images": 3,
-        "confidence": {"n_ref": 8, "spread_ref": 0.6, "margin_ref": 0.3,
-                       "high": 0.66, "medium": 0.33},
-        "age": {"grace_years": 3, "half_life_years": 5},
-    }
-    assert config_from_dict(data) == DEFAULT_CONFIG
-    assert load_config() == DEFAULT_CONFIG
+    assert config_from_dict(data) == cfg
+    # The scale is stated in the file — never implied by code. (No class
+    # labels or cut points are pinned here on purpose: flipping the scale is
+    # an edit of the JSON alone and must not need a test change.)
+    assert set(data["scale"]) == {"classes", "higher_is_worse", "bad_class"}
+    assert len(cfg.thresholds) == len(cfg.scale.classes) - 1 == 3
+    # Scale-independent part of the ML recipe (ml/segment_recipe.json).
+    assert cfg.segment_length_m == 200
+    assert cfg.aggregator == "median_score"
+    assert (cfg.p_bad_threshold, cfg.min_images) == (0.49, 2)
+    assert cfg.confidence == ConfidenceConfig(0.5, 1.5, 0.5, 0.7, 0.6)
+    assert cfg.age == AgeConfig(3, 5)
 
 
-def test_missing_keys_fall_back_and_unknown_keys_are_ignored():
-    cfg = config_from_dict({"segment_length_m": 200, "confidence": {"n_ref": 4}, "future": 1})
+def test_scale_and_thresholds_are_required():
+    without_scale = {k: v for k, v in BASE_CONFIG.items() if k != "scale"}
+    with pytest.raises(ValueError, match="scale"):
+        config_from_dict(without_scale)
+    without_thresholds = {k: v for k, v in BASE_CONFIG.items() if k != "thresholds"}
+    with pytest.raises(ValueError, match="thresholds"):
+        config_from_dict(without_thresholds)
+
+
+def test_other_missing_keys_fall_back_and_unknown_keys_are_ignored():
+    cfg = config_from_dict({
+        "thresholds": [1.5, 2.5, 3.5], "scale": BASE_CONFIG["scale"],
+        "segment_length_m": 200, "confidence": {"n_ref": 4}, "future": 1,
+    })
     assert cfg.segment_length_m == 200
     assert cfg.confidence.n_ref == 4
-    assert cfg.confidence.spread_ref == DEFAULT_CONFIG.confidence.spread_ref
-    assert cfg.thresholds == DEFAULT_CONFIG.thresholds
+    assert cfg.confidence.spread_ref == ConfidenceConfig().spread_ref
+    assert cfg.aggregator == "median_score"
 
 
 @pytest.mark.parametrize(
@@ -66,7 +87,7 @@ def test_missing_keys_fall_back_and_unknown_keys_are_ignored():
     [
         {"aggregator": "mode"},
         {"segment_length_m": 0},
-        {"thresholds": [1.5, 2.5]},
+        {"thresholds": [1.5, 2.5]},                       # 4 classes need 3 cut points
         {"thresholds": [2.5, 1.5, 3.2]},
         {"trim_fraction": 0.5},
         {"p_bad_threshold": 1.2},
@@ -76,36 +97,102 @@ def test_missing_keys_fall_back_and_unknown_keys_are_ignored():
         {"age": {"half_life_years": 0}},
         {"confidence": "high"},
         {"segment_length_m": "long"},
+        {"scale": {"classes": [1, 2, 3, 4], "higher_is_worse": True}},            # no bad_class
+        {"scale": {"classes": [1, 2, 3, 4], "higher_is_worse": "yes", "bad_class": 3}},
+        {"scale": {"classes": [4, 3, 2, 1], "higher_is_worse": True, "bad_class": 3}},
+        {"scale": {"classes": [1, 2, 3, 4], "higher_is_worse": True, "bad_class": 7}},
+        {"scale": {"classes": [1, 2, 3, 4], "higher_is_worse": True, "bad_class": 1}},   # all bad
+        {"scale": {"classes": [2, 3, 4, 5], "higher_is_worse": False, "bad_class": 5}},  # all bad
     ],
 )
 def test_invalid_config_is_rejected(bad):
     with pytest.raises(ValueError):
-        config_from_dict(bad)
+        config_from_dict({**BASE_CONFIG, **bad})
 
 
-def test_load_config_missing_file_uses_defaults_and_reload_on_change(tmp_path):
+def test_load_config_missing_or_broken_file_is_an_error_and_reloads_on_change(tmp_path):
     path = tmp_path / "segment_aggregation.json"
-    assert load_config(path) == DEFAULT_CONFIG
+    with pytest.raises(ValueError, match="not found"):
+        load_config(path)                 # nothing safe to fall back to
 
-    path.write_text(json.dumps({"segment_length_m": 100}))
+    path.write_text(json.dumps({**BASE_CONFIG, "segment_length_m": 100}))
     assert load_config(path).segment_length_m == 100
 
-    path.write_text(json.dumps({"segment_length_m": 250}))
-    import os
+    path.write_text(json.dumps({**BASE_CONFIG, "segment_length_m": 250}))
     os.utime(path, (1_900_000_000, 1_900_000_000))   # force a different mtime
     assert load_config(path).segment_length_m == 250
 
     path.write_text("{not json")
     os.utime(path, (1_900_000_100, 1_900_000_100))
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="not valid JSON"):
         load_config(path)
 
 
-def test_with_overrides_validates():
+def test_config_round_trip_and_overrides():
+    assert config_from_dict(config_to_dict(CFG)) == CFG
+    assert config_from_dict(config_to_dict(FLIPPED)) == FLIPPED
     assert with_overrides(CFG, aggregator="mean_score").aggregator == "mean_score"
     assert with_overrides(CFG, segment_length_m=80).confidence == CFG.confidence
     with pytest.raises(ValueError):
         with_overrides(CFG, segment_length_m=-1)
+
+
+# ---- the scale helper -----------------------------------------------------
+
+@pytest.mark.parametrize(
+    "score, expected",
+    [(1.0, 1), (1.50, 1), (1.51, 2), (2.0, 2), (2.469, 2), (2.47, 3), (3.0, 3),
+     (3.179, 3), (3.18, 4), (4.0, 4)],
+)
+def test_classify_through_thresholds(score, expected):
+    assert CFG.classify(score) == expected
+
+
+def test_scale_today_higher_is_worse():
+    assert SCALE.best_to_worst == (1, 2, 3, 4)
+    assert SCALE.ascending == (1, 2, 3, 4)
+    assert [SCALE.is_bad(c) for c in (1, 2, 3, 4)] == [False, False, True, True]
+    assert SCALE.is_bad(2.5) is False and SCALE.is_bad(3.5) is True       # half-step labels
+    assert SCALE.badness(3.4) > SCALE.badness(1.2)
+    # gate: only moves a class that is on the wrong side of the boundary
+    assert [SCALE.gate(c, bad=True) for c in (1, 2, 3, 4)] == [3, 3, 3, 4]
+    assert [SCALE.gate(c, bad=False) for c in (1, 2, 3, 4)] == [1, 2, 2, 2]
+
+
+def test_scale_flipped_five_is_excellent():
+    scale = FLIPPED.scale
+    assert scale.best_to_worst == (5, 4, 3, 2)
+    assert scale.ascending == (2, 3, 4, 5)
+    assert [scale.is_bad(c) for c in (2, 3, 4, 5)] == [True, True, False, False]
+    assert scale.badness(2.6) > scale.badness(4.8)                        # low score = worse
+    assert [scale.gate(c, bad=True) for c in (5, 4, 3, 2)] == [3, 3, 3, 2]
+    assert [scale.gate(c, bad=False) for c in (5, 4, 3, 2)] == [5, 4, 4, 4]
+
+
+@pytest.mark.parametrize("score", [1.0, 1.3, 1.51, 1.9, 2.47, 2.8, 3.18, 3.6, 4.0])
+def test_flipping_the_config_mirrors_every_class(score):
+    # x → 6 − x on the data + the mirrored config must give the mirrored class,
+    # including for a score sitting exactly on a threshold (worse side wins).
+    assert FLIPPED.classify(6 - score) == 6 - CFG.classify(score)
+
+
+def test_flipping_the_config_mirrors_a_whole_aggregate():
+    obs = [FrameObs(2.3, 0.7, dt.date(2020, 5, 1)), FrameObs(2.6, 0.8), FrameObs(3.4, 0.6),
+           FrameObs(2.2, 0.9), FrameObs(1.9, 0.4)]
+    mirrored = [FrameObs(6 - f.score, f.p_bad, f.capture_date) for f in obs]
+    for aggregator in ("median_score", "mean_score", "trimmed_mean_score", "mean_p_bad"):
+        a = aggregate_frames(obs, with_overrides(CFG, aggregator=aggregator), TODAY)
+        b = aggregate_frames(mirrored, with_overrides(FLIPPED, aggregator=aggregator), TODAY)
+        assert b.rqi == 6 - a.rqi, aggregator
+        assert b.score == pytest.approx(6 - a.score)
+        assert b.p_bad == pytest.approx(a.p_bad)
+        assert b.confidence == pytest.approx(a.confidence)
+
+
+def test_scale_is_frozen_and_comparable():
+    assert RqiScale((1, 2, 3, 4), True, 3) == SCALE
+    with pytest.raises(Exception):
+        SCALE.bad_class = 2
 
 
 # ---- per-frame inputs -----------------------------------------------------
@@ -122,12 +209,33 @@ def test_frame_score_prefers_the_continuous_estimate():
 
 
 def test_frame_p_bad_falls_back_to_the_ordinal_class():
-    assert frame_p_bad(2.0, {"dino_p_bad": 0.83}) == 0.83
-    assert frame_p_bad(2.0, {"dino_p_bad": 1.7}) == 1.0          # clamped
-    assert frame_p_bad(3.0, None) == 1.0                          # RQI >= 3 is bad
-    assert frame_p_bad(4.0, {}) == 1.0
-    assert frame_p_bad(2.0, None) == 0.0
-    assert frame_p_bad(None, None) is None
+    assert frame_p_bad(2.0, {"dino_p_bad": 0.83}, SCALE) == 0.83
+    assert frame_p_bad(2.0, {"dino_p_bad": 1.7}, SCALE) == 1.0    # clamped
+    assert frame_p_bad(3.0, None, SCALE) == 1.0                    # class 3 is bad today
+    assert frame_p_bad(4.0, {}, SCALE) == 1.0
+    assert frame_p_bad(2.0, None, SCALE) == 0.0
+    assert frame_p_bad(None, None, SCALE) is None
+    # …and follows the scale when it is flipped (5 = excellent).
+    assert frame_p_bad(2.0, None, FLIPPED.scale) == 1.0
+    assert frame_p_bad(3.0, None, FLIPPED.scale) == 1.0
+    assert frame_p_bad(4.0, None, FLIPPED.scale) == 0.0
+
+
+def test_frame_usable_only_rejects_an_explicit_false():
+    # No frame-quality pass yet → everything is usable (the filter is a no-op).
+    assert frame_usable(None)
+    assert frame_usable({})
+    assert frame_usable({"dino_score": 2.0})
+    assert frame_usable({"frame_quality": None})
+    assert frame_usable({"frame_quality": {}})
+    assert frame_usable({"frame_quality": {"usable": None}})
+    assert frame_usable({"frame_quality": {"usable": True}})
+    assert frame_usable({"frame_quality": {"usable": "true"}})
+    assert frame_usable({"frame_quality": "blurry"})              # unexpected shape
+    # Marked unusable → skipped, as a JSON bool or as text extracted in SQL.
+    assert not frame_usable({"frame_quality": {"usable": False}})
+    assert not frame_usable({"frame_quality": {"usable": "false"}})
+    assert not frame_usable({"frame_quality": {"usable": "False", "reason": "occluded"}})
 
 
 # ---- statistics -----------------------------------------------------------
@@ -156,15 +264,6 @@ def test_trimmed_mean_drops_from_both_ends():
     assert trimmed_mean(values, 0.1) == 2.0
     assert trimmed_mean(values, 0.0) == pytest.approx(2.1)
     assert trimmed_mean([1, 4], 0.1) == 2.5            # too few to trim anything
-
-
-@pytest.mark.parametrize(
-    "score, expected",
-    [(1.0, 1), (1.50, 1), (1.51, 2), (2.0, 2), (2.469, 2), (2.47, 3), (3.0, 3),
-     (3.179, 3), (3.18, 4), (4.0, 4)],
-)
-def test_classify_through_thresholds(score, expected):
-    assert classify(score, CFG.thresholds) == expected
 
 
 def test_threshold_margin_is_distance_to_the_nearest_boundary():
@@ -232,7 +331,7 @@ def test_empty_segment_has_no_class():
 # ---- confidence -----------------------------------------------------------
 
 def test_base_confidence_formula():
-    c = ConfidenceConfig()
+    c = CFG.confidence                                # n_ref 8, spread 0.6, margin 0.3
     # n=8, no spread, far from a threshold → 1 - e^-1
     assert base_confidence(8, 0.0, 0.5, c) == pytest.approx(1 - math.exp(-1))
     # each factor on its own
@@ -246,7 +345,7 @@ def test_base_confidence_formula():
 
 
 def test_base_confidence_is_monotone():
-    c = ConfidenceConfig()
+    c = CFG.confidence
     by_n = [base_confidence(n, 0.2, 0.2, c) for n in range(1, 40)]
     assert all(a < b for a, b in zip(by_n, by_n[1:]))
     by_spread = [base_confidence(10, s / 10, 0.2, c) for s in range(0, 20)]
@@ -318,3 +417,58 @@ def test_segment_below_min_images_still_gets_a_class():
     assert agg.rqi == 4
     assert agg.n_images == 2
     assert confidence_level(agg.confidence, agg.n_images, CFG) == "low"
+
+
+# ---- confidence reason ----------------------------------------------------
+
+def reason_for(obs, cfg=CFG):
+    """Aggregate, then explain from what a stored row would carry."""
+    agg = aggregate_frames(obs, cfg, TODAY)
+    return confidence_reason(agg.confidence, agg.n_images, agg.score, agg.capture_date_max, TODAY, cfg)
+
+
+def test_reason_is_none_when_confidence_is_high():
+    assert reason_for(frames([2.0] * 30)) is None
+
+
+def test_reason_few_images():
+    assert reason_for(frames([2.0, 2.0])) == "few_images"            # below min_images
+    assert reason_for(frames([2.0] * 4)) == "few_images"             # allowed, but thin
+    assert confidence_reason(0.0, 0, None, None, TODAY, CFG) == "few_images"
+
+
+def test_reason_disagreement():
+    # Many frames, far from a threshold, recent — but they disagree wildly.
+    obs = frames([1.0] * 10 + [2.0] * 10 + [3.0] * 10, capture=dt.date(2026, 1, 1))
+    assert reason_for(obs) == "disagreement"
+
+
+def test_reason_near_threshold():
+    # Many agreeing, recent frames whose score sits right on the 2.47 cut.
+    obs = frames([2.47] * 60, capture=dt.date(2026, 1, 1))
+    assert reason_for(obs) == "near_threshold"
+
+
+def test_reason_old_images():
+    # Many agreeing frames, clear class — but 15 years old.
+    obs = frames([2.0] * 60, capture=dt.date(2011, 11, 1))
+    assert reason_for(obs) == "old_images"
+
+
+def test_reason_names_the_single_factor_that_was_pushed_down():
+    """Property check against the formula: start from an ideal segment and
+    degrade exactly one factor at a time."""
+    ideal = dict(n=200, spread=0.0, score=2.0, capture=dt.date(2026, 1, 1))
+
+    def explain(n, spread, score, capture):
+        conf = (
+            base_confidence(n, spread, threshold_margin(score, CFG.thresholds), CFG.confidence)
+            * age_factor(capture, TODAY, CFG.age)
+        )
+        return confidence_reason(conf, n, score, capture, TODAY, CFG)
+
+    assert explain(**ideal) is None
+    assert explain(**{**ideal, "n": 3}) == "few_images"
+    assert explain(**{**ideal, "spread": 1.2}) == "disagreement"
+    assert explain(**{**ideal, "score": 2.48}) == "near_threshold"
+    assert explain(**{**ideal, "capture": dt.date(2005, 1, 1)}) == "old_images"

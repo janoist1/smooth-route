@@ -28,6 +28,7 @@ public site is read-only (Vercel + Neon); analysis runs locally.
 | **"Why is it like this?" / model history** | [docs/MODEL_EXPERIMENTS.md](docs/MODEL_EXPERIMENTS.md) | — |
 | **Unclear term** (QWK, MAE, spatial CV…) | [docs/GLOSSARY.md](docs/GLOSSARY.md) | — |
 | **Team, briefs, merge/push flow** | [docs/TEAM.md](docs/TEAM.md) | — |
+| **Ticket board** (what's in progress, your ticket) | `python3 tools/board.py list` — rules in [docs/TEAM.md](docs/TEAM.md#ticket-board) | — |
 | **Launch copy / name / checklist** | [docs/LAUNCH.md](docs/LAUNCH.md) | — |
 
 Never load `docs/archive/**`, `ml/legacy/`, `scripts/legacy/` — history only.

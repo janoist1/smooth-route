@@ -113,6 +113,7 @@ type Point {
   manualAnnotations: JSON
   manualComment: String
   streetViewUrl: String!
+  segmentId: ID
   captureDate: String
   localImagePath: String
   dinoPBad: Float
@@ -136,6 +137,7 @@ type Query {
   roadQualityGrid(zoom: Int!, bbox: [Float!] = null): JSON!
   roadSegments(bbox: [Float!]!, zoom: Int!): [RoadSegment!]!
   routeQuality(path: [[Float!]!]!): RouteQuality!
+  segmentFrames(segmentId: ID!): [Point!]!
   adminStats: AdminStats!
   trainingPoints(mode: FilterMode! = ALL, limit: Int! = 20, offset: Int! = 0, model: String! = "yolo"): TrainingPointsResponse!
   trainingStats(mode: FilterMode! = ALL, isDino: Boolean! = false): TrainingStats!
@@ -170,6 +172,8 @@ type RoadSegment {
   highway: String
   captureDateMin: String
   captureDateMax: String
+  confidenceReason: String
+  streetViewUrl: String
 }
 
 type RouteData {
