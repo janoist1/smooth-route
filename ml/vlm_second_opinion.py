@@ -49,7 +49,7 @@ def _bp(lat, lon):
     return lon > 18.98 and lat > 47.42
 
 
-def pick(n_frames):
+def pick(n_frames, extend=False):
     from sqlalchemy import text
 
     from app.core.database import SessionLocal
@@ -62,9 +62,13 @@ def pick(n_frames):
         "FROM road_segments WHERE n_images > 0 ORDER BY confidence, id")).all()
     labelled = {r[0] for r in db.execute(text(
         "SELECT image_filename FROM training_data")).all()}
-    rows, used = [], set()
+    rows, used, done_segs = [], set(), set()
+    if extend:  # next segments after the first pick; also skip everything east of 18.98
+        old = _read(PICK)
+        used = {int(r["image_id"]) for r in old}
+        done_segs = {r["segment_id"] for r in old}
     for s in segs:
-        if _bp(s.lat, s.lon):
+        if _bp(s.lat, s.lon) or s.id in done_segs or (extend and s.lon > 18.98):
             continue
         ids = [i for i in frame_ids_on_segment(db, s.id) if i not in used]
         if not ids:
@@ -87,10 +91,14 @@ def pick(n_frames):
         if len([r for r in rows if not r["labelled"]]) >= n_frames:
             break
     os.makedirs(OUT, exist_ok=True)
-    with open(PICK, "w", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=list(rows[0]))
-        w.writeheader()
-        w.writerows(rows)
+    if extend:
+        with open(PICK, "a", newline="") as fh:
+            csv.DictWriter(fh, fieldnames=list(rows[0])).writerows(rows)
+    else:
+        with open(PICK, "w", newline="") as fh:
+            w = csv.DictWriter(fh, fieldnames=list(rows[0]))
+            w.writeheader()
+            w.writerows(rows)
     todo = [r for r in rows if not r["labelled"]]
     print(f"{len({r['segment_id'] for r in rows})} segments, {len(rows)} frames "
           f"({len(todo)} to rate, {len(rows) - len(todo)} human-labelled kept as is); "
@@ -102,15 +110,19 @@ def _read(path):
         return list(csv.DictReader(fh))
 
 
-def prepare():
-    if os.path.exists(KEY):
+def prepare(extend=False):
+    if os.path.exists(KEY) and not extend:
         sys.exit(f"{KEY} exists — refusing to re-blind")
-    todo = [r for r in _read(PICK) if r["labelled"] == "0"]
-    rng = random.Random(SEED)
+    old = _read(KEY) if extend else []
+    seen = {k["image_id"] for k in old}
+    todo = [r for r in _read(PICK) if r["labelled"] == "0" and r["image_id"] not in seen]
+    rng = random.Random(SEED + len(old))
     rng.shuffle(todo)
-    key = []
+    key = list(old)
+    first = len({k["batch"] for k in old})
     for b in range(0, len(todo), BATCH):
-        d = os.path.join(OUT, "imgs", f"s{b // BATCH:02d}")
+        name = f"s{first + b // BATCH:02d}"
+        d = os.path.join(OUT, "imgs", name)
         os.makedirs(d)
         for r in todo[b:b + BATCH]:
             rid = f"img_{rng.randrange(10**5):05d}"
@@ -118,14 +130,14 @@ def prepare():
                 rid = f"img_{rng.randrange(10**5):05d}"
             os.link(os.path.join(ROOT, "data", "images", r["filename"]),
                     os.path.join(d, rid + ".jpg"))
-            key.append({"id": rid, "batch": f"s{b // BATCH:02d}", "image_id": r["image_id"],
+            key.append({"id": rid, "batch": name, "image_id": r["image_id"],
                         "filename": r["filename"]})
     os.makedirs(os.path.join(OUT, "out"), exist_ok=True)
     with open(KEY, "w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=list(key[0]))
         w.writeheader()
         w.writerows(key)
-    prompts(sorted({k["batch"] for k in key}))
+    prompts(sorted({k["batch"] for k in key[len(old):]}))
     print(f"{len(key)} frames in {len(set(k['batch'] for k in key))} batches -> {OUT}/imgs")
 
 
@@ -349,6 +361,8 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("cmd", choices=["pick", "prepare", "apply", "store", "report"])
     ap.add_argument("--frames", type=int, default=250)
+    ap.add_argument("--extend", action="store_true",
+                    help="add the next segments/batches after an earlier pick")
     a = ap.parse_args()
-    {"pick": lambda: pick(a.frames), "prepare": prepare, "apply": apply,
+    {"pick": lambda: pick(a.frames, a.extend), "prepare": lambda: prepare(a.extend), "apply": apply,
      "store": store, "report": report}[a.cmd]()
