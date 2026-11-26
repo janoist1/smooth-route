@@ -1,7 +1,7 @@
 """Stitching consecutive OSM ways of the same road into lines."""
 import pytest
 
-from app.services.osm_chains import chain_members, merge_ways
+from app.services.osm_chains import merge_ways
 from app.services.osm_overpass import Way
 from app.services.segment_geometry import polyline_length_m
 from geo_helpers import at
@@ -28,7 +28,6 @@ def test_consecutive_same_road_ways_become_one_line():
     assert polyline_length_m(line.coords) == pytest.approx(260, abs=0.3)
     # Each shared node appears once, in order along the road.
     assert list(line.coords) == [at(0, 0), at(60, 0), at(130, 0), at(200, 0), at(260, 0)]
-    assert chain_members(ways) == {10: 10, 20: 10, 30: 10}
 
 
 def test_ways_drawn_in_opposite_directions_are_flipped_to_fit():
@@ -131,7 +130,7 @@ def test_ring_made_of_several_ways_terminates():
     assert merged[1].coords[0] == at(0, 0)             # starts with the anchor way
 
 
-def test_every_way_lands_in_exactly_one_line_and_length_is_preserved():
+def test_no_way_is_lost_and_total_length_is_preserved():
     ways = as_dict(
         way(1, [at(0, 0), at(100, 0)]),
         way(2, [at(100, 0), at(200, 0)]),
@@ -140,9 +139,7 @@ def test_every_way_lands_in_exactly_one_line_and_length_is_preserved():
         way(5, [at(0, 300), at(40, 300)], name=None, highway="service"),
     )
     merged = merge_ways(ways)
-    members = chain_members(ways)
-    assert set(members) == set(ways)
-    assert set(members.values()) == set(merged)
+    assert sorted(merged) == [1, 3, 4, 5]             # 1+2 joined, the rest on their own
     total_in = sum(polyline_length_m(w.coords) for w in ways.values())
     total_out = sum(polyline_length_m(w.coords) for w in merged.values())
     assert total_out == pytest.approx(total_in, abs=1e-6)
@@ -150,4 +147,3 @@ def test_every_way_lands_in_exactly_one_line_and_length_is_preserved():
 
 def test_empty_input():
     assert merge_ways({}) == {}
-    assert chain_members({}) == {}

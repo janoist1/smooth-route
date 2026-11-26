@@ -93,6 +93,20 @@ Done when: <criteria>; gates green (AGENTS.md).
 Report: branch, commits, results (numbers), follow-ups.
 ```
 
+## Ticket board
+
+One board for the whole team: `tools/board.py` (no deps, no server). Data and the
+rendered page live in the **main checkout** (`board/tickets.json`, `board/index.html`,
+gitignored), so every worktree and session sees the same board; the owner just opens
+`board/index.html` (auto-refreshes every 30 s).
+
+- Columns: `todo` → `doing` → `review` (ready to merge / in QA) → `done`; `owner` =
+  waiting on the owner's decision or action.
+- Every agent: `python3 tools/board.py move T-<n> doing` when starting, `note` for a
+  one-line progress update, `move … review` when its branch is ready, `add` for new
+  work it discovers. The lead moves tickets to `done` after merging.
+- Titles short, notes one line, English.
+
 ## Check-ins
 
 - Sessions report to the lead at each milestone (commit SHA + gate status) and as

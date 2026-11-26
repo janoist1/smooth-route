@@ -2,8 +2,8 @@
 
 Usage (from backend/):
     ../.venv/bin/python scripts/build_segments.py [--bbox W,S,E,N] [--dry-run]
-        [--offline] [--no-merge] [--config PATH] [--segment-length M]
-        [--aggregator NAME]
+        [--offline] [--cached-only] [--no-merge] [--config PATH]
+        [--segment-length M] [--aggregator NAME]
 
 - Full rebuild by default: consecutive OSM ways of the same road are stitched
   into lines, every scored Street View frame is snapped to the nearest
@@ -13,6 +13,8 @@ Usage (from backend/):
 - ``--bbox minLng,minLat,maxLng,maxLat`` (same order as the GraphQL bbox)
   rewrites only the lines touching that box. It turns into a full rebuild by
   itself when the OSM tiles / config changed since the last full rebuild.
+- ``--cached-only`` builds a PARTIAL layer from the tiles already cached and
+  leaves out the frames of the others (for when Overpass is slow/unreachable).
 - ``--no-merge`` cuts every OSM way on its own (no stitching) — for
   comparison; expect many short, low-confidence pieces in cities.
 - OSM ways come from the public Overpass API, one tile at a time, and the raw
@@ -58,6 +60,9 @@ def main() -> None:
     ap.add_argument("--dry-run", action="store_true", help="compute stats, write nothing")
     ap.add_argument("--offline", action="store_true",
                     help="use only cached OSM tiles (no Overpass requests)")
+    ap.add_argument("--cached-only", action="store_true",
+                    help="build from the tiles already cached and leave out the frames "
+                         "of the others (partial layer; no Overpass requests)")
     ap.add_argument("--no-merge", action="store_true",
                     help="do not stitch consecutive ways of a road; cut each OSM way")
     ap.add_argument("--config", default=None, help="alternative aggregation config JSON")
@@ -67,14 +72,17 @@ def main() -> None:
                     help="override aggregator")
     args = ap.parse_args()
 
-    cfg = load_config(args.config)
-    overrides = {}
-    if args.segment_length is not None:
-        overrides["segment_length_m"] = args.segment_length
-    if args.aggregator is not None:
-        overrides["aggregator"] = args.aggregator
-    if overrides:
-        cfg = with_overrides(cfg, **overrides)
+    try:
+        cfg = load_config(args.config)
+        overrides = {}
+        if args.segment_length is not None:
+            overrides["segment_length_m"] = args.segment_length
+        if args.aggregator is not None:
+            overrides["aggregator"] = args.aggregator
+        if overrides:
+            cfg = with_overrides(cfg, **overrides)
+    except ValueError as exc:
+        sys.exit(f"Bad aggregation config: {exc}")
 
     from sqlalchemy import inspect
 
@@ -87,12 +95,14 @@ def main() -> None:
                  "(alembic upgrade head, or start the backend once).")
 
     print(f"config: segment_length_m={cfg.segment_length_m:g} aggregator={cfg.aggregator} "
-          f"thresholds={list(cfg.thresholds)} min_images={cfg.min_images}")
+          f"thresholds={list(cfg.thresholds)} classes={list(cfg.scale.classes)} "
+          f"({'higher' if cfg.scale.higher_is_worse else 'lower'} = worse) "
+          f"min_images={cfg.min_images}")
     db = SessionLocal()
     try:
         stats = rebuild_segments(
             db, bbox=args.bbox, cfg=cfg, allow_fetch=not args.offline,
-            merge=not args.no_merge, dry_run=args.dry_run,
+            cached_only=args.cached_only, merge=not args.no_merge, dry_run=args.dry_run,
         )
     except OverpassError as exc:
         sys.exit(f"OSM data unavailable, nothing written: {exc}")
