@@ -5,7 +5,8 @@ in resolver_helpers.py, request limits in limits.py. This module only wires
 them into the Strawberry schema.
 """
 import strawberry
-from strawberry.tools import merge_types
+from strawberry.tools import create_type, merge_types
+from strawberry.types import get_object_definition
 
 from app.graphql.label_queue import LabelQueueMutation, LabelQueueQuery, PairQueueQuery
 from app.graphql.limits import schema_extensions
@@ -24,11 +25,20 @@ schema = strawberry.Schema(
     query=FullQuery, mutation=FullMutation, extensions=schema_extensions(public=False)
 )
 
-# Read-only schema for the round-1 public deploy: query fields only, so no
-# mutation (collection, analysis, training) is reachable. The Query module is
-# torch-free at import time — the heavy code is lazy-imported inside the
-# admin-only resolvers, which anonymous public callers never trigger.
-# Public = introspection off and unexpected errors masked (limits.py).
-# Route alternatives ride along on the public schema like getRoute does.
-ReadQuery = merge_types("Query", (Query, RouteAlternativesQuery))
-read_schema = strawberry.Schema(query=ReadQuery, extensions=schema_extensions(public=True))
+# Public roots are an explicit allow-list, independent of new full-schema
+# fields. Reuse the field definitions with their resolvers, arguments, defaults
+# and permissions (routeAlternatives allows anonymous callers in public mode).
+# Keep the GraphQL name Query for existing fragments and Apollo's __typename.
+_query_fields = {
+    schema.config.name_converter.from_field(field): field
+    for field in get_object_definition(FullQuery, strict=True).fields
+}
+PublicQuery = create_type("Query", [
+    _query_fields[name] for name in (
+        "me", "point", "points", "roadQualityGrid", "roadSegments",
+        "routeQuality", "segmentFrames", "job", "activeJob", "routeAlternatives",
+    )
+])
+# No mutation root; public extensions still disable introspection and mask
+# unexpected errors in addition to the shared request limits.
+read_schema = strawberry.Schema(query=PublicQuery, extensions=schema_extensions(public=True))

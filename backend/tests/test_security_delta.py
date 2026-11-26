@@ -56,8 +56,14 @@ def test_segment_id_check_also_guards_the_full_schema():
 
 
 def test_get_route_and_alternatives_together_refused():
-    res = run_public('{ getRoute(origin: "Budapest", destination: "Győr") { points { lat } }'
-                     ' routeAlternatives(origin: "Budapest", destination: "Pécs") { fastestIndex } }')
+    from app.graphql.schema import schema
+
+    # Both paid fields coexist only on the full schema; the guard must still
+    # reject their combined cost before permissions or resolvers run.
+    res = schema.execute_sync(
+        '{ getRoute(origin: "Budapest", destination: "Győr") { points { lat } }'
+        ' routeAlternatives(origin: "Budapest", destination: "Pécs") { fastestIndex } }',
+        context_value={"identity": None})
     assert rejected(res, "At most 1 route request")
 
 

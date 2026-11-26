@@ -11,8 +11,12 @@ the job stream. The tables below are checked against the schema objects by
 
 - **Full schema** — local dev / the always-on backend: every row below.
 - **Read-only schema** — the public deploy (`PUBLIC_READ_ONLY=1`): the
-  "RO" = yes rows only. No mutations, no label-queue / pairwise / model-panel
-  fields. Introspection off, unexpected errors masked, POST only.
+  explicit `PublicQuery` allow-list: `me`, `point`, `points`, `roadQualityGrid`,
+  `roadSegments`, `routeQuality`, `segmentFrames`, `job`, `activeJob`,
+  `routeAlternatives` (the "RO" = yes rows only). Existing resolvers and
+  permissions are reused. No mutation root; admin, training, settings and
+  `getRoute` root fields are absent from the schema and fail validation for
+  every caller. Introspection off, unexpected errors masked, POST only.
 
 Access (`app/graphql/permissions.py`):
 
@@ -21,7 +25,7 @@ Access (`app/graphql/permissions.py`):
 | `anonymous` | no permission class |
 | `signed-in` | `IsAuthenticated` — any identity |
 | `signed-in*` | `IsAuthenticatedUnlessPublicRead` — signed in on the full backend, anonymous on the read-only deploy |
-| `admin` | `IsAdmin`. Admin rows with RO = yes are on the read-only schema but still answer `FORBIDDEN` without an admin identity |
+| `admin` | `IsAdmin` — admin identity required; full schema only |
 
 Request limits (`app/graphql/limits.py`, both schemas): depth ≤ 8, aliases
 ≤ 10, ≤ 2000 tokens; per operation at most 1 paid route field (`getRoute` or
@@ -41,18 +45,18 @@ Violations are `BAD_USER_INPUT` errors raised before any resolver runs.
 | `roadSegments` | anonymous | yes | road segments with quality in a viewport ([segment layer](#road-segment-layer)) |
 | `routeQuality` | anonymous | yes | quality summary of a path from the stored segments |
 | `segmentFrames` | anonymous | yes | the frames a segment was aggregated from |
-| `getRoute` | signed-in* | yes | one driving route (one paid Google Directions call); kept for API consumers |
+| `getRoute` | signed-in* | no | one driving route (one paid Google Directions call); full-schema API consumers only |
 | `routeAlternatives` | signed-in* | yes | up to 3 routes with quality, fastest / smoothest ([routes](#routes)) |
 | `job` | anonymous | yes | job status by id |
 | `activeJob` | anonymous | yes | the running job, if any |
-| `config` | admin | no | server-side Google Maps key; on the read-only schema the guard rejects it for everyone |
-| `settings` | admin | yes | all settings rows |
-| `availableModels` | admin | yes | YOLO weight files in `data/models` |
-| `rqiModelInfo` | admin | yes | model card of the live RQI artifact ([model](#rqi-model-admin)) |
-| `adminStats` | admin | yes | usage / coverage / job stats for the admin page |
-| `trainingPoints` | admin | yes | paged frames for the review screen, by `FilterMode` |
-| `trainingStats` | admin | yes | label counts for the review screen |
-| `nextTrainingPoint` | admin | yes | id of the next frame in review order |
+| `config` | admin | no | server-side Google Maps key |
+| `settings` | admin | no | all settings rows |
+| `availableModels` | admin | no | YOLO weight files in `data/models` |
+| `rqiModelInfo` | admin | no | model card of the live RQI artifact ([model](#rqi-model-admin)) |
+| `adminStats` | admin | no | usage / coverage / job stats for the admin page |
+| `trainingPoints` | admin | no | paged frames for the review screen, by `FilterMode` |
+| `trainingStats` | admin | no | label counts for the review screen |
+| `nextTrainingPoint` | admin | no | id of the next frame in review order |
 | `labelQueue` | admin | no | next frames to label, by strategy ([labelling](#labelling-admin)) |
 | `labelExamples` | admin | no | rubric thumbnails per scale level |
 | `pairQueue` | admin | no | frame pairs for pairwise judgment |
@@ -289,6 +293,8 @@ most `ROUTE_SMOOTH_MAX_EXTRA_DURATION` (0.2 = +20 %) slower than the fastest
 AND with at least `ROUTE_SMOOTH_MIN_COVERAGE` (0.5) measured; `null` when none
 qualifies. Quality is compared through `app.core.rqi_scale` (direction-free).
 The planner uses it instead of `getRoute`.
+`getRoute` is available only on the full schema; public callers use
+`routeAlternatives`.
 
 **Speed-weighted impact (T-47).** `RouteQuality.impactScore` (also inside each
 route alternative): the average number of levels below Kiváló per measured
