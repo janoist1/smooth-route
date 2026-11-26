@@ -3,18 +3,25 @@ import traceback
 from app.core.timeutil import utcnow
 from app.services.job_service import update_job, JobStatus, create_job
 
-def refresh_road_segments(job_id: str, since) -> None:
-    """Rebuild the road-segment layer around the frames this job added.
+def refresh_road_segments(job_id: str, since=None) -> None:
+    """Rebuild the road-segment layer after a job changed the frames.
+
+    `since` given (route job): bbox-limited rebuild around the frames created
+    from that moment on. `since=None` (analysis job): scores may have changed
+    anywhere, so a full rebuild from the cached OSM data.
 
     Best effort by design: the segments are a derived view, so nothing here
     may fail the job. Without OSM data for a new area (Overpass unreachable)
     the refresh is logged and skipped; `scripts/build_segments.py` catches up.
     """
     try:
-        from app.services.road_segments import refresh_segments_since
+        from app.services import road_segments
 
         update_job(job_id, message="Útszakaszok frissítése...")
-        refresh_segments_since(since)
+        if since is None:
+            road_segments.refresh_segments_full()
+        else:
+            road_segments.refresh_segments_since(since)
     except Exception:
         print(f"Road-segment refresh skipped: {traceback.format_exc()}")
 
@@ -119,6 +126,9 @@ def run_analysis_job(job_id: str, strategy: str, limit: int = 0, reanalyze: bool
         if result.get("status") == "cancelled":
             print(f"DEBUG: Analysis job {job_id} was cancelled, not marking as completed.")
             return
+
+        # New scores → refresh the derived road-segment layer (best effort).
+        refresh_road_segments(job_id)
 
         strategy_used = result.get("strategy_used", strategy)
         update_job(

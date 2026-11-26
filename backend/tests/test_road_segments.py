@@ -1,18 +1,22 @@
-"""Segment builder core: frames + ways → rows (pure part, no DB)."""
+"""Segment builder core: frames + lines → rows (pure part, no DB), the build
+fingerprint, and the job hooks that must never break a job."""
 import datetime as dt
+from types import SimpleNamespace
 
 import pytest
 
+from app.services.osm_chains import merge_ways
 from app.services.osm_overpass import Way
 from app.services.road_segments import (
     Frame,
     bounds_intersect,
     bounds_of,
+    build_fingerprint,
     build_rows,
     linestring_wkt,
     segment_id,
 )
-from app.services.segment_aggregation import DEFAULT_CONFIG
+from app.services.segment_aggregation import DEFAULT_CONFIG, with_overrides
 from app.services.segment_geometry import polyline_length_m
 from geo_helpers import at
 
@@ -40,7 +44,7 @@ def main_frames():
 def test_frames_are_split_between_pieces_by_linear_reference():
     rows, stats = build_rows(WAYS, main_frames(), DEFAULT_CONFIG, TODAY)
     by_id = {r["id"]: r for r in rows}
-    assert set(by_id) == {"100:0", "100:1"}          # ways without frames are not stored
+    assert set(by_id) == {"100:0", "100:1"}          # lines without frames are not stored
 
     first, second = by_id["100:0"], by_id["100:1"]
     assert (first["n_images"], first["rqi"], first["score"]) == (8, 2, 1.8)
@@ -55,10 +59,11 @@ def test_frames_are_split_between_pieces_by_linear_reference():
     assert polyline_length_m(second["coords"]) == pytest.approx(150, abs=0.2)
 
     assert (stats.frames_matched, stats.frames_unmatched) == (12, 0)
-    assert (stats.ways_loaded, stats.ways_with_frames) == (3, 1)
-    assert (stats.segments, stats.segments_with_data) == (2, 2)
+    assert (stats.lines, stats.lines_with_frames) == (3, 1)
+    assert (stats.pieces, stats.segments) == (2, 2)
     assert stats.class_counts == {2: 1, 4: 1}
-    assert stats.km_with_data == pytest.approx(0.3, abs=0.001)
+    assert stats.km == pytest.approx(0.3, abs=0.001)
+    assert stats.median_images == 6 and stats.median_length_m == pytest.approx(150, abs=0.2)
 
 
 def test_unmatched_frames_are_counted_not_forced_onto_a_road():
@@ -72,12 +77,11 @@ def test_unmatched_frames_are_counted_not_forced_onto_a_road():
     assert sum(r["n_images"] for r in rows) == 12
 
 
-def test_piece_without_frames_is_kept_empty():
+def test_piece_without_frames_is_not_stored():
     rows, stats = build_rows(WAYS, main_frames()[:8], DEFAULT_CONFIG, TODAY)   # only the first half
-    by_id = {r["id"]: r for r in rows}
-    empty = by_id["100:1"]
-    assert (empty["n_images"], empty["rqi"], empty["score"], empty["confidence"]) == (0, None, None, 0.0)
-    assert (stats.segments, stats.segments_with_data) == (2, 1)
+    assert [r["id"] for r in rows] == ["100:0"]
+    assert (stats.pieces, stats.segments) == (2, 1)
+    assert all(r["n_images"] > 0 and r["rqi"] is not None for r in rows)
 
 
 def test_junction_frames_follow_their_heading():
@@ -98,8 +102,6 @@ def test_junction_frames_follow_their_heading():
 
 
 def test_segment_length_from_config_drives_the_split():
-    from app.services.segment_aggregation import with_overrides
-
     rows, _ = build_rows(WAYS, main_frames(), with_overrides(DEFAULT_CONFIG, segment_length_m=100), TODAY)
     assert [r["id"] for r in rows] == ["100:0", "100:1", "100:2"]
     assert all(r["length_m"] == pytest.approx(100, abs=0.2) for r in rows)
@@ -119,13 +121,21 @@ def test_capture_dates_and_p_bad_are_carried_through():
     assert first["capture_date_max"] == dt.date(2024, 9, 1)
 
 
-def test_only_way_ids_limits_rows_but_not_matching():
+def test_only_ids_limits_rows_but_not_matching():
     frames = main_frames() + [frame(50, 150, 45, 0, 3.0)]      # one frame on SIDE
-    rows, stats = build_rows(WAYS, frames, DEFAULT_CONFIG, TODAY, only_way_ids={200})
+    rows, stats = build_rows(WAYS, frames, DEFAULT_CONFIG, TODAY, only_ids={200})
     assert [r["id"] for r in rows] == ["200:0"]
     # The MAIN frames were still matched to MAIN (not dragged onto SIDE).
     assert rows[0]["n_images"] == 1
     assert stats.frames_matched == 13
+
+
+def test_bbox_rows_equal_the_full_build_rows():
+    """A partial rebuild must write exactly what a full rebuild would."""
+    frames = main_frames() + [frame(50, 150, 45, 0, 3.0)]
+    full, _ = build_rows(WAYS, frames, DEFAULT_CONFIG, TODAY)
+    partial, _ = build_rows(WAYS, frames, DEFAULT_CONFIG, TODAY, only_ids={100})
+    assert partial == [r for r in full if r["osm_way_id"] == 100]
 
 
 def test_build_is_deterministic():
@@ -134,9 +144,31 @@ def test_build_is_deterministic():
     assert a == b
 
 
-def test_stats_lines_are_printable():
+def test_stitched_road_gives_full_length_pieces_instead_of_fragments():
+    """Five 60 m ways of one road: cut per way → five thin fragments; stitched
+    first → two 150 m pieces that pool the frames."""
+    ways = {
+        i: Way(id=i, coords=(at(60 * (i - 1), 0), at(60 * i, 0)), name="Hosszú út", highway="primary")
+        for i in range(1, 6)
+    }
+    frames = [frame(i, 5 + 10 * i, 1, 90, 2.0) for i in range(30)]          # every 10 m
+
+    per_way, _ = build_rows(ways, frames, DEFAULT_CONFIG, TODAY)
+    assert len(per_way) == 5 and max(r["n_images"] for r in per_way) == 6
+
+    lines = merge_ways(ways)
+    stitched, stats = build_rows(lines, frames, DEFAULT_CONFIG, TODAY)
+    assert [r["id"] for r in stitched] == ["1:0", "1:1"]
+    assert [r["n_images"] for r in stitched] == [15, 15]
+    assert all(r["length_m"] == pytest.approx(150, abs=0.2) for r in stitched)
+    assert all(r["road_name"] == "Hosszú út" for r in stitched)
+    assert stitched[0]["confidence"] > max(r["confidence"] for r in per_way)
+    assert stats.lines == 1
+
+
+def test_stats_report_is_printable():
     _, stats = build_rows(WAYS, main_frames(), DEFAULT_CONFIG, TODAY)
-    text = "\n".join(stats.lines())
+    text = "\n".join(stats.report())
     assert "matched:" in text and "RQI 4:" in text and "confidence:" in text
 
 
@@ -154,10 +186,26 @@ def test_helpers():
     assert not bounds_intersect(box, (47.0, 20.1, 48.0, 21.0))
 
 
-# ---- job hook: must never break the job ------------------------------------
+# ---- fingerprint: when is a bbox rebuild allowed? ---------------------------
+
+def test_fingerprint_changes_with_every_input_of_the_stored_rows():
+    tiles = {(950, 381): 1000, (949, 381): 2000}
+    base = build_fingerprint(tiles, DEFAULT_CONFIG, True)
+    assert len(base) == 40
+    assert base == build_fingerprint(dict(reversed(list(tiles.items()))), DEFAULT_CONFIG, True)
+
+    assert base != build_fingerprint({**tiles, (951, 381): 5}, DEFAULT_CONFIG, True)      # new tile
+    assert base != build_fingerprint({**tiles, (950, 381): 1001}, DEFAULT_CONFIG, True)   # refetched tile
+    assert base != build_fingerprint(tiles, DEFAULT_CONFIG, False)                        # stitching off
+    assert base != build_fingerprint(tiles, with_overrides(DEFAULT_CONFIG, segment_length_m=100), True)
+    assert base != build_fingerprint(tiles, with_overrides(DEFAULT_CONFIG, aggregator="mean_score"), True)
+    assert base != build_fingerprint(tiles, with_overrides(DEFAULT_CONFIG, thresholds=(1.5, 2.5, 3.2)), True)
+
+
+# ---- job hooks: must never break the job ------------------------------------
 
 class _FakeDb:
-    """Just enough of a Session for refresh_segments_since."""
+    """Just enough of a Session for the refresh hooks."""
 
     def __init__(self, n=5, fail=None):
         self.n, self.fail, self.closed = n, fail, False
@@ -165,8 +213,6 @@ class _FakeDb:
     def execute(self, *_a, **_kw):
         if self.fail:
             raise self.fail
-        from types import SimpleNamespace
-
         row = SimpleNamespace(south=47.5, west=19.05, north=47.52, east=19.08, n=self.n)
         return SimpleNamespace(one=lambda: row)
 
@@ -174,16 +220,23 @@ class _FakeDb:
         self.closed = True
 
 
-def test_refresh_hook_rebuilds_the_bbox_of_the_new_frames(monkeypatch):
+def _capture_rebuild(monkeypatch):
     from app.services import road_segments
 
     seen = {}
 
     def fake_rebuild(db, *, bbox, client, log):
         seen.update(bbox=bbox, retries=client.retries, timeout=client.timeout_s)
-        return road_segments.BuildStats(segments=7, ways_with_frames=3)
+        return road_segments.BuildStats(segments=7, lines_with_frames=3)
 
     monkeypatch.setattr(road_segments, "rebuild_segments", fake_rebuild)
+    return seen
+
+
+def test_route_hook_rebuilds_the_bbox_of_the_new_frames(monkeypatch):
+    from app.services import road_segments
+
+    seen = _capture_rebuild(monkeypatch)
     db = _FakeDb()
     stats = road_segments.refresh_segments_since(dt.datetime(2026, 11, 26), log=lambda _m: None, db=db)
     assert stats.segments == 7
@@ -192,7 +245,17 @@ def test_refresh_hook_rebuilds_the_bbox_of_the_new_frames(monkeypatch):
     assert db.closed
 
 
-def test_refresh_hook_skips_when_overpass_is_unreachable(monkeypatch):
+def test_analysis_hook_rebuilds_everything(monkeypatch):
+    from app.services import road_segments
+
+    seen = _capture_rebuild(monkeypatch)
+    db = _FakeDb()
+    assert road_segments.refresh_segments_full(log=lambda _m: None, db=db).segments == 7
+    assert seen["bbox"] is None and seen["retries"] == 0
+    assert db.closed
+
+
+def test_hook_skips_when_overpass_is_unreachable(monkeypatch):
     from app.services import road_segments
     from app.services.osm_overpass import OverpassError
 
@@ -207,7 +270,7 @@ def test_refresh_hook_skips_when_overpass_is_unreachable(monkeypatch):
     assert db.closed
 
 
-def test_refresh_hook_survives_any_failure_and_no_new_frames(monkeypatch):
+def test_hook_survives_any_failure_and_no_new_frames(monkeypatch):
     from app.services import road_segments
 
     # e.g. the table is missing because the migration has not run yet
@@ -221,13 +284,23 @@ def test_refresh_hook_survives_any_failure_and_no_new_frames(monkeypatch):
     assert called == []                                       # nothing new → no rebuild
 
 
-def test_job_wrapper_swallows_errors(monkeypatch):
+def test_job_wrapper_picks_the_right_refresh_and_swallows_errors(monkeypatch):
     from app.services import road_segments, tasks
 
     monkeypatch.setattr(tasks, "update_job", lambda *a, **k: None)
+    calls = []
+    monkeypatch.setattr(road_segments, "refresh_segments_since", lambda since: calls.append(("since", since)))
+    monkeypatch.setattr(road_segments, "refresh_segments_full", lambda: calls.append(("full",)))
 
-    def boom(_since):
+    start = dt.datetime(2026, 11, 26, 12, 0)
+    tasks.refresh_road_segments("job-1", start)              # route job
+    tasks.refresh_road_segments("job-2")                     # analysis job
+    assert calls == [("since", start), ("full",)]
+
+    def boom(*_a):
         raise RuntimeError("anything")
 
     monkeypatch.setattr(road_segments, "refresh_segments_since", boom)
-    tasks.refresh_road_segments("job-1", dt.datetime(2026, 11, 26))      # must not raise
+    monkeypatch.setattr(road_segments, "refresh_segments_full", boom)
+    tasks.refresh_road_segments("job-3", start)              # must not raise
+    tasks.refresh_road_segments("job-4")
