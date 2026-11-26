@@ -383,6 +383,36 @@ those go to the owner first. The same "which is worse?" format suits the
 planned swipe game for faster human labelling. Pilot size is small
 (87 decisive pairs); confirm on ~300 pairs before training on them.
 
+## Era 13 — Ranking-augmented head with VLM pair labels (T-62, 2026-11-26)
+
+Do VLM "which road is worse?" judgments improve the head as an extra ranking
+term? (`ml/rank_head.py`.) Model: champion features, Nyström-RBF ridge on the human
+labels **+ λ × logistic pairwise loss** on score differences. Two bases: plain
+kernel ridge, and the champion SVR + a ridge correction shaped by the pairs
+(`--svr-base`). λ ∈ {0, 0.3, 1, 3}, also chosen nested. Evaluated on human labels
+only, official spatial CV + leave-one-area-out (LORO); pairs with a frame in a test
+cell / the test area are dropped. Paired vs the champion SVR and vs λ = 0 (the
+same model without pairs).
+
+| Pairs | base | spatial ΔQWK vs champion (best λ / nested) | LORO ΔQWK vs champion (best λ / nested) | effect of more λ |
+|---|---|---|---|---|
+| 114 pilot pairs (labelled frames, sanity) | SVR | +0.014 / +0.014 (= λ 0 control) | +0.005 / +0.005 | none (±0.01 vs λ 0) |
+| 171 unsure pairs (QA, unlabelled, non-Budapest) | SVR | +0.005 / +0.014 (= λ 0 control) | −0.013 / −0.021 | worse: λ 3 → −0.024 / −0.062 |
+| 171 unsure pairs | kernel ridge | −0.018 / −0.011 | −0.039 / −0.080 | worse |
+
+- **No gain.** On the SVR base the pairs move nothing beyond the λ = 0 control
+  (spatial ±0.01), and more weight hurts monotonically. Nested λ picks ≈ 0.
+- The pilot's apparent LORO gain on the kernel-ridge base (+0.07–0.09 vs λ 0) only
+  closed that base's own gap to the SVR (−0.049). With the SVR as base it vanished.
+  That is the sanity check working as intended.
+- The unsure pairs are hard by construction: both frames sit within 0.25 of a cut
+  and the champion orders them 56/44. Judge accuracy there is unknown and position
+  bias is visible ("B is worse" 58%). About 170 noisy orderings carry less
+  information than the 1,903 human grades they compete with.
+- **Verdict:** no candidate; the champion stays. Pair judgments are better spent as
+  a *label-queue filter* (which unsure frames the human should grade first) than
+  as a training signal.
+
 ## Lessons
 
 1. **With little data the recipe matters, not model size** — the same backbone gave
