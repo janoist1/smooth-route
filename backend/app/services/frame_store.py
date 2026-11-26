@@ -67,10 +67,12 @@ class DbFrameStore:
             latitude=frame.lat, longitude=frame.lon, heading=frame.heading, pitch=frame.pitch,
             pano_id=frame.pano_id, capture_date=frame.capture_date,
             image_url=None, rqi_score=None,       # pending analysis
+            analysis_metadata={"imagery": frame.imagery} if frame.imagery else None,
         )
         self.db.add(row)
         self.db.flush()                            # assigns the id the file name needs
-        filename = f"sv_{row.id}_{uuid.uuid4().hex[:8]}.jpg"
+        prefix = "mly" if frame.imagery else "sv"
+        filename = f"{prefix}_{row.id}_{uuid.uuid4().hex[:8]}.jpg"
         path = self.images_dir / filename
         try:
             self.images_dir.mkdir(parents=True, exist_ok=True)

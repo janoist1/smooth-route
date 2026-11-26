@@ -1,0 +1,140 @@
+{
+ "_note": "Hand-built after the Mapillary Graph API v4 /images response schema (docs: https://www.mapillary.com/developer/api-documentation#image); NOT a recorded response (no token). Positions are metres around tests/geo_helpers.at(175, 0) on a road heading east (bearing 90).",
+ "data": [
+  {
+   "id": "1",
+   "captured_at": 1716800000001,
+   "compass_angle": 88.5,
+   "computed_compass_angle": 90,
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     19.0523295,
+     47.5
+    ]
+   },
+   "computed_geometry": {
+    "type": "Point",
+    "coordinates": [
+     19.0523295,
+     47.5
+    ]
+   },
+   "is_pano": true,
+   "camera_type": "spherical",
+   "creator": {
+    "id": "100001",
+    "username": "budapest_rider"
+   },
+   "thumb_1024_url": "https://scontent.example.invalid/m1/thumb_1.jpg?stp=s1024x768&_nc_sig=abc1"
+  },
+  {
+   "id": "2",
+   "captured_at": 1716800000002,
+   "compass_angle": 88.5,
+   "computed_compass_angle": 90,
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     19.052862,
+     47.5
+    ]
+   },
+   "computed_geometry": {
+    "type": "Point",
+    "coordinates": [
+     19.052862,
+     47.5
+    ]
+   },
+   "is_pano": false,
+   "camera_type": "perspective",
+   "creator": {
+    "id": "100002",
+    "username": "budapest_rider"
+   },
+   "thumb_1024_url": "https://scontent.example.invalid/m1/thumb_2.jpg?stp=s1024x768&_nc_sig=abc2"
+  },
+  {
+   "id": "3",
+   "captured_at": 1716800000003,
+   "compass_angle": 178.5,
+   "computed_compass_angle": 180,
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     19.0523695,
+     47.500018
+    ]
+   },
+   "computed_geometry": {
+    "type": "Point",
+    "coordinates": [
+     19.0523695,
+     47.500018
+    ]
+   },
+   "is_pano": false,
+   "camera_type": "perspective",
+   "creator": {
+    "id": "100003",
+    "username": "budapest_rider"
+   },
+   "thumb_1024_url": "https://scontent.example.invalid/m1/thumb_3.jpg?stp=s1024x768&_nc_sig=abc3"
+  },
+  {
+   "id": "4",
+   "captured_at": 1716800000004,
+   "compass_angle": 90.5,
+   "computed_compass_angle": 92,
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     19.0524094,
+     47.500009
+    ]
+   },
+   "computed_geometry": {
+    "type": "Point",
+    "coordinates": [
+     19.0524094,
+     47.500009
+    ]
+   },
+   "is_pano": false,
+   "camera_type": "perspective",
+   "creator": {
+    "id": "100004",
+    "username": "budapest_rider"
+   },
+   "thumb_1024_url": "https://scontent.example.invalid/m1/thumb_4.jpg?stp=s1024x768&_nc_sig=abc4"
+  },
+  {
+   "id": "5",
+   "captured_at": 1716800000005,
+   "compass_angle": 269.5,
+   "computed_compass_angle": 271,
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     19.0521964,
+     47.499991
+    ]
+   },
+   "computed_geometry": {
+    "type": "Point",
+    "coordinates": [
+     19.0521964,
+     47.499991
+    ]
+   },
+   "is_pano": false,
+   "camera_type": "perspective",
+   "creator": {
+    "id": "100005",
+    "username": ""
+   },
+   "thumb_1024_url": "https://scontent.example.invalid/m1/thumb_5.jpg?stp=s1024x768&_nc_sig=abc5"
+  }
+ ]
+}
