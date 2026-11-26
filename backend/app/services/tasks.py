@@ -25,7 +25,8 @@ def refresh_road_segments(job_id: str, since=None) -> None:
         print(f"Road-segment refresh skipped: {traceback.format_exc()}")
 
 
-def run_route_processing(job_id: str, origin: str, destination: str):
+def run_route_processing(job_id: str, origin: str, destination: str,
+                         path: list[tuple[float, float]] | None = None):
     """Run the full route processing pipeline using RouteProcessingService."""
     print(f"DEBUG: Process started for job {job_id}")
     started_at = utcnow()  # frames created from here on belong to this job
@@ -45,7 +46,7 @@ def run_route_processing(job_id: str, origin: str, destination: str):
         final_origin = origin
         final_dest = destination
 
-        if not is_coordinate(origin):
+        if path is None and not is_coordinate(origin):
             update_job(job_id, message=f"Cím feloldása: {origin}...")
             geocoded = google_maps_service.geocode(origin)
             if geocoded:
@@ -54,7 +55,7 @@ def run_route_processing(job_id: str, origin: str, destination: str):
             else:
                 print(f"WARNING: Could not geocode origin '{origin}', hoping it works as is.")
 
-        if not is_coordinate(destination):
+        if path is None and not is_coordinate(destination):
             update_job(job_id, message=f"Cím feloldása: {destination}...")
             geocoded = google_maps_service.geocode(destination)
             if geocoded:
@@ -70,7 +71,10 @@ def run_route_processing(job_id: str, origin: str, destination: str):
 
         # Step 1: Collect points (first pass: one every 50 m)
         print(f"DEBUG: Calling collect_points for job {job_id}")
-        road_quality_service.collect_points(final_origin, final_dest, job_id)
+        if path is None:
+            road_quality_service.collect_points(final_origin, final_dest, job_id)
+        else:
+            road_quality_service.collect_points(final_origin, final_dest, job_id, path=path)
         
         # Step 2: Download images
         print(f"DEBUG: Calling download_images for job {job_id}")

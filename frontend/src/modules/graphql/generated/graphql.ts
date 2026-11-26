@@ -32,6 +32,7 @@ export type PairResult =
 export type ProcessRouteInput = {
   destination: string;
   origin: string;
+  path?: Array<Array<number>> | null | undefined;
 };
 
 export type QuickLabelInput = {

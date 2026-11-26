@@ -49,6 +49,31 @@ describe('pairwise keys and exclusions', () => {
 })
 
 describe('pair reducer', () => {
+  it.each(['before', 'during'])('keeps optimistic counts when a pair page starts %s saving and restores a failed pair', timing => {
+    let s = withPairs(pair(1, 2), pair(3, 4))
+    if (timing === 'before') s = reducer(s, { type: actions.fetchPairs.pending.type })
+    s = reducer(s, actions.judgePair({ aId: 1, result: 'A', clientId: 'c1' }))
+    if (timing === 'during') s = reducer(s, { type: actions.fetchPairs.pending.type })
+    s = reducer(s, actions.writeDone({ seq: s.outbox[0].seq }))
+    s = reducer(s, { type: actions.fetchPairs.fulfilled.type, payload: { pairs: [], judged: 0 } })
+    expect(s.pairsJudged).toBe(1)
+    s = reducer(s, actions.judgePair({ aId: 3, result: 'B', clientId: 'c2' }))
+    s = reducer(s, actions.writeFailed({ seq: s.outbox[0].seq, message: 'offline' }))
+    expect(s.pairs).toEqual([pair(3, 4)])
+    expect(s.pairHistory.map(h => h.clientId)).toEqual(['c1'])
+    expect(s.pairsJudged).toBe(1)
+    expect(s.error).toContain('offline')
+  })
+
+  it('a failed pair save drops its undo without restoring or counting the pair twice', () => {
+    let s = reducer(withPairs(pair(1, 2)), actions.judgePair({ aId: 1, result: 'A', clientId: 'c1' }))
+    const seq = s.outbox[0].seq
+    s = reducer(s, actions.undoPair())
+    s = reducer(s, actions.writeFailed({ seq, message: 'offline' }))
+    expect(s.pairs).toEqual([pair(1, 2)])
+    expect(s.outbox).toEqual([])
+    expect(s.pairsJudged).toBe(0)
+  })
   it('judging advances, records history and queues an ordered write', () => {
     const s = reducer(withPairs(pair(1, 2), pair(3, 4)), actions.judgePair({ aId: 1, result: 'B', clientId: 'c1' }))
     expect(s.pairs.map(p => p.a.id)).toEqual([3])
@@ -67,7 +92,8 @@ describe('pair reducer', () => {
   })
 
   it('a page merges only frames not already on screen', () => {
-    const s = reducer(withPairs(pair(1, 2)), {
+    const pending = reducer(withPairs(pair(1, 2)), { type: actions.fetchPairs.pending.type })
+    const s = reducer(pending, {
       type: 'labeling/fetchPairs/fulfilled',
       payload: { pairs: [pair(2, 9), pair(5, 6)], judged: 7 },
     })

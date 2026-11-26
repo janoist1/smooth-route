@@ -35,8 +35,9 @@ class RoadQualityService:
     def analyze_image(self, image_path: str, confidence_threshold: Optional[float] = None):
         return self.analyzer.analyze_image(image_path, confidence_threshold)
 
-    def collect_points(self, origin: str, destination: str, job_id: str):
-        return route_collector.collect_points(origin, destination, job_id)
+    def collect_points(self, origin: str, destination: str, job_id: str,
+                       path: list[tuple[float, float]] | None = None):
+        return route_collector.collect_points(origin, destination, job_id, path=path)
 
     def download_images(self, job_id: str, budget=None):
         return image_downloader.download_images(job_id, budget)

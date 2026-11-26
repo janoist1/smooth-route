@@ -233,6 +233,7 @@ type Point {
 input ProcessRouteInput {
   origin: String!
   destination: String!
+  path: [[Float!]!] = null
 }
 
 type Query {

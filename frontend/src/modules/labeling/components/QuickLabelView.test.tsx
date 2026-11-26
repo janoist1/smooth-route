@@ -1,18 +1,23 @@
 // The page renders one big button per level of the shared RQI scale (name
 // first) and a tap stores that level's value.
-import { describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, createEvent, fireEvent, render, screen, within } from '@testing-library/react'
 import { Provider } from 'react-redux'
+import { MemoryRouter } from 'react-router-dom'
 import { combineReducers, configureStore } from '@reduxjs/toolkit'
 import createSagaMiddleware from 'redux-saga'
 import { all, delay } from 'redux-saga/effects'
 import { RQI_LEVELS, fromSeverity, rqiValue } from '../../ui'
+import { RequireAdmin } from '../../auth/RequireAdmin'
+import { ViewerContext } from '../../auth/viewerContext'
 
 const saved: unknown[] = []
+const queried: unknown[] = []
 
 vi.mock('../../graphql', () => ({
   gql: (source: string) => source,
   *gqlQuery(options: { query: string }) {
+    queried.push(options)
     yield delay(1)
     if (options.query.includes('labelExamples')) return { labelExamples: [] }
     return {
@@ -44,11 +49,12 @@ vi.mock('../../graphql', () => ({
   },
 }))
 
-const { default: reducer, actions } = await import('../slice')
+const { default: reducer } = await import('../slice')
 const { default: sagas } = await import('../sagas')
 const { QuickLabelView } = await import('./QuickLabelView')
 
 describe('QuickLabelView', () => {
+  afterEach(cleanup)
   it('shows one name-first button per scale level and stores the tapped level', async () => {
     window.localStorage.clear()
     const sagaMiddleware = createSagaMiddleware()
@@ -65,7 +71,6 @@ describe('QuickLabelView', () => {
       </Provider>,
     )
     await act(async () => {
-      store.dispatch(actions.enter())
       // longer than the 300 ms double-tap guard
       await new Promise(r => setTimeout(r, 400))
     })
@@ -114,7 +119,6 @@ describe('QuickLabelView', () => {
       </Provider>,
     )
     await act(async () => {
-      store.dispatch(actions.enter())
       await new Promise(r => setTimeout(r, 400))
     })
     const before = saved.length
@@ -137,5 +141,55 @@ describe('QuickLabelView', () => {
     })
     expect(saved.length).toBe(before + 1)
     expect(saved[before]).toEqual(expect.objectContaining({ input: expect.objectContaining({ pointId: 7 }) }))
+  })
+
+  it('loads on guarded admin mount while an anonymous deep link makes no label queries', async () => {
+    const middleware = createSagaMiddleware()
+    const store = configureStore({ reducer: combineReducers({ labeling: reducer }), middleware: gdm => gdm().concat(middleware) })
+    const task = middleware.run(function* () { yield all(sagas) })
+    const view = (isAdmin: boolean) => (
+      <Provider store={store}>
+        <MemoryRouter initialEntries={['/training/quick']}>
+          <ViewerContext.Provider value={{ viewer: null, isAdmin, loading: false }}>
+            <RequireAdmin><QuickLabelView onBack={() => {}} /></RequireAdmin>
+          </ViewerContext.Provider>
+        </MemoryRouter>
+      </Provider>
+    )
+    try {
+      const before = queried.length
+      const { rerender } = render(view(false))
+      expect(queried).toHaveLength(before)
+      expect(store.getState().labeling.loading).toBe(false)
+      rerender(view(true))
+      await act(async () => { await new Promise(r => setTimeout(r, 20)) })
+      expect(queried.length).toBeGreaterThan(before)
+      expect(store.getState().labeling.queue.map(item => item.id)).toEqual([7, 8])
+    } finally { task.cancel() }
+  })
+
+  it('blurs a clicked rating button and prevents Space keyup from rating again', async () => {
+    const middleware = createSagaMiddleware()
+    const store = configureStore({ reducer: combineReducers({ labeling: reducer }), middleware: gdm => gdm().concat(middleware) })
+    const task = middleware.run(function* () { yield all(sagas) })
+    try {
+      render(<Provider store={store}><QuickLabelView onBack={() => {}} /></Provider>)
+      await act(async () => { await new Promise(r => setTimeout(r, 400)) })
+      const button = screen.getByRole('button', { name: RQI_LEVELS[0].label_hu })
+      button.focus()
+      fireEvent.click(button)
+      expect(document.activeElement).not.toBe(button)
+      await act(async () => { await new Promise(r => setTimeout(r, 400)) })
+      // A keyboard user may focus it again: Firefox's keyup default must be cancelled.
+      button.focus()
+      const before = saved.length
+      fireEvent.keyDown(button, { key: ' ' })
+      const up = createEvent.keyUp(button, { key: ' ', cancelable: true })
+      fireEvent(button, up)
+      expect(up.defaultPrevented).toBe(true)
+      await act(async () => { await new Promise(r => setTimeout(r, 20)) })
+      expect(saved).toHaveLength(before)
+      expect(store.getState().labeling.queue[0].id).toBe(8)
+    } finally { task.cancel() }
   })
 })

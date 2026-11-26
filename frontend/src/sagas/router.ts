@@ -12,7 +12,6 @@ import {
 } from 'modules/map'
 import * as settingsActions from 'modules/settings/slice'
 import { actions as routingActions } from 'modules/routing'
-import { actions as labelingActions } from 'modules/labeling/slice'
 import { waitForAppStart } from 'modules/app'
 import { PAGE_SIZE } from '../constants'
 import { ROUTES } from '../routes'
@@ -99,11 +98,6 @@ function* handleMapHome(_match: PathMatch, searchParams: URLSearchParams): SagaI
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-function* handleQuickLabel(_match: PathMatch, _searchParams: URLSearchParams): SagaIterator {
-  yield put(labelingActions.enter())
-}
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function* handleSettings(_match: PathMatch, _searchParams: URLSearchParams): SagaIterator {
    yield put(settingsActions.fetchSettings())
 }
@@ -116,7 +110,6 @@ interface RouteHandlerConfig {
 }
 
 const ROUTE_CONFIG: RouteHandlerConfig[] = [
-  { route: ROUTES.QUICK_LABEL, handler: handleQuickLabel },
   { route: ROUTES.TRAINING_REVIEW, handler: handleTrainingDetail }, 
   { route: ROUTES.TRAINING_LIST, handler: handleTrainingDashboard },
   { route: ROUTES.HOME, handler: handleMapHome },

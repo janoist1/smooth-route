@@ -3,19 +3,26 @@
 // user button use Clerk, so the island mounts beside the app and portals the
 // button into the nav's slot. The app tree never remounts when Clerk arrives.
 import React, { useEffect, useRef } from 'react'
+import { useDispatch } from 'react-redux'
 import { createPortal } from 'react-dom'
 import { ClerkProvider, SignedIn, SignedOut, SignInButton, UserButton, useAuth } from '@clerk/clerk-react'
 import { LogIn } from 'lucide-react'
 import { client } from '../graphql/client'
 import { CLERK_PUBLISHABLE_KEY } from './config'
-import { expectSession, setAuthSettled, setAuthTokenGetter } from './tokenBridge'
+import { cancelAuthFallback, expectSession, setAuthSettled, setAuthTokenGetter } from './tokenBridge'
 import { useUserMenuSlot } from './userMenuSlot'
+import { actions as routingActions } from '../routing'
 
 /** Registers Clerk's getToken for the Apollo auth link; once the sign-in state
  * is known (and whenever it flips) re-runs the active queries, then marks auth
  * as settled so the viewer / admin guard can decide. */
 const TokenBridge: React.FC = () => {
   const { getToken, isLoaded, isSignedIn } = useAuth()
+  const dispatch = useDispatch()
+
+  useEffect(() => {
+    cancelAuthFallback()
+  }, [])
 
   useEffect(() => {
     if (!isLoaded) return
@@ -39,8 +46,17 @@ const TokenBridge: React.FC = () => {
       return
     }
     setAuthSettled(false)
-    void client.refetchQueries({ include: 'active' }).finally(() => setAuthSettled(true))
-  }, [isLoaded, isSignedIn])
+    void client.refetchQueries({ include: 'active' }).finally(() => {
+      setAuthSettled(true)
+      // Saga queries use no-cache transport and are not Apollo active queries.
+      if (signedIn) {
+        dispatch(routingActions.locationChange({
+          pathname: window.location.pathname,
+          search: window.location.search,
+        }))
+      }
+    })
+  }, [isLoaded, isSignedIn, dispatch])
 
   return null
 }

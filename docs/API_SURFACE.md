@@ -66,7 +66,7 @@ Violations are `BAD_USER_INPUT` errors raised before any resolver runs.
 
 | Field | Access | RO | Purpose |
 |---|---|---|---|
-| `processRoute` | signed-in | no | start a route collection + analysis job |
+| `processRoute` | admin | no | start a route collection + analysis job along the selected path |
 | `stopJob` | signed-in | no | cancel a job |
 | `updateSetting` | admin | no | change one setting |
 | `applyPreset` | admin | no | change several settings at once |
@@ -295,6 +295,13 @@ qualifies. Quality is compared through `app.core.rqi_scale` (direction-free).
 The planner uses it instead of `getRoute`.
 `getRoute` is available only on the full schema; public callers use
 `routeAlternatives`.
+
+`processRoute(input: {origin, destination, path})` (admin, full schema only)
+collects frames along the selected alternative's `path` (`[[lat, lng], ...]`),
+without another Directions or geocoding call. The optional path must have
+2–20 000 points, total length ≤ 800 km, and every coordinate inside the Hungary
+service area; the existing `limits.py` path and endpoint validators apply.
+Omitting `path` retains endpoint-based route lookup for API consumers.
 
 **Speed-weighted impact (T-47).** `RouteQuality.impactScore` (also inside each
 route alternative): the average number of levels below Kiváló per measured

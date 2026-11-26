@@ -4,7 +4,7 @@ import RoutePlanner from './RoutePlanner'
 import type { Viewer } from '../../auth'
 
 let viewer: Viewer | null = null
-vi.mock('../../auth', () => ({ useViewer: () => ({ viewer, isAdmin: false, loading: false }) }))
+vi.mock('../../auth', () => ({ useViewer: () => ({ viewer, isAdmin: viewer?.role === 'admin', loading: false }) }))
 
 // A planned route is on the map; everything else idle.
 vi.mock('../hooks', () => ({
@@ -43,15 +43,21 @@ vi.mock('../segments/hooks', () => ({
 describe('RoutePlanner analyze button', () => {
   afterEach(cleanup)
 
-  it('is hidden for anonymous visitors (processRoute needs a signed-in user)', () => {
+  it('is hidden for anonymous visitors (processRoute needs an admin)', () => {
     viewer = null
     render(<RoutePlanner />)
     expect(screen.getByRole('button', { name: /Útvonal Mutatása/ })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Elemzés Indítása/ })).not.toBeInTheDocument()
   })
 
-  it('is shown to a signed-in user once a route is planned', () => {
+  it('is hidden for a signed-in non-admin', () => {
     viewer = { clerkId: 'user_1', email: null, role: 'user' }
+    render(<RoutePlanner />)
+    expect(screen.queryByRole('button', { name: /Elemzés Indítása/ })).not.toBeInTheDocument()
+  })
+
+  it('is shown to an admin once a route is planned', () => {
+    viewer = { clerkId: 'user_1', email: null, role: 'admin' }
     render(<RoutePlanner />)
     expect(screen.getByRole('button', { name: /Elemzés Indítása/ })).toBeInTheDocument()
   })

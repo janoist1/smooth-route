@@ -225,13 +225,16 @@ function* planRouteWorker(action: SagaActionFromCreator<typeof actions.planRoute
 
 function* analyzeRouteWorker(action: SagaActionFromCreator<typeof actions.analyzeRoute>) {
   const { origin, destination } = action.meta.arg
+  const path: [number, number][] | null = yield select(selectors.selectRoutePoints)
+  if (!path || path.length < 2) throw new Error('Előbb válassz egy útvonalat')
   
   const data = yield* gqlMutate({
     mutation: PROCESS_ROUTE,
     variables: {
       input: {
         origin,
-        destination
+        destination,
+        path,
       }
     }
   })
@@ -321,7 +324,13 @@ export default [
   takeLatestAsync(actions.fetchGrid.pending.type, fetchGridWorker),
   takeLatestAsync(actions.fetchPointDetail.pending.type, fetchPointDetailWorker),
   takeLatest(actions.selectPoint.type, handleSelectionSaga),
-  takeLatestAsync(actions.planRoute.pending.type, planRouteWorker),
+  takeLatestAsync(
+    [actions.planRoute.pending.type, actions.clearRoute.type],
+    function* (action: SagaActionFromCreator<typeof actions.planRoute> | ReturnType<typeof actions.clearRoute>) {
+      if (actions.clearRoute.match(action)) return
+      return yield* planRouteWorker(action)
+    },
+  ),
   takeLatestAsync(actions.analyzeRoute.pending.type, analyzeRouteWorker),
   // Use toString() to be safe if it's an action creator or string
   takeLatest(actions.analyzeRoute.fulfilled.toString(), watchJobStart),

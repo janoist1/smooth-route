@@ -32,6 +32,14 @@ const page = (ids: number[], strategy: LabelQueuePage['strategy'] = 'MIXED'): La
 })
 
 describe('rating', () => {
+  it('bumps sprint progress on a new sprint rating and rolls it back on undo or failure', () => {
+    const start = withQueue([1, 2], { strategy: 'SPRINT', stats: { ...stats, sprintLabelled: 199, sprintTarget: 200 } })
+    const rated = reducer(start, actions.rate({ id: 1, rqi: 3 }))
+    expect(rated.stats?.sprintLabelled).toBe(200)
+    const switched = reducer(rated, actions.setStrategy('MIXED'))
+    expect(reducer(switched, actions.undoLast()).stats?.sprintLabelled).toBe(199)
+    expect(reducer(switched, actions.writeFailed({ seq: rated.outbox[0].seq, message: 'down' })).stats?.sprintLabelled).toBe(199)
+  })
   it('advances the queue, records history, queues a save and counts optimistically', () => {
     const s = reducer(withQueue([1, 2]), actions.rate({ id: 1, rqi: 3, elapsedMs: 1200 }))
     expect(s.queue.map(i => i.id)).toEqual([2])

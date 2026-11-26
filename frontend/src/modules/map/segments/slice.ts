@@ -86,6 +86,9 @@ const roadsSlice = createSlice({
         if (action.meta.requestId !== state.segmentsRequestId) return
         state.loading = false
         state.items = action.payload
+        if (state.selected) {
+          state.selected = action.payload.find(item => item.id === state.selected?.id) ?? state.selected
+        }
       })
       .addCase(fetchSegments.rejected, (state, _action) => {
         const action = _action as Rejected
