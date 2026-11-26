@@ -34,6 +34,7 @@ evening; the live state is the ticket board (`python3 tools/board.py list`).
 | Cloud sessions | `cloud-ci`, `cloud-perf`, `cloud-docs` | CI hardening (T-18), bundle size (T-19); docs (T-17) never delivered → T-26 | T-18/T-19 doing | via lead |
 | Frontend type debt | lead's subagent, Sonnet | `tsc` errors | done, merged | – |
 | Pilot labellers ×4 | lead's subagents, 2× Fable 5.2, 2× Opus 5.5 | AI-labelling pilot | done | – |
+| Codex | `codex exec` runs started by the lead (skill `codex`, owner's ChatGPT quota) | well-scoped tickets, independent reviews | available (from 2026-11-26) | via lead |
 
 ## Roles
 
@@ -54,6 +55,12 @@ evening; the live state is the ticket board (`python3 tools/board.py list`).
   type fixes, renames, dependency bumps, translations of settled text.
 - **Usual pattern:** sessions run on Opus and delegate heavy image reading and
   implementation to Fable subagents (Fable has its own weekly usage bucket).
+- **Codex** (OpenAI, the owner's ChatGPT subscription, user skill `codex`): the owner
+  has a large Codex quota that otherwise goes unused, so give Codex well-scoped tickets
+  and independent reviews. Implementation runs in its own worktree with
+  `codex exec -s workspace-write`; Codex does not commit — the lead reads the diff, runs
+  the gates and commits. Reviews: `codex exec review --base claude/analysis-layer`.
+  Codex reads [AGENTS.md](../AGENTS.md) itself; the brief must still be complete.
 - When the model choice itself is the question, run a small comparison pilot first
   (the labelling pilot compared four labellers on two models).
 - **Bandwidth:** every image an agent views stays in its context and is re-uploaded
