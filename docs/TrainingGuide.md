@@ -1,35 +1,36 @@
-# Road Quality AI: Training Data Guide
+# Labelling guide
 
-> **Scope:** this guide is about producing good **manual labels** (1–5 ratings and
-> damage annotations). The RQI scoring model itself is trained and shipped from the
-> `ml/` pipeline (see [ml/README.md](../ml/README.md) and
-> [MODEL_EXPERIMENTS.md](MODEL_EXPERIMENTS.md)) — **not** from a web button. The
-> DINO "training" web flow was retired; only the review/labelling screen remains.
+How to make manual labels on `/training/:id/review`: **RQI scoring** (the
+"Minőség" panel → `manual_rqi`, which the `ml/` pipeline trains on) and **damage
+polygons** (the "Hibák jelölése" panel → YOLO training data). The web UI does not
+train the RQI model; `ml/` does ([ml/README.md](../ml/README.md)).
 
-To improve the AI's judgment and make it align better with your manual ratings, we need a high-quality dataset. Here are the recommendations for effective training.
+## Scale (lower = better)
 
-## 1. Data Quantity
-- **Initial Target**: Aim for at least **200-300** high-quality manual ratings (Ground Truth).
-- **YOLO Training**: For the AI to truly "learn" from your style, we ideally need **500-1,000** annotated images with bounding boxes.
-- **Incremental Improvement**: You don't need all at once. Even 50-100 new reviewed items per week will significantly improve the system over time.
+| RQI | meaning |
+|---|---|
+| 1 | excellent — new or freshly resurfaced, no visible defects |
+| 2 | good — light wear, small cracks, good patches; does not affect driving |
+| 3 | fair — visible crack networks, patching, small potholes |
+| 4 | poor — deep potholes, broken-up or very rough surface |
 
-## 2. Qualitative Quality (What to rate?)
-The AI learns from your "Ground Truth". To help it:
-- **Balance the Scale**: Don't just rate the bad roads. We need many examples of "Perfect" (1.0) and "Good" (2.0) roads so the AI learns what *isn't* a problem.
-- **Edge Cases**: Rate roads that are "borderline" (e.g., a road with many patches but a smooth ride).
-- **Diversity**: Mix your data!
-    - Different times of day (shadows are a big factor).
-    - Different road colors (new black asphalt vs old grey concrete).
-    - Different weather conditions (wet roads reflect light differently).
+Do not use 5: too few examples; training drops it.
 
-## 3. What makes a "Good" Training Image?
-- **Visibility**: The road surface should be clear in the bottom 40% of the image.
-- **Context**: If a pothole is small but deep, try to mark it clearly. If it's just a shallow dip, your rating should reflect that it's less severe.
-- **Consistency**: Try to be consistent. If you rate a road with one small crack as "2.0 Good" today, try not to rate a similar one as "3.0 Fair" tomorrow.
+## What to label (this matters most)
 
-## 4. Current Scale Definition (Recall)
-- **1.0 (Excellent)**: Brand new or recently resurfaced. No visible defects.
-- **2.0 (Good)**: Minor wear, small cracks, or high-quality patches that don't affect driving.
-- **3.0 (Fair)**: Medium wear, visible alligator cracks, or small potholes that are noticeable.
-- **4.0 (Poor)**: Significant damage, deep potholes, or very rough surface.
-- **5.0 (Very Poor)**: Immediate repair needed. Multiple deep potholes or destroyed surface.
+- **Few images from many places.** Consecutive frames (~10 m apart) show nearly the
+  same asphalt; prefer one frame every 100–200 m, from many different towns.
+  **Budapest** is under-represented (and the model is weakest there) — cover every
+  road class, including 1s. Why: [MODEL_EXPERIMENTS.md](MODEL_EXPERIMENTS.md), era 6.
+- **Boundary cases, especially class 2.** Most errors sit on the 1|2 and 2|3
+  boundaries. Be consistent: a road with one small crack that is a 2 today must
+  not be a 3 tomorrow.
+- **Balanced:** plenty of good roads (1–2), not just bad ones.
+- **Varied:** time of day/shadows, asphalt colour (new black vs. old grey), wet roads.
+
+## A good training image
+
+- The road surface is clearly visible in the bottom ~40% of the frame.
+- Polygons: mark a small but deep pothole clearly; shallow unevenness belongs in
+  the score, not in a polygon.
+- Do not score non-road frames (lobbies, pavements, indoors).
