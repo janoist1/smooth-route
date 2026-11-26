@@ -1129,6 +1129,22 @@ def main():
         f"{base_m[k]:.3f}" for k in ("qwk", "mae", "exact", "bad_auc", "bad_acc"))
         + "\n")
 
+    # is any aggregator measurably better than the recommended one?
+    print(f"   Other aggregators minus {AGG_LABEL[kr]} at each length (paired "
+          "cell bootstrap, unshifted segmentation): ΔQWK [95% CI]")
+    rows = []
+    for kind in ALL_KINDS:
+        if kind == kr:
+            continue
+        row = {"aggregator": AGG_LABEL[kind]}
+        for L in LENGTHS[1:]:
+            a, b = results[(L, kind)], results[(L, kr)]
+            dlo, dhi = ci(a["boot"] - b["boot"])
+            row[lname(L)] = fmt_d(a["runs"][0]["m"]["qwk"] - b["runs"][0]["m"]["qwk"],
+                                  dlo[0], dhi[0])
+        rows.append(row)
+    print_df(pd.DataFrame(rows))
+
     # does re-tuning the cut-points for the aggregated score pay off?
     print(f"   Re-tuned cut-points vs the single-frame cut-points applied to the "
           f"aggregated score ({AGG_LABEL[kr]}; mean of the "

@@ -516,8 +516,11 @@ QWK / MAE, mean of the 3 segmentations (single frame: **0.780 / 0.404**):
 - **Length matters more than the aggregator.** Agreement rises steadily with
   length and flattens around 200 m. Median, mean, trimmed mean and mean
   P(bad) stay within ±0.02 of each other, which is the noise of one
-  segmentation. **Majority vote is the one clear loser**: it throws away how
-  far each frame is from a class border.
+  segmentation; in a paired test none of them is measurably better than the
+  median at 100–300 m (the largest gap, mean P(bad) at 200 m, is +0.026
+  [−0.007, +0.074]). **Majority vote is the one clear loser** (−0.047
+  [−0.093, −0.005] at 200 m): it throws away how far each frame is from a
+  class border.
 - **The paired gain over the single frame** (median score, cell bootstrap):
   50 m +0.015 [−0.005, +0.034], 100 m +0.026 [−0.015, +0.060], 150 m +0.037
   [−0.020, +0.074], **200 m +0.079 [+0.029, +0.119]**, 300 m +0.093 [+0.063,
@@ -712,8 +715,9 @@ provably better than 50 m alone and cannot be told from 10 m. If a second
 pass is not worth building, **uniform 30 m** (33%) is the single-pass
 equivalent. A 100 m first pass is cheaper still and passes the same test, but
 we do not recommend it: two frames per segment leave the median no protection
-against a junk frame (production does not filter non-road views, and the
-labelled set contains none), and it sees the fewest short defects.
+against a junk frame (non-road and unusable views are not yet filtered in
+production, and the labelled set contains none), and it sees the fewest short
+defects.
 
 **Short defects.** A defect visible in only one or two frames is a different
 question from segment quality. Runs of consecutive human-bad frames:
@@ -831,7 +835,10 @@ one that still protects against a junk frame when a segment has only three.
 How the backend should read it:
 
 1. **Input** is the continuous frame score (`analysis_metadata.dino_score`),
-   not the integer class. Segment score = median of the frame scores.
+   not the integer class. Segment score = median of the frame scores. The
+   whole recipe works on the model's native scale (1 = excellent … 4 = poor,
+   higher score = worse road); if the displayed scale is ever flipped or
+   renamed, convert *after* applying the cut-points.
 2. **Class** = 1 + the number of `thresholds` that are ≤ the segment score.
    The cut-points were tuned on all spatial out-of-fold segments (the 3
    segmentations pooled). They differ from the single-frame cut-points in the
@@ -846,9 +853,9 @@ How the backend should read it:
    the mean-P(bad) flag reaches 91.6% good/bad accuracy against 89.4% for
    "class ≥ 3". The two can disagree on a segment, so use one of them
    consistently.
-6. **`integer_class_fallback`**: at the time of writing only 3,346 of the
-   17,607 frames in the local DB store `dino_score`; the rest have just the
-   integer `dino_rqi_score`. For those,
+6. **`integer_class_fallback`**: when this was measured only 3,346 of the
+   17,607 frames in the local DB stored `dino_score` (a re-score was under
+   way); the rest had just the integer `dino_rqi_score`. For those,
    the mean of the integer classes with its own cut-points is as good for the
    class (QWK 0.842 / MAE 0.295 at 200 m), but the margin-based confidence is
    not calibrated for it. Backfilling `dino_score` is the proper fix.
