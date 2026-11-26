@@ -19,9 +19,49 @@ const PageFallback: React.FC = () => (
   </div>
 )
 
+class AdminErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false }
+
+  static getDerivedStateFromError() {
+    return { failed: true }
+  }
+
+  render() {
+    if (this.state.failed) {
+      return (
+        <div role="alert" style={{ color: '#d1d5db', padding: 20, fontSize: 14 }}>
+          <p>Nem sikerült betölteni az oldalt.</p>
+          <button
+            type="button"
+            className="fnav-btn"
+            onClick={() => window.location.reload()}
+            style={{
+              padding: '10px 16px',
+              borderRadius: '9999px',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              background: 'rgba(0, 0, 0, 0.4)',
+              color: 'inherit',
+              cursor: 'pointer',
+              fontSize: 'inherit',
+              fontWeight: 500,
+            }}>
+            Újratöltés
+          </button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
 const AdminPage: React.FC<{ children: React.ReactElement }> = ({ children }) => (
   <RequireAdmin>
-    <Suspense fallback={<PageFallback />}>{children}</Suspense>
+    <AdminErrorBoundary>
+      <Suspense fallback={<PageFallback />}>{children}</Suspense>
+    </AdminErrorBoundary>
   </RequireAdmin>
 )
 

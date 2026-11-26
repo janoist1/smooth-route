@@ -34,7 +34,7 @@ describe('tokenBridge', () => {
     expect(await getAuthToken()).toBeNull()
   })
 
-  it('gives up on a hung getter after ~3 s and goes anonymous', async () => {
+  it('gives up on a hung getter at 3 s and goes anonymous', async () => {
     vi.useFakeTimers()
     try {
       // A blocked Clerk host: getToken() never settles.
@@ -43,10 +43,11 @@ describe('tokenBridge', () => {
       void getAuthToken().then(token => {
         result = token
       })
-      await vi.advanceTimersByTimeAsync(2_900)
+      await vi.advanceTimersByTimeAsync(2_999)
       expect(result).toBeUndefined()
-      await vi.advanceTimersByTimeAsync(200)
+      await vi.advanceTimersByTimeAsync(1)
       expect(result).toBeNull()
+      expect(vi.getTimerCount()).toBe(0)
     } finally {
       vi.useRealTimers()
     }
@@ -86,6 +87,70 @@ describe('tokenBridge — lazily loaded Clerk', () => {
 
   it('does not wait for anonymous visitors', async () => {
     expect(await getAuthToken()).toBeNull()
+  })
+
+  it('waits up to 10 s for Clerk readiness when a session is expected', async () => {
+    vi.useFakeTimers()
+    try {
+      expectSession(true)
+      const result = vi.fn()
+      void getAuthToken().then(result)
+      await vi.advanceTimersByTimeAsync(3_000)
+      expect(result).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(6_999)
+      expect(result).not.toHaveBeenCalled()
+      setAuthTokenGetter(async () => 'jwt-slow-connection')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(result).toHaveBeenCalledWith('jwt-slow-connection')
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('goes anonymous at 10 s, releases concurrent waits and never waits again after readiness times out', async () => {
+    vi.useFakeTimers()
+    try {
+      expectSession(true)
+      const result = vi.fn()
+      void getAuthToken().then(result)
+      await vi.advanceTimersByTimeAsync(2_000)
+      const concurrent = vi.fn()
+      void getAuthToken().then(concurrent)
+      await vi.advanceTimersByTimeAsync(7_999)
+      expect(result).not.toHaveBeenCalled()
+      expect(concurrent).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(1)
+      expect(result).toHaveBeenCalledWith(null)
+      expect(concurrent).toHaveBeenCalledWith(null)
+      expect(vi.getTimerCount()).toBe(0)
+
+      const later = vi.fn()
+      void getAuthToken().then(later)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(later).toHaveBeenCalledWith(null)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('gives a late Clerk getter its own 3 s timeout', async () => {
+    vi.useFakeTimers()
+    try {
+      expectSession(true)
+      const result = vi.fn()
+      void getAuthToken().then(result)
+      await vi.advanceTimersByTimeAsync(9_000)
+      setAuthTokenGetter(() => new Promise<string | null>(() => {}))
+      await vi.advanceTimersByTimeAsync(2_999)
+      expect(result).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(1)
+      expect(result).toHaveBeenCalledWith(null)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('notifies settled-state listeners', () => {
