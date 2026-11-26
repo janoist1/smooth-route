@@ -45,7 +45,9 @@ from save_model_v2 import (DROP_RQI5, ROAD_PROB_MIN,  # noqa: E402
                            build_features)
 
 ROOT = S.ROOT
-CACHE = os.path.join(ROOT, "ml", "cache")
+# RQI_ML_CACHE: see save_model_v2.py. The champion is <cache>/rqi_model.joblib
+# (ml/retrain.py links it there).
+CACHE = os.environ.get("RQI_ML_CACHE") or os.path.join(ROOT, "ml", "cache")
 DEFAULT_ARTIFACT = os.path.join(CACHE, "rqi_model.joblib")
 
 # Champion gate — v2 (DINOv2-small cls+patch + SVR-RBF) re-measured on the

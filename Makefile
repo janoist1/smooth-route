@@ -5,7 +5,7 @@ PYTHON_VENV = .venv
 PYTHON = $(PYTHON_VENV)/bin/python
 UVICORN = $(PYTHON_VENV)/bin/uvicorn
 
-.PHONY: setup backend frontend dev lint clean
+.PHONY: setup backend frontend dev lint clean retrain
 
 setup:
 	@echo "🔍 Setting up environments..."
@@ -71,3 +71,10 @@ clean:
 	rm -rf frontend/node_modules
 	rm -rf $(PYTHON_VENV)
 	find . -type d -name "__pycache__" -exec rm -rf {} +
+
+# One-command retrain (ml/retrain.py): new owner labels -> features -> spatial
+# gate -> ml/cache/rqi_model_candidate.joblib + summary. Never replaces the live
+# ml/cache/rqi_model.joblib; promotion is printed for a human to run.
+# Flags: make retrain ARGS="--force"   (also --min-new N, --no-extract, --labels CSV)
+retrain:
+	$(PYTHON) ml/retrain.py $(ARGS)

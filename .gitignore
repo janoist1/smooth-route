@@ -46,3 +46,6 @@ ml/cache/rqi_model_vlm_candidate.joblib
 
 # Team ticket board data + render (lives in the main checkout; see tools/board.py)
 /board/
+ml/cache/retrain/
+ml/cache/rqi_model_candidate.joblib
+ml/cache/novelty/
