@@ -65,8 +65,10 @@ Both projects auto-deploy on every push to `master`.
   - [ ] DNS: `simaut.hu` + `www` → Vercel #1, `api.simaut.hu` → Vercel #2.
   - [ ] Then set `VITE_API_URL=https://api.simaut.hu` and
         `ALLOWED_ORIGINS=https://simaut.hu`; redeploy both.
-  - [ ] Google key HTTP-referrer/IP restriction + GCP budget alert; GraphQL
-        introspection off in prod (nice-to-have).
+  - [ ] Google key rotation + API restriction, daily quotas, budget alert, Vercel
+        rate-limit rule, function region, Neon read-only role — owner checklist in
+        [SECURITY.md](SECURITY.md#owner-checklist-dashboards-only). (Introspection
+        off, request limits, REST/docs off on the read-only deploy: done in code.)
   - **Done when:** `simaut.hu` serves the read-only map, Directions go through
     `api.simaut.hu`, no key leaks.
 
