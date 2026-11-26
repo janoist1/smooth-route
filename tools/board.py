@@ -34,11 +34,11 @@ from datetime import datetime
 from pathlib import Path
 
 COLUMNS = [
-    ("todo", "To do", "Teendő"),
-    ("doing", "Doing", "Folyamatban"),
-    ("review", "Review / merge", "Ellenőrzés"),
-    ("owner", "Waiting on owner", "Rád vár"),
-    ("done", "Done", "Kész"),
+    ("todo", "To do"),
+    ("doing", "Doing"),
+    ("review", "Review / merge"),
+    ("owner", "Waiting on owner"),
+    ("done", "Done"),
 ]
 KEYS = [c[0] for c in COLUMNS]
 
@@ -141,19 +141,19 @@ def render(data) -> None:
             bits.append(f"{fmt_tokens(total)} tok" + (f" ({share:.0%} cache)" if share else ""))
         meta = " · ".join(html.escape(b) for b in bits if b)
         note = f'<p class="note">{html.escape(t["note"])}</p>' if t.get("note") else ""
-        pill = '<span class="pill">kérdés vár</span>' if t.get("ask") and t["status"] == "owner" else ""
+        pill = '<span class="pill">decision needed</span>' if t.get("ask") and t["status"] == "owner" else ""
         return (f'<article class="card" data-id="{t["id"]}" tabindex="0" role="button">'
                 f'<header><b>{t["id"]}</b><time>{t["updated"]}</time></header>'
                 f'<h3>{html.escape(t["title"])}</h3>{pill}{note}'
                 f'{f"<footer>{meta}</footer>" if meta else ""}</article>')
 
     cols = []
-    for key, en, hu in COLUMNS:
+    for key, en in COLUMNS:
         items = [t for t in data["tickets"] if t["status"] == key]
         items.sort(key=lambda t: t["updated"], reverse=True)
         if key == "done":
             items = items[:40]
-        cols.append(f'<section class="col {key}"><h2>{en} <span>· {hu}</span><em>{len(items)}</em></h2>'
+        cols.append(f'<section class="col {key}"><h2>{en}<em>{len(items)}</em></h2>'
                     f'<div class="list" data-col="{key}">' + "".join(card(t) for t in items) + "</div></section>")
     keep = ("id", "title", "status", "who", "branch", "note", "goal", "context", "ac", "decisions",
             "workers", "ask", "history", "created", "updated")
@@ -188,7 +188,7 @@ dialog::backdrop{{background:rgba(10,14,20,.45)}}
 .dlg{{display:flex;flex-direction:column;max-height:86vh}}
 .dlg-head{{display:flex;gap:8px;align-items:flex-start;padding:14px 16px 8px;border-bottom:1px solid var(--line)}}
 .dlg-head h2{{font-size:16px;margin:0;flex:1}}.dlg-head small{{display:block;color:var(--muted);font-weight:400;font-size:12px;margin-top:2px}}
-.dlg-head button{{border:1px solid var(--line);background:transparent;color:var(--fg);border-radius:8px;padding:4px 10px;font:inherit;cursor:pointer}}
+.dlg-head button{{border:0;background:transparent;color:var(--muted);border-radius:8px;width:32px;height:32px;font-size:24px;line-height:1;cursor:pointer;flex:none}}.dlg-head button:hover,.dlg-head button:focus-visible{{background:var(--colbg);color:var(--fg);outline:none}}
 .dlg-body{{padding:8px 16px 16px;overflow-y:auto}}
 .dlg-body h4{{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:14px 0 4px}}
 .dlg-body p,.dlg-body ul{{margin:4px 0}}.dlg-body ul{{padding-left:18px}}
@@ -199,7 +199,7 @@ th,td{{text-align:left;padding:4px 6px;border-bottom:1px solid var(--line);white
 .opt b{{display:block}}.opt span{{color:var(--muted);font-size:13px}}
 </style></head><body><h1>Team board <small>updated {now()} · auto-refresh 1 min · tap a card for details</small></h1>
 <main>{''.join(cols)}</main>
-<dialog id="dlg"><div class="dlg"><div class="dlg-head"><h2 id="dlg-title"></h2><button type="button" id="dlg-close">Bezár</button></div><div class="dlg-body" id="dlg-body"></div></div></dialog>
+<dialog id="dlg"><div class="dlg"><div class="dlg-head"><h2 id="dlg-title"></h2><button type="button" id="dlg-close" aria-label="Close" title="Close">&times;</button></div><div class="dlg-body" id="dlg-body"></div></div></dialog>
 <script id="tickets" type="application/json">{payload}</script>
 <script>
 (function(){{
@@ -216,8 +216,8 @@ th,td{{text-align:left;padding:4px 6px;border-bottom:1px solid var(--line);white
     var h="";
     if(t.note) h+=sec("Note","<p>"+esc(t.note)+"</p>");
     if(t.ask){{
-      var a=t.ask, o=(a.options||[]).map(function(x,i){{return '<div class="opt'+(i+1===a.recommended?' rec':'')+'"><b>'+esc(x.label)+(i+1===a.recommended?' (javasolt)':'')+'</b><span>'+esc(x.description||"")+'</span></div>'}}).join("");
-      h+=sec("Kérdés neked","<p>"+esc(a.question)+"</p>"+o+(a.why?"<p><i>"+esc(a.why)+"</i></p>":""));
+      var a=t.ask, o=(a.options||[]).map(function(x,i){{return '<div class="opt'+(i+1===a.recommended?' rec':'')+'"><b>'+esc(x.label)+(i+1===a.recommended?' (recommended)':'')+'</b><span>'+esc(x.description||"")+'</span></div>'}}).join("");
+      h+=sec("Decision needed","<p>"+esc(a.question)+"</p>"+o+(a.why?"<p><i>"+esc(a.why)+"</i></p>":""));
     }}
     if(t.goal) h+=sec("Goal","<p>"+esc(t.goal)+"</p>");
     if(t.context) h+=sec("Context","<p>"+esc(t.context)+"</p>");
@@ -368,7 +368,7 @@ def main() -> None:
         with Board(write=False) as data:
             if args.cmd == "render":
                 render(data); print(HTML_OUT); return
-            for key, en, _ in COLUMNS:
+            for key, _ in COLUMNS:
                 if args.status and key != args.status:
                     continue
                 for t in (t for t in data["tickets"] if t["status"] == key):
