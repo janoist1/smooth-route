@@ -24,7 +24,7 @@ class GoogleMapsService:
             directions_result = self.client.directions(
                 origin,
                 destination,
-                mode="driving",
+                mode="driving", language="hu", region="hu",
                 alternatives=False
             )
         except Exception as e:
@@ -45,7 +45,7 @@ class GoogleMapsService:
                      directions_result = self.client.directions(
                         geo_origin,
                         geo_dest,
-                        mode="driving",
+                        mode="driving", language="hu", region="hu",
                         alternatives=False
                     )
                  except Exception as e:
@@ -93,9 +93,11 @@ class GoogleMapsService:
                 print(f"DEBUG: skipping unparsable route: {_safe(exc)}")
         return routes
 
+    # language/region=hu: Hungarian route summaries ("… és …") and HU-biased
+    # geocoding of the free-text endpoints; still one request.
     def _directions(self, origin, destination, alternatives: bool):
         try:
-            return self.client.directions(origin, destination, mode="driving",
+            return self.client.directions(origin, destination, mode="driving", language="hu", region="hu",
                                           alternatives=alternatives)
         except Exception as exc:
             print(f"DEBUG: Error in directions call: {_safe(exc)}")

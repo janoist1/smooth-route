@@ -377,3 +377,21 @@ def test_consistency_stats_original_vs_latest_and_direction_aware():
              [{"old": 2, "new": 4, "direction": d, "reason": "recheck_suspicious"}]]
     only_sample = lq.consistency_stats(mixed, SCALE, reason="recheck_sample")
     assert only_sample["n"] == 1 and only_sample["same"] == 1.0
+
+
+def test_rubric_examples_need_enough_labels_the_model_agrees_with():
+    from app.services.label_queue_store import pick_examples
+
+    def c(gap, pid, tier=0, dx=0.0):
+        lat, lon = at(BP, dx)
+        return (tier, gap, pid, pid, f"f{pid}.jpg", lat, lon)
+
+    cands = {
+        1: [c(0.1, 1), c(0.2, 2, dx=1000), c(0.4, 3, dx=2000), c(1.5, 4)],   # 3 agree
+        2: [c(0.1, 10), c(0.2, 11, dx=1000), c(2.0, 12, dx=2000)],           # only 2 agree
+        3: [c(None, 20), c(None, 21), c(None, 22)],                          # no model view
+        4: [c(0.3, 31, tier=1), c(0.4, 30, tier=0, dx=1000), c(0.1, 32, tier=1, dx=2000)],
+    }
+    got = pick_examples(cands, per_class=1, min_agreeing=3)
+    assert got == [(1, 1, "f1.jpg"), (4, 30, "f30.jpg")]  # honest OOF tier first
+    assert [r[1] for r in pick_examples(cands, per_class=3, min_agreeing=3) if r[0] == 1] == [1, 2, 3]

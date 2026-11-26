@@ -22,20 +22,32 @@ export const FloatingNavBar: React.FC<FloatingNavBarProps> = ({
 }) => {
   return (
     <div
+      className="fnav"
       style={{
         position: 'fixed',
-        top: '24px',
-        right: '24px',
         zIndex: 9999,
         display: 'flex',
-        gap: '12px',
+        flexWrap: 'nowrap',
         pointerEvents: 'none',
       }}>
+      {/* Phone width: icon-only pills that never wrap (the admin row has 5
+          items + the user menu and used to cover the planner and zoom). */}
+      <style>{`
+        .fnav { top: 24px; right: 24px; gap: 12px; }
+        @media (max-width: 640px) {
+          .fnav { top: 12px; right: 12px; gap: 6px; }
+          .fnav .fnav-label { display: none; }
+          .fnav .fnav-btn { padding: 9px !important; }
+        }
+      `}</style>
       {items.map(item => {
         const isActive = currentPath === item.path
         return (
           <button
             key={item.path}
+            className="fnav-btn"
+            aria-label={item.label}
+            title={item.label}
             onClick={() => onNavigate(item.path)}
             style={{
               pointerEvents: 'auto',
@@ -73,7 +85,7 @@ export const FloatingNavBar: React.FC<FloatingNavBarProps> = ({
               }
             }}>
             {item.icon}
-            <span>{item.label}</span>
+            <span className="fnav-label">{item.label}</span>
           </button>
         )
       })}

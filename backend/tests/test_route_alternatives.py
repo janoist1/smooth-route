@@ -61,8 +61,9 @@ def test_get_routes_is_one_directions_call_with_alternatives():
 
     calls = []
 
-    def directions(origin, destination, mode, alternatives):
+    def directions(origin, destination, mode, alternatives, **kw):
         calls.append(alternatives)
+        assert kw == {"language": "hu", "region": "hu"}  # Hungarian summaries
         return [_google_route(600, 5000, "A"), _google_route(700, 5200, "B"),
                 _google_route(800, 5400, "C"), _google_route(900, 6000, "D")]
 

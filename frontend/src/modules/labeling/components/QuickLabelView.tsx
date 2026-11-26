@@ -163,6 +163,21 @@ const LastResultLine: React.FC<{ last: { item: QueueItem; rqi: number } | null }
   )
 }
 
+// A level without a trustworthy example (too few labels the model agrees
+// with, see backend pick_examples) shows text instead of a misleading picture.
+const noExample = (height: number | string): React.CSSProperties => ({
+  height,
+  borderRadius: 8,
+  background: 'rgba(255,255,255,0.06)',
+  color: '#94a3b8',
+  fontSize: 11,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  textAlign: 'center',
+  lineHeight: 1.1,
+})
+
 // Name first (that is what the rater decides on), the stored number secondary.
 const RateButton: React.FC<{
   level: RqiLevel
@@ -198,7 +213,7 @@ const RateButton: React.FC<{
         style={{ width: '100%', height: 'clamp(34px, 7.5dvh, 84px)', objectFit: 'cover', objectPosition: '50% 85%', borderRadius: 8 }}
       />
     ) : (
-      <div style={{ height: 'clamp(34px, 7.5dvh, 84px)' }} />
+      <div style={noExample('clamp(34px, 7.5dvh, 84px)')}>még nincs példa</div>
     )}
     <span
       style={{
@@ -252,7 +267,7 @@ const Rubric: React.FC<{ examples: LabelExample[]; onClose: () => void }> = ({ e
             {ex ? (
               <img src={imageSrc(ex.imageUrl)} alt={`Példa: ${level.label_hu}`} style={{ width: 132, height: 88, objectFit: 'cover', borderRadius: 8, flexShrink: 0 }} />
             ) : (
-              <div style={{ width: 132, height: 88, borderRadius: 8, background: '#1f2937', flexShrink: 0 }} />
+              <div style={{ ...noExample(88), width: 132, flexShrink: 0 }}>még nincs példa</div>
             )}
             <div>
               <div style={{ fontWeight: 700, color: level.color }}>

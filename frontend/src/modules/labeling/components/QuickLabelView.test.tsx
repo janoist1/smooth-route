@@ -75,6 +75,8 @@ describe('QuickLabelView', () => {
     for (const level of RQI_LEVELS) {
       expect(screen.getByRole('button', { name: level.label_hu })).toBeInTheDocument()
     }
+    // The mocked backend sends no examples: every level says so instead of a picture.
+    expect(screen.getAllByText('még nincs példa')).toHaveLength(RQI_LEVELS.length)
     const worst = RQI_LEVELS[RQI_LEVELS.length - 1]
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: worst.label_hu }))

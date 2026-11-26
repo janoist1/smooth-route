@@ -433,14 +433,46 @@ def _oof_errors() -> dict[str, float]:
     return out
 
 
-def label_examples(db: Session, per_class: int = 1) -> list[tuple[int, int, str]]:
-    """(level, point id, filename) of clear labelled exemplars for every level.
+EXAMPLE_AGREE_MAX_GAP = 0.5   # |model - human| in levels for "the model agrees"
+EXAMPLE_MIN_AGREEING = 3      # fewer agreeing labels -> no example for that level
 
-    Integer labels only. "Clear" = the honest out-of-fold model prediction
-    agrees best with the human label (ml/cache/oof_table.csv); levels the model
-    was not trained on (Nagyon rossz) fall back to the live model score, so the
-    most severe-looking labelled frame wins instead of a mislabelled non-road
-    image. Several examples of one level are EXAMPLE_SPACING_M apart.
+
+def pick_examples(cands: dict[int, list[tuple]], per_class: int,
+                  min_agreeing: int = EXAMPLE_MIN_AGREEING,
+                  max_gap: float = EXAMPLE_AGREE_MAX_GAP,
+                  spacing_m: float = EXAMPLE_SPACING_M) -> list[tuple[int, int, str]]:
+    """Pure selection. ``cands[level]`` = (tier, gap, order, pid, name, lat, lon)
+    with tier 0 = honest OOF gap, 1 = live-model gap. Only frames whose label
+    the model agrees with (gap <= max_gap) can be examples, and a level needs at
+    least ``min_agreeing`` of them, else it gets none (the UI says "még nincs
+    példa") rather than a misleading picture."""
+    out = []
+    for level, rows in cands.items():
+        agreeing = sorted(r for r in rows if r[1] is not None and r[1] <= max_gap)
+        if len(agreeing) < min_agreeing:
+            continue
+        taken = lq.PointIndex(spacing_m)
+        n = 0
+        for _tier, _gap, _order, pid, name, lat, lon in agreeing:
+            if n >= per_class:
+                break
+            if lat is not None and lon is not None:
+                if taken.near(lat, lon, spacing_m):
+                    continue
+                taken.add(lat, lon)
+            out.append((level, pid, name))
+            n += 1
+    return out
+
+
+def label_examples(db: Session, per_class: int = 1) -> list[tuple[int, int, str]]:
+    """(level, point id, filename) of clear labelled exemplars per level.
+
+    Integer labels only. "Clear" = the model agrees with the human label: the
+    honest out-of-fold prediction (ml/cache/oof_table.csv) when available,
+    else the live model score. Levels with too few agreeing labels (today:
+    the extreme level the model never predicts) get no example — see
+    pick_examples. Several examples of one level are EXAMPLE_SPACING_M apart.
     """
     per_class = max(1, min(int(per_class), 6))
     rows = db.execute(text(
@@ -454,32 +486,15 @@ def label_examples(db: Session, per_class: int = 1) -> list[tuple[int, int, str]
     files = image_files()
     errors = _oof_errors()
     cache = load_score_cache()
-    by_class: dict[int, list[tuple[float, int, int, str, float, float]]] = {
-        r: [] for r in VALID_RQI}
+    cands: dict[int, list[tuple]] = {r: [] for r in VALID_RQI}
     for order, (rqi, pid, name, lat, lon, score) in enumerate(rows):
         if name not in files:
             continue
-        # Honest OOF agreement first (|severity difference| is direction-free);
-        # the live model score (in-sample for training images, so optimistic)
-        # only ranks frames without an OOF row, e.g. every Nagyon rossz label.
-        gap = errors.get(name)
+        gap, tier = errors.get(name), 0  # |severity difference|: direction-free
         if gap is None:
             s = _float(score)
             if s is None and name in cache:
                 s = cache[name][0]
-            gap = 10.0 + (abs(canonical_score(s) - rqi) if s is not None else 9.0)
-        by_class[int(rqi)].append((gap, order, pid, name, lat, lon))
-    out = []
-    for rqi in VALID_RQI:
-        taken = lq.PointIndex(EXAMPLE_SPACING_M)
-        n = 0
-        for _, _, pid, name, lat, lon in sorted(by_class[rqi]):
-            if n >= per_class:
-                break
-            if lat is not None and lon is not None:
-                if taken.near(lat, lon, EXAMPLE_SPACING_M):
-                    continue
-                taken.add(lat, lon)
-            out.append((rqi, pid, name))
-            n += 1
-    return out
+            gap, tier = (abs(canonical_score(s) - rqi) if s is not None else None), 1
+        cands[int(rqi)].append((tier, gap, order, pid, name, lat, lon))
+    return pick_examples(cands, per_class)

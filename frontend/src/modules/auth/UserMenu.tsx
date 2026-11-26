@@ -12,6 +12,8 @@ export const UserMenu: React.FC = () => {
       <SignedOut>
         <SignInButton mode="modal">
           <button
+            className="fnav-btn"
+            aria-label="Sign in"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -27,7 +29,8 @@ export const UserMenu: React.FC = () => {
               fontWeight: 500,
             }}>
             <LogIn size={20} />
-            Sign in
+            {/* Hidden on phones by FloatingNavBar's .fnav-label rule. */}
+            <span className="fnav-label">Sign in</span>
           </button>
         </SignInButton>
       </SignedOut>
