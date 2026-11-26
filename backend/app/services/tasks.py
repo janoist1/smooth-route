@@ -3,9 +3,26 @@ import traceback
 from app.core.timeutil import utcnow
 from app.services.job_service import update_job, JobStatus, create_job
 
+def refresh_road_segments(job_id: str, since) -> None:
+    """Rebuild the road-segment layer around the frames this job added.
+
+    Best effort by design: the segments are a derived view, so nothing here
+    may fail the job. Without OSM data for a new area (Overpass unreachable)
+    the refresh is logged and skipped; `scripts/build_segments.py` catches up.
+    """
+    try:
+        from app.services.road_segments import refresh_segments_since
+
+        update_job(job_id, message="Útszakaszok frissítése...")
+        refresh_segments_since(since)
+    except Exception:
+        print(f"Road-segment refresh skipped: {traceback.format_exc()}")
+
+
 def run_route_processing(job_id: str, origin: str, destination: str):
     """Run the full route processing pipeline using RouteProcessingService."""
     print(f"DEBUG: Process started for job {job_id}")
+    started_at = utcnow()  # frames created from here on belong to this job
     try:
         from app.services.road_quality import road_quality_service
         from app.services.google_maps import google_maps_service
@@ -56,7 +73,10 @@ def run_route_processing(job_id: str, origin: str, destination: str):
         road_quality_service.analyze_points(job_id=job_id, strategy="YOLO")
         print(f"DEBUG: Calling analyze_points (DINO CLASSIFICATION) for job {job_id}")
         road_quality_service.analyze_points(job_id=job_id, strategy="CLASSIFICATION")
-        
+
+        # Step 4: refresh the road-segment layer for the new area (best effort).
+        refresh_road_segments(job_id, started_at)
+
         # Complete
         update_job(
             job_id,
