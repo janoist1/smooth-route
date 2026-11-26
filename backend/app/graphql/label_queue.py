@@ -152,9 +152,9 @@ def _item(f, meta, cuts, reason, area, uncertainty=None, cell_labels=0,
         uncertainty=None if uncertainty is None else round(uncertainty, 3),
         cell_labels=cell_labels,
         boundary=store.canonical_boundary(boundary),
-        model_score=None if f.score is None else round(store.canonical_score(f.score), 3),
+        model_score=None if (score := store.canonical_score(f.score)) is None else round(score, 3),
         model_rqi=store.model_rqi(f.score, cuts),
-        model_p_bad=None if f.p_bad is None else round(f.p_bad, 3),
+        model_p_bad=None if (p_bad := f.p_bad) is None else round(p_bad, 3),
     )
 
 

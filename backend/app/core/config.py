@@ -71,4 +71,4 @@ def find_env_file():
     return str(PROJECT_ROOT / ".env")
 
 
-settings = Settings(_env_file=find_env_file())
+settings = Settings(_env_file=find_env_file())  # pyright: ignore[reportCallIssue]  (pydantic-settings init kwarg)

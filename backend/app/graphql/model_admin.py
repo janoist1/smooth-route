@@ -3,7 +3,7 @@ Admin-only; not on the public read schema. Logic: app/services/model_ops.py."""
 from __future__ import annotations
 
 import os
-from typing import List, Optional
+from typing import Iterable, List, Optional, cast
 
 import strawberry
 
@@ -62,7 +62,8 @@ class ModelAdminQuery:
             sprint = store.sprint_count(db)
         finally:
             db.close()
-        n, by_area, by_level = ops.summarize_new_labels(rows, trained, SCALE.nearest, lq.area_of)
+        label_rows = cast(Iterable[tuple[str, float, float, float]], rows)  # Row is a tuple
+        n, by_area, by_level = ops.summarize_new_labels(label_rows, trained, SCALE.nearest, lq.area_of)
         summary = ops.latest_summary()
         return ModelAdmin(
             trained_on=len(trained), new_labels=n,

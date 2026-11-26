@@ -1,5 +1,5 @@
 import strawberry
-from typing import List, Optional
+from typing import List, Optional, cast
 from sqlalchemy import func, text
 import datetime
 
@@ -392,13 +392,13 @@ class Query:
         finally:
             db.close()
 
-        return {
+        return cast(strawberry.scalars.JSON, {
             "cell": cell,
             "cells": [
                 [round(row.sw_lat, 6), round(row.sw_lng, 6), round(float(row.avg_rqi), 2)]
                 for row in rows
             ],
-        }
+        })
 
     @strawberry.field
     def road_segments(self, bbox: List[float], zoom: int) -> List[RoadSegment]:
@@ -752,9 +752,9 @@ class Query:
             id=j.job_id,
             status=j.status.value,
             current_step=j.current_step.value if j.current_step else None,
-            progress=j.progress,
-            total=j.total,
-            message=j.message,
+            progress=j.progress or 0,
+            total=j.total or 0,
+            message=j.message or "",
             error=j.error,
             result=j.result,
             created_at=j.created_at,
@@ -771,9 +771,9 @@ class Query:
             id=j.job_id,
             status=j.status.value,
             current_step=j.current_step.value if j.current_step else None,
-            progress=j.progress,
-            total=j.total,
-            message=j.message,
+            progress=j.progress or 0,
+            total=j.total or 0,
+            message=j.message or "",
             error=j.error,
             result=j.result,
             created_at=j.created_at,

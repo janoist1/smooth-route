@@ -36,7 +36,6 @@ import os
 from typing import Callable, Optional
 
 from app.services.sv_client import (
-    HttpGet,
     SteadyRate,
     StreetViewError,
     StreetViewFatal,
@@ -188,7 +187,8 @@ class MapillaryClient:
         self.quota = quota
         self.retries = retries
         self.timeout_s = timeout_s
-        self._get: HttpGet = http_get or _requests_get
+        # (url, params, timeout_s, headers) -> (status, content_type, body)
+        self._get: Callable[..., tuple[int, str, bytes]] = http_get or _requests_get
         self._sleep = sleep
         self._log = log
         self._rate = SteadyRate(rate_from_env() if rate_per_s is None else rate_per_s,
@@ -196,7 +196,7 @@ class MapillaryClient:
         self._thumbs: dict[str, str] = {}   # mly:id -> signed thumbnail URL (memory only)
 
     def _request(self, url: str, params: dict, what: str, *, auth: bool,
-                 before_attempt: Optional[Callable[[], None]] = None):
+                 before_attempt: Optional[Callable[[], object]] = None):
         if not self._token:
             raise StreetViewFatal("MAPILLARY_TOKEN is not configured")
         headers = {"Authorization": f"OAuth {self._token}"} if auth else None
@@ -242,7 +242,7 @@ class MapillaryClient:
         img = select_image(images, lat, lng, heading, r)
         if img is None:
             return None
-        coords = (img.get("computed_geometry") or img.get("geometry"))["coordinates"]
+        coords = (img.get("computed_geometry") or img.get("geometry") or {})["coordinates"]
         key = ID_PREFIX + str(img["id"])
         self._thumbs[key] = img["thumb_1024_url"]
         return {
