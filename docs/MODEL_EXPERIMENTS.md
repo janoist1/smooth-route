@@ -205,6 +205,70 @@ Can we tell in advance where predictions are unreliable?
   capped at "medium" confidence (`unlabelled_area` in `segment_aggregation.json`,
   reason `unlabelled_area`). An honesty rule, not a fitted factor.
 
+## Era 11 — how many and which new labels lift the model (2026-11-26)
+
+Simulation on the cached DINO features (no images), champion head, official spatial
+protocol throughout. Code: `ml/learning_curve.py` (outputs `ml/cache/learning_curve_*.json`).
+
+**Recommendation for the owner:** label new streets, not more frames on the same
+streets. Label **~1000 frames, at most one every 50–100 m, on roads that have no
+labels yet** (all areas, Budapest included). Expect about **+0.02 to +0.04 QWK**.
+About +0.025 is the smallest gain the promotion gate can confirm. 500 such labels
+give about +0.015 to +0.02, which is probably too small to confirm. For Budapest,
+label the streets you want rated: the gain stays within a few hundred metres.
+
+| 1. Learning curve (share of training labels) | 25 % | 50 % | 75 % | 100 % |
+|---|---|---|---|---|
+| whole 1 km cells removed (= fewer streets), QWK | 0.668 | 0.727 | 0.772 | 0.774 |
+| single frames removed (same streets, sparser), QWK | 0.756 | 0.769 | 0.779 | 0.774 |
+
+- **Coverage drives the curve, not density.** Keeping every street but only a
+  quarter of the frames costs −0.018 QWK. Keeping a quarter of the streets costs
+  −0.106.
+- **Fitted gain from more labels on new streets:** the power-law fit gives +250 →
+  +0.008, +500 → +0.015, +1000 → +0.025 QWK. The log-linear fit gives +0.011,
+  +0.021, +0.037. For MAE (+1000): −0.04 to −0.06. For AUC (+1000): +0.008 to +0.013.
+- **This is an optimistic upper bound.** The last step (75 → 100 %) added only
+  +0.002, and the seed-bootstrap intervals (±0.001–0.01) ignore that the curve
+  stops at 4 areas.
+
+**2. Budapest.** Train on the other three areas plus k Budapest labels. Test on a
+held-out Budapest cell, with no added label within 200 m of a test frame. QWK is
+measured on Budapest's 229 frames, mean over 5 seeds.
+
+| Budapest labels added | 0 | 25 | 50 | 100 | ~170 (all) |
+|---|---|---|---|---|---|
+| test = 500 m cell, QWK | 0.23 | 0.23 | 0.25 | 0.26 | **0.36** |
+| test = 500 m cell, MAE | 0.48 | 0.44 | 0.44 | 0.44 | 0.43 |
+| test = 1 km cell (other district), QWK | 0.23 | 0.19 | 0.11 | 0.17 | 0.20 |
+
+- **The gain is local.** Labels from the same neighbourhood help (+0.14 QWK with
+  ~170 labels). Labels from the other district help nothing.
+- **Official CV overstates Budapest.** Its Budapest QWK of 0.40–0.42 comes from
+  ~21 labelled frames just across a cell edge. With a 200 m buffer, the same split
+  gives 0.20.
+- Budapest has only 4 cells of 1 km, and 2 of them hold 212 of the 229 frames, so
+  these Budapest numbers are noisy.
+
+**3. Which frames to label.** Start from half the training cells (QWK 0.729). Add
+frames from the other half using the label-queue strategies. All strategies draw
+from the same pool, thinned to 50 m (~130 candidates per fold). 8 seeds.
+
+| Added labels | random | diverse | uncertain | mixed | random, consecutive frames |
+|---|---|---|---|---|---|
+| 50 | 0.761 | 0.762 | 0.758 | 0.764 | 0.756 |
+| 100 | 0.775 | 0.771 | 0.774 | 0.775 | 0.772 |
+| ~130 (all thinned) | 0.778 | 0.780 | 0.780 | 0.779 | **0.764** (0/8 seeds better) |
+
+- **~130 spread-out frames from new cells are worth all ~810 frames there.** They
+  reach 0.778, versus 0.774 when every frame is used.
+- **The queue strategy barely matters:** every strategy is within ±0.004 of random,
+  well within the noise. Keep `mixed`.
+- **What matters** is new streets and the 50 m near-duplicate rule, which the queue
+  already enforces.
+- Caveat: the candidate pool is small and comes from areas already labelled, so an
+  "uncertain" advantage on a large, truly new pool cannot be ruled out.
+
 ## Lessons
 
 1. **With little data the recipe matters, not model size** — the same backbone gave

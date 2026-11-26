@@ -35,7 +35,8 @@ Research tools (not needed to retrain): `experiments.py` (feature × head grid),
 `tune_svr.py`, `finetune_lastblocks.py`, `compare_candidates.py` (paired challenger
 test), `spatial_analysis.py` (variogram, cell-size curve, region errors),
 `experiments_hires.py` / `extract_features_hires.py` / `extract_yolo_features.py`
-(Era 8), `vlm_attributes.py` / `vlm_feature_eval.py` (Era 9),
+(Era 8), `vlm_attributes.py` / `vlm_feature_eval.py` (Era 9), `learning_curve.py`
+(Era 11: how many and which labels help),
 `check_backend_parity.py` (backend rebuilds the training features exactly),
 `label_consistency.py` (the owner's blind re-check agreement — the practical QWK
 ceiling). `ml/legacy/` is v1, reference only.

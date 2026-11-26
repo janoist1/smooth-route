@@ -43,6 +43,7 @@ backend/debug_*.jpg
 # Era 9 VLM experiment outputs (regenerable; vlm_attributes.csv IS committed —
 # it is the expensive VLM product)
 ml/cache/vlm_eval_summary.json
+ml/cache/learning_curve_*.json
 ml/cache/vlm_shift_*.json
 ml/cache/rqi_model_vlm_candidate.joblib
 
