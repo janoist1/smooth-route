@@ -21,7 +21,7 @@ import datetime as dt
 import json
 import math
 from dataclasses import dataclass
-from typing import Optional, Sequence
+from typing import Optional, Sequence, cast
 
 from sqlalchemy import text
 
@@ -352,7 +352,7 @@ def summarize_route(
         length_by_rqi=stats.length_by_rqi,
         mean_score=stats.mean_score,
         impact_score=stats.impact_score,
-        worst_segments=[by_id[i] for i in worst_segment_ids(stats, refs, cfg.scale, eligible)],
+        worst_segments=[by_id[cast(str, i)] for i in worst_segment_ids(stats, refs, cfg.scale, eligible)],
     )
 
 
@@ -385,7 +385,7 @@ def segment_id_for_point(db, lat: float, lng: float, heading: Optional[float]) -
         max_distance_m=DEFAULT_MAX_DISTANCE_M,
         max_bearing_diff_deg=DEFAULT_MAX_BEARING_DIFF_DEG,
     )
-    return None if match is None else match.line_id
+    return None if match is None else cast(str, match.line_id)  # segment ids are str
 
 
 def frame_ids_on_segment(db, segment_id: str) -> list[int]:

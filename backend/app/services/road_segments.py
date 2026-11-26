@@ -39,7 +39,7 @@ import re
 import time
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from typing import Callable, Iterable, Mapping, Optional, Sequence
+from typing import Callable, Iterable, Mapping, Optional, Sequence, cast
 
 from sqlalchemy import text
 
@@ -266,7 +266,7 @@ def build_rows(
             stats.frames_unmatched += 1
             continue
         stats.frames_matched += 1
-        by_line[match.line_id].append((match.offset_m, frame))
+        by_line[cast(int, match.line_id)].append((match.offset_m, frame))  # OSM way ids
 
     rows: list[dict] = []
     class_counts: Counter = Counter()
@@ -325,8 +325,9 @@ def build_rows(
                 "capture_date_max": agg.capture_date_max,
             })
             level = confidence_level(confidence, agg.n_images, cfg)
-            class_counts[agg.rqi] += 1
-            class_km[agg.rqi] += piece_len / 1000.0
+            rqi = cast(int, agg.rqi)  # every stored piece has frames, hence a class
+            class_counts[rqi] += 1
+            class_km[rqi] += piece_len / 1000.0
             level_counts[level] += 1
             level_km[level] += piece_len / 1000.0
 
@@ -615,7 +616,7 @@ def rebuild_segments(
         area = pad_bounds(bbox, PAD_M)
         only_ids = {
             line_id for line_id, line in lines.items()
-            if bounds_intersect(bounds_of(line.coords), area)
+            if bounds_intersect(cast(Bounds, bounds_of(line.coords)), area)  # >= 2 vertices
         }
         # A line reaches beyond the bbox, and so do its frames: load every
         # frame around the target lines. (Matching runs against ALL lines.)
