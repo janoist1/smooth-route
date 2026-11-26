@@ -102,6 +102,10 @@ If images were fetched before the counter existed, set the month's real number o
 after scoring and the segment rebuild, a second pass adds frames every
 `dense_spacing_m` (30 m) only on segments whose confidence came out low. Route jobs
 do both passes under one per-job budget. Images go where they change the answer.
+`densify_if` picks the segments: `["low_confidence"]` (every low-confidence segment,
+the recipe's default) or a list of `confidenceReason` values such as
+`["few_images", "disagreement"]` — the two reasons more frames can actually fix;
+a score that sits on a class boundary (`near_threshold`) does not move with more frames.
 
 **What will it cost?** Dry runs make no Street View request:
 

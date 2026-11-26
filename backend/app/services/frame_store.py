@@ -92,15 +92,27 @@ def segments_to_densify(
     segments: Sequence, frames: Iterable, sampling: SamplingConfig
 ) -> dict:
     """Second-pass targets (pure): the segments that carry at least one of
-    ``frames`` (objects with lat / lon / heading) AND whose confidence is
-    low, as line objects keyed by segment id. Empty when the config does not
-    ask for densifying low-confidence segments.
+    ``frames`` (objects with lat / lon / heading) AND match a rule of
+    ``sampling.densify_if``, as line objects keyed by segment id.
+
+    Rules: ``"low_confidence"`` — every segment whose confidence level is
+    low; or any ``confidenceReason`` value (``"few_images"``,
+    ``"disagreement"``, ``"near_threshold"``, ``"old_images"``) — segments
+    that are not high-confidence for exactly that reason. (More frames help
+    against few_images and disagreement; they cannot move a score that truly
+    sits on a class boundary, nor make old imagery newer.)
 
     ``segments`` are ``segment_read.SegmentRecord``-like: id, path, rqi,
-    score, confidence_level.
+    score, confidence_level, confidence_reason.
     """
-    if DENSIFY_LOW_CONFIDENCE not in sampling.densify_if:
+    rules = set(sampling.densify_if)
+    if not rules:
         return {}
+
+    def wanted(segment) -> bool:
+        if DENSIFY_LOW_CONFIDENCE in rules and segment.confidence_level == LEVEL_LOW:
+            return True
+        return getattr(segment, "confidence_reason", None) in rules
     index = LineIndex([SegmentRef(s.id, s.path, s.rqi, s.score) for s in segments])
     touched = set()
     for frame in frames:
@@ -110,7 +122,7 @@ def segments_to_densify(
     return {
         s.id: SimpleNamespace(id=s.id, coords=s.path)
         for s in segments
-        if s.id in touched and s.confidence_level == LEVEL_LOW
+        if s.id in touched and wanted(s)
     }
 
 
@@ -119,7 +131,7 @@ def low_confidence_lines(db, bounds, frame_ids: Sequence[int], sampling: Samplin
     (south, west, north, east) and the stored frames with ``frame_ids``."""
     from app.services.segment_read import fetch_segments_in_boxes
 
-    if DENSIFY_LOW_CONFIDENCE not in sampling.densify_if or not frame_ids:
+    if not sampling.densify_if or not frame_ids:
         return {}
     south, west, north, east = bounds
     segments = fetch_segments_in_boxes(db, [(west, south, east, north)])

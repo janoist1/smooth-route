@@ -21,9 +21,9 @@ ROUTE = [at(0, 0), at(1000, 0), at(1000, 500)]            # 1.5 km with a corner
 SAMPLING = SamplingConfig(50.0, 30.0, ("low_confidence",))
 
 
-def segment(id, x0, x1, level, north=0.0):
+def segment(id, x0, x1, level, north=0.0, reason=None):
     return SimpleNamespace(id=id, path=[at(x0, north), at(x1, north)], rqi=3, score=3.1,
-                           confidence_level=level)
+                           confidence_level=level, confidence_reason=reason)
 
 
 def frame(east, north=1.0, heading=90.0):
@@ -53,6 +53,20 @@ def test_second_pass_targets_only_low_confidence_segments_of_the_job():
     # config switch: no densify rule → no second pass at all
     assert segments_to_densify(segments, job_frames, SamplingConfig(50, 30, ())) == {}
     assert segments_to_densify(segments, [], SAMPLING) == {}
+
+
+def test_second_pass_can_be_limited_to_reasons_more_frames_can_fix():
+    segments = [
+        segment("thin", 0, 200, "low", reason="few_images"),
+        segment("noisy", 200, 400, "medium", reason="disagreement"),
+        segment("borderline", 400, 600, "low", reason="near_threshold"),
+        segment("sure", 600, 800, "high"),
+    ]
+    job_frames = [frame(x) for x in range(25, 800, 50)]
+    by_reason = SamplingConfig(50, 30, ("few_images", "disagreement"))
+    assert list(segments_to_densify(segments, job_frames, by_reason)) == ["thin", "noisy"]
+    # the default rule takes every low-confidence segment, whatever the reason
+    assert list(segments_to_densify(segments, job_frames, SAMPLING)) == ["thin", "borderline"]
 
 
 def test_second_pass_adds_points_between_the_first_pass_frames():
