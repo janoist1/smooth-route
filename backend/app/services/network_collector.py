@@ -36,6 +36,7 @@ from app.services.capture_date import parse_capture_date
 from app.services.map_matching import DEFAULT_MAX_DISTANCE_M, Line, LineIndex
 from app.services.network_sampling import Candidate, Cell, bearing_at_offset
 from app.services.segment_geometry import cumulative_lengths
+from app.services.mapillary_client import imagery_metadata
 from app.services.sv_client import (
     DEFAULT_PITCH,
     is_google_pano,
@@ -76,6 +77,9 @@ class NewFrame:
     pitch: float
     pano_id: str
     capture_date: Optional[dt.date]
+    # Licence + attribution for a non-Google source (Mapillary: CC BY-SA);
+    # stored as analysis_metadata["imagery"]. None for Street View frames.
+    imagery: Optional[dict] = None
 
 
 class FrameStore(Protocol):
@@ -152,14 +156,17 @@ def process_candidate(
     """Handle one planned point. Returns (status, frame id, bytes saved).
     ``QuotaExceeded`` / ``StreetViewFatal`` propagate: they end the run."""
     try:
-        meta = client.metadata(candidate.lat, candidate.lon, radius=max(1, round(radius_m)))
+        # Mapillary picks the image by camera direction, so it gets the bearing.
+        extra = {"heading": candidate.heading} if getattr(client, "wants_heading", False) else {}
+        meta = client.metadata(candidate.lat, candidate.lon, radius=max(1, round(radius_m)), **extra)
     except StreetViewError:
         return META_ERROR, None, 0
     if not meta or not meta.get("pano_id") or meta.get("lat") is None or meta.get("lng") is None:
         return NO_PANO, None, 0
 
     pano_id = meta["pano_id"]
-    if not is_google_pano(meta):
+    imagery = imagery_metadata(meta)
+    if imagery is None and not is_google_pano(meta):
         return USER_PANO, None, 0
     if pano_id in seen_panos or store.has_pano(pano_id):
         return DUP_PANO, None, 0
@@ -186,7 +193,7 @@ def process_candidate(
 
     frame_id = store.save(
         NewFrame(position[0], position[1], round(heading, 2), DEFAULT_PITCH, pano_id,
-                 parse_capture_date(meta.get("date"))),
+                 parse_capture_date(meta.get("date")), imagery=imagery),
         jpeg,
     )
     return SAVED, frame_id, len(jpeg)
