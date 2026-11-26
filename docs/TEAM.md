@@ -114,6 +114,13 @@ gitignored), so every worktree and session sees the same board; the owner just o
   one-line progress update, `move … review` when its branch is ready, `add` for new
   work it discovers. The lead moves tickets to `done` after merging.
 - Titles short, notes one line, English.
+- **Who and how much:** `board.py work T-<n> --who … --model … --effort … --codex-session <id>`
+  (exact tokens from the Codex rollout) or `--claude-transcript <path> --since … --until …`
+  (estimate by time window). The card shows who/effort/tokens; a click opens the details.
+- **Owner decisions:** every `owner` ticket carries `board.py ask` (question, 2–4 options,
+  recommendation, one-line why, in Hungarian). When the owner says "menjünk végig", the
+  lead walks through them one by one with a question panel (AskUserQuestion), records the
+  answer with `decide` and moves the ticket on.
 - **Always current** (owner's request): the lead creates the ticket *before* starting a
   session, subagent or Codex run, moves it the moment work is merged or dropped, and
   every agent posts a `note` at each milestone. The board must never lag the work.
