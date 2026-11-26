@@ -129,3 +129,13 @@ Both: [MODEL_EXPERIMENTS.md](../docs/MODEL_EXPERIMENTS.md#where-the-model-is-uns
   Era 9 VLM stack) after the holdout exists.
 - The live artifact's `cv_metrics` still shows the old leaky numbers until it is
   re-saved (re-saving also refits cut-points and calibrator — a deliberate decision).
+
+## Tests
+
+`make test-ml` (or `.venv/bin/python -m pytest -q ml/tests`, ~15 s; in a git worktree
+pass `PYTHON=<main checkout>/.venv/bin/python`) runs the unit tests of the promotion
+pipeline on synthetic data: spatial folds and cells, nested cut-points (incl. a
+leakage guard), bootstrap deltas, segment chaining/aggregation/truth, the retrain
+verdict, and the model-card builder (it also fails when `ml/model_card.json` no
+longer matches the champion's hash). No torch, images or DB; CI runs them in the
+`ml` job.

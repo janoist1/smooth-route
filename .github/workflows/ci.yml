@@ -26,6 +26,23 @@ jobs:
       # Vercel builds on push; build here too so a broken build fails the PR.
       - run: npm run build
 
+  ml:
+    name: ML pipeline unit tests (synthetic, no torch)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      # spatial CV, segment evaluation, retrain verdict, model-card builder,
+      # frame quality, pairwise pilot: numpy/pandas/scipy/sklearn (+ OpenCV
+      # headless for frame_quality). No torch, no images, no DB.
+      - run: >
+          pip install pytest numpy pandas scipy scikit-learn joblib
+          opencv-python-headless
+      - run: python -m pytest -q ml/tests
+
   backend:
     name: Backend (ruff / pytest + coverage)
     runs-on: ubuntu-latest
