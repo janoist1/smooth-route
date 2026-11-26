@@ -609,7 +609,67 @@ data (`data/external/streetsurfacevis/`) and the features
 streets, and before rating a new town, where it helped. For Budapest the lever stays
 labels: owner-Jó city streets with crossings and markings, and motorway frames with
 sealed cracks from more motorways. Era 9's VLM attributes on motorway frames only would
-target the largest single error.
+target the largest single error (tested in Era 17).
+
+## Era 17 — VLM attributes on motorway frames only (T-98, 2026-11-26)
+
+**Question.** The champion's largest single error is the sealed-crack motorway: the
+owner says Jó, the model says Kiváló. Era 9's VLM attributes fix exactly those frames,
+but need one VLM call per frame. If we call the VLM only on motorway/trunk frames, do
+we keep the gain at a fraction of the cost?
+
+**Setup** (`ml/motorway_vlm.py`). Data on disk only: the Era 9 attributes for the 1903
+labelled frames (`ml/cache/vlm_attributes.csv`). The OSM road class comes from the
+label queue's heading-aware segment snap: a read-only DB pass, no VLM call, available
+for every frame. Of the labelled frames, **597 are motorway/trunk(_link): 585 on one
+M1/M7 stretch at Törökbálint–Budaörs, plus 12 Székesfehérvár links.** The protocol is
+the same as Era 16: official spatial 1 km cells, leave-one-area-out (LORO) and the
+Budapest box held out, with nested cut-points and paired cell bootstraps against the
+champion.
+
+| Variant | spatial QWK / MAE / AUC | spatial ΔQWK [95 % CI] | LORO ΔQWK | Budapest box ΔQWK | motorway frames (spatial): QWK, exact, Jó → Kiváló |
+|---|---|---|---|---|---|
+| champion | 0.774 / 0.405 / 0.934 | – | (0.663) | (0.569) | 0.354, 58 %, **63 %** |
+| stack everywhere (Era 9, reference) | 0.805 / 0.344 / 0.940 | **+0.031 [+0.006, +0.056]** | +0.033 [−0.016, +0.098] | +0.015 [−0.154, +0.077] | 0.478, 66 %, 41 % |
+| stack, attributes on motorway only | 0.778 / 0.394 / 0.933 | +0.004 [−0.009, +0.015] | **−0.117 [−0.160, −0.078]** | **−0.138 [−0.238, −0.021]** | 0.427, 59 %, 53 % |
+| same, 6 defect grades only | 0.777 / 0.392 / 0.933 | +0.002 [−0.017, +0.019] | **−0.054 [−0.095, −0.023]** | −0.072 [−0.105, +0.025] | 0.419, 59 %, 52 % |
+| champion score + correction fitted on motorway rows only | 0.796 / 0.352 / **0.929** | **+0.022 [+0.002, +0.043]** | **−0.049 [−0.101, −0.006]** | −0.121 [−0.161, +0.103] | 0.456, 69 %, 38 % |
+| same scores, the champion's own cut-points | 0.780 / 0.393 / 0.929 | +0.006 [−0.007, +0.022] | −0.001 [−0.004, +0.000] | −0.016 [−0.026, +0.075] | 0.341, 63 %, 62 % |
+
+- **The Era 9 reference reproduces exactly** (0.805, +0.031). Out of area, its gain is
+  on the other road types (LORO, non-motorway frames +0.107 [+0.051, +0.180]), not on
+  motorways (−0.082, n.s.).
+- **Attributes on motorway frames only do not carry the gain.** Inside the known areas
+  the motorway frames improve (QWK 0.35 → 0.43–0.46, Jó → Kiváló 63 % → 38–53 %), but
+  the overall gain is small. The variant that keeps the champion score and corrects
+  only motorway rows is the best: +0.022 [+0.002, +0.043], MAE 0.352. It still **fails
+  the gate on bad-road AUC** (0.929 < 0.931).
+- **Its gain comes from re-tuning the shared cut-points.** Cut with the champion's own
+  cut-points, the same scores give +0.006 (n.s.) and the motorway Jó → Kiváló rate
+  stays at 62 %. The re-tuned cut-points help motorway frames in known areas but move
+  every other frame. In a new region, non-motorway frames lose 0.10 QWK (LORO), and
+  inner-city Budapest loses 0.08 when the box is held out. Their scores are unchanged:
+  the loss is the cut-points alone.
+- **It cannot be checked out of area.** The motorway labels come from one stretch, so
+  with Törökbálint left out there are 12 motorway training frames and nothing to learn
+  from. Every motorway-specific fit is validated on its own road only. The stacked
+  variants learn motorway weights from that one stretch and collapse elsewhere (LORO
+  −0.117).
+
+**Rollout cost** (`ml/motorway_vlm.py cost`, DB of 2026-11-26): 6,243 usable
+motorway/trunk frames (5,660 unlabelled), of which 2,429 are predicted Kiváló today,
+on 581 segments / 112 km. At ~1.3 k tokens per call (Era 9) that is ~8 M tokens for
+every frame, ~3 M for the predicted-Kiváló ones, or ~1,200 calls at two frames per
+segment.
+
+**Decision.** No candidate; the champion stays. The best variant reaches ΔQWK CI > 0
+but fails the gate on AUC (0.929), and its gain is a cut-point shift that hurts
+non-motorway frames in new regions and inner-city Budapest. Motorway-specific modelling
+needs motorway labels from more than one stretch first: M0, M1 west, M7, M5 and trunk
+roads, owner-Jó frames with sealed cracks and owner-Kiváló fresh surfaces. The
+"Gyenge pontok" queue's `motorway_top` rule already targets them. Re-run
+`ml/motorway_vlm.py eval` after ~100–200 such labels from other motorways, with LORO
+as the deciding check.
 
 ## Lessons
 

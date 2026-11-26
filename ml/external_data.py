@@ -216,8 +216,11 @@ def make_folds(lab, kind):
 
 
 def run_cv(lab, kind, ext=None, ours_weight=1.0, dom=0.0, ext_only=False,
-           recal=False, n_jobs=8, X=None):
+           recal=False, n_jobs=8, X=None, make_head=None):
     """Outer CV; ``ext`` = (Xe, ye, we) appended to every training fit.
+
+    make_head: zero-arg factory of an sklearn regressor used instead of the
+    champion head (our rows only; used by ml/motorway_vlm.py).
 
     ours_weight: scalar, or callable(train_idx) -> per-row weights computed
     from the training rows only (used by ml/scene_bias.py).
@@ -251,6 +254,8 @@ def run_cv(lab, kind, ext=None, ours_weight=1.0, dom=0.0, ext_only=False,
         return iso.predict(lv.astype(float))
 
     def one(tr, te):
+        if make_head is not None:
+            return make_head().fit(X[tr], lab["y"][tr]).predict(X[te])
         if ext_only:
             return _fit_pred(ext[0], ext[1], ext[2], None, X[te], 0.0)
         wo = ours_weight(tr) if callable(ours_weight) else np.full(len(tr), ours_weight)

@@ -41,7 +41,9 @@ test), `spatial_analysis.py` (variogram, cell-size curve, region errors),
 `label_consistency.py` (the owner's blind re-check agreement — the practical QWK
 ceiling), `external_data.py` (Era 16: StreetSurfaceVis as extra training rows under
 spatial CV, leave-one-area-out and a Budapest hold-out), `scene_bias.py` (Era 16:
-Budapest error analysis by road type, focal-view and road-type-weight fixes). `ml/legacy/` is v1, reference only.
+Budapest error analysis by road type, focal-view and road-type-weight fixes),
+`motorway_vlm.py` (Era 17: VLM attributes on motorway/trunk frames only, OSM class
+via the label queue's segment snap; rollout cost). `ml/legacy/` is v1, reference only.
 
 ## One-command retrain
 
