@@ -75,11 +75,19 @@ class Point:
     @strawberry.field
     def segment_id(self) -> Optional[strawberry.ID]:
         """The road segment (`RoadSegment.id`) this frame belongs to; null if
-        it is not on a segment. Resolved with one small query per point — ask
-        for it on a single `point`, not on a long `points` list.
+        it is not on a segment, or if the segment builder does not use the
+        frame at all (not scored yet, or marked unusable) — so a non-null id
+        always means the frame is among `segmentFrames(segmentId)`. Resolved
+        with one small query per point — ask for it on a single `point`, not
+        on a long `points` list.
         """
         from app.graphql.resolver_helpers import get_db_session
+        from app.services.segment_aggregation import frame_score, frame_usable
         from app.services.segment_read import segment_id_for_point
+
+        if (not frame_usable(self.analysis_metadata)
+                or frame_score(self.dino_rqi_score, self.analysis_metadata) is None):
+            return None
 
         db = get_db_session()
         try:

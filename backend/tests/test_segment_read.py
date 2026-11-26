@@ -344,16 +344,29 @@ def test_point_segment_id_resolves_through_the_matcher(monkeypatch, no_db):
         return "363312385:2"
 
     monkeypatch.setattr(segment_read, "segment_id_for_point", fake)
-    point = Point(
-        id=7, latitude=47.5, longitude=19.05, heading=123.0, pitch=-20.0, image_url=None,
-        rqi_score=None, damage_count=0, damage_types=None, analysis_metadata=None,
-        created_at=dt.datetime(2026, 1, 1),
-    )
-    assert point.segment_id() == "363312385:2"
+
+    def make_point(dino_rqi_score=2.0, analysis_metadata=None):
+        return Point(
+            id=7, latitude=47.5, longitude=19.05, heading=123.0, pitch=-20.0, image_url=None,
+            rqi_score=None, damage_count=0, damage_types=None,
+            analysis_metadata=analysis_metadata, dino_rqi_score=dino_rqi_score,
+            created_at=dt.datetime(2026, 1, 1),
+        )
+
+    assert make_point().segment_id() == "363312385:2"
     assert seen == {"lat": 47.5, "lng": 19.05, "heading": 123.0}
 
+    # Frames the builder does not use never claim a segment (and cost no query),
+    # so a non-null segmentId always means "listed in segmentFrames".
+    seen.clear()
+    assert make_point(analysis_metadata={"frame_quality": {"usable": False}}).segment_id() is None
+    assert make_point(dino_rqi_score=None).segment_id() is None            # not scored yet
+    assert seen == {}
+    assert make_point(dino_rqi_score=None,
+                      analysis_metadata={"dino_score": 2.4}).segment_id() == "363312385:2"
+
     monkeypatch.setattr(segment_read, "segment_id_for_point", lambda *a: None)
-    assert point.segment_id() is None                         # unmatched frame
+    assert make_point().segment_id() is None                  # unmatched frame
 
 
 def test_point_and_segment_street_view_links_share_one_scheme():
