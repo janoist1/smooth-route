@@ -1,12 +1,12 @@
 # Release runbook: Neon publish + master deploy
 
-*Written 2026-11-26 for the first segment release (Alembic 0004–0007, road
+*Written 2026-11-26 for the first segment release (Alembic 0004–0008, road
 segments, scale flip to 5 = Kiváló, security limits, key fix). Rehearsed
 end-to-end locally (see the last section). Owner approval: board ticket T-21.*
 
 **Why the order matters.** Production `master` still serves the Google key
 (`/api/v1/config`) and reads the round-1 schema (Neon at Alembic 0003, 1 = best).
-The new code needs 0004–0007 on Neon, and the scale flip changes what the numbers
+The new code needs 0004–0008 on Neon, and the scale flip changes what the numbers
 mean. So: new key ready but unused → Neon migrated + republished → verified →
 `master` pushed → smoke. Between the publish (step 4) and the end of the deploy
 (step 6), the old live site shows **inverted colours** (new data, old scale).
@@ -24,7 +24,7 @@ Run everything from `backend/` in a checkout of **the exact release commit**
       (frame_quality → `rescore_dino.py` → `build_segments.py`, see DEVELOPMENT.md), so
       points and segments come from the same state. Publish ships the **whole**
       local table; if the new Budapest frames should wait (T-36 QA), decide that now.
-- [ ] Local DB at head: `../.venv/bin/python -m alembic current` → `0007 (head)`.
+- [ ] Local DB at head: `../.venv/bin/python -m alembic current` → `0008 (head)`.
 - [ ] Get Neon's **direct (unpooled)** URL from Vercel → backend project → Settings →
       Environment Variables (`DATABASE_URL_UNPOOLED`), or from Neon → Connect with pooling
       off. Keep it out of shell history:
@@ -37,8 +37,8 @@ Run everything from `backend/` in a checkout of **the exact release commit**
 |---|---|---|---|---|
 | 1 | owner | **Google key** (Cloud console → Credentials): create a new *server* key, API restriction **Directions + Geocoding only**, quotas per [SECURITY.md](SECURITY.md#owner-checklist-dashboards-only). Put it in Vercel → backend → Env → `GOOGLE_MAPS_API_KEY` (Production). **Do not redeploy:** old `master` would expose the new key at `/api/v1/config` too. The step-6 deploy is the first one that reads it. Keep the old key for now: the local `.env` uses it for Street View downloads. | Key exists, restricted, quotas set. | Put the old value back in the env var (nothing is deployed with the new key yet). |
 | 2 | owner | **Neon snapshot:** Neon console → Branches → create branch `pre-release-YYYYMMDD` from `main` (instant, copy-on-write). | Branch listed. | — (this *is* the rollback anchor). |
-| 3 | owner/lead | **Dry run:** `../.venv/bin/python scripts/publish.py --dry-run` | Prints `target revision: 0003; pending migrations: 0004, 0005, 0006, 0007`, the target row counts and what would be published. **No `SECRET` lines.** It only reads Neon. | Nothing to roll back. Anything unexpected (other revision, `Refusing`, tables without `alembic_version`) → stop. |
-| 4 | owner/lead | **Publish:** `../.venv/bin/python scripts/publish.py`. Runs Alembic 0004→0007 on Neon (0006 mirrors the round-1 values to 5 = best), then replaces both tables in **one transaction** (DELETE + INSERT: live readers keep the old rows until COMMIT). | Ends with `published N rows … and M road segments`. Re-running the dry run says `target revision: 0007; pending migrations: none`. | Scripted: `DATABASE_URL="$PUBLISH_DATABASE_URL" ../.venv/bin/python -m alembic downgrade 0003`. This flips the data back to 1 = best and drops `road_segments` and `capture_date`, which is exactly what old `master` reads (rehearsed). Or restore `main` from the step-2 branch / to T0 in the Neon console. |
+| 3 | owner/lead | **Dry run:** `../.venv/bin/python scripts/publish.py --dry-run` | Prints `target revision: 0003; pending migrations: 0004, 0005, 0006, 0007, 0008`, the target row counts and what would be published. **No `SECRET` lines.** It only reads Neon. | Nothing to roll back. Anything unexpected (other revision, `Refusing`, tables without `alembic_version`) → stop. |
+| 4 | owner/lead | **Publish:** `../.venv/bin/python scripts/publish.py`. Runs Alembic 0004→0008 on Neon (0006 mirrors the round-1 values to 5 = best), then replaces both tables in **one transaction** (DELETE + INSERT: live readers keep the old rows until COMMIT). | Ends with `published N rows … and M road segments`. Re-running the dry run says `target revision: 0008; pending migrations: none`. | Scripted: `DATABASE_URL="$PUBLISH_DATABASE_URL" ../.venv/bin/python -m alembic downgrade 0003`. This flips the data back to 1 = best and drops `road_segments` and `capture_date`, which is exactly what old `master` reads (rehearsed). Or restore `main` from the step-2 branch / to T0 in the Neon console. |
 | 5 | owner/lead | **Verify the new code against Neon before pushing:** run the read-only API locally against Neon's pooled URL (`DATABASE_URL` in Vercel; `read -rs NEON_POOLED_URL && export NEON_POOLED_URL`) and smoke it. Reads only, no Google call: `PUBLIC_READ_ONLY=1 RUN_MIGRATIONS_ON_STARTUP=false GOOGLE_MAPS_API_KEY= ALLOWED_ORIGINS=https://simaut.hu DATABASE_URL="$NEON_POOLED_URL" uv run --no-project --with-requirements requirements.txt python -m uvicorn app.main:app --port 8006`, then `python3 scripts/smoke_public_api.py http://127.0.0.1:8006 --origin https://simaut.hu` | `all checks passed` (≈24 checks: points + captureDate, roadSegments, scale direction, routeQuality, grid, introspection/config/mutations refused, no key in any body). | Step 4's rollback, then stop. |
 | 6 | owner | **Deploy:** merge the release commit into `master` and push (owner's approval). Both Vercel projects build from `master`. Watch **both** to *Ready* in the Vercel dashboard. | Both deployments Ready, no build error. | Vercel → each project → Deployments → previous production → **Instant Rollback**, *both* projects. Then do step 4's rollback too: old code + new data = inverted colours. Later pushes are not auto-promoted until you promote again. A `git revert` on `master` is only needed for the next attempt. |
 | 7 | owner/lead | **Post-deploy smoke:** `python3 scripts/smoke_public_api.py https://smooth-route-api.vercel.app --origin https://smooth-route-chi.vercel.app` (about 20 normal reads; never calls `getRoute`). Then by hand in a browser: https://smooth-route-chi.vercel.app shows dots + the segment layer around Budapest; blue = good (5), red = bad (1); a segment card and a point card open; the legend reads 5 = Kiváló. One route plan if you want to see `getRoute` (one Directions call on the new key). `curl -sI https://smooth-route-chi.vercel.app` shows `x-frame-options: DENY`. | All pass. In Google Cloud → Metrics, calls arrive on the **new** key. | Step 6's rollback (both projects + step 4). |
