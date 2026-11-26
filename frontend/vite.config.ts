@@ -3,8 +3,12 @@ import react from '@vitejs/plugin-react'
 import checker from 'vite-plugin-checker'
 import path from 'path'
 
+// Backend the dev server proxies to (default: `make backend` on :8000).
+// Override e.g. for the E2E suite or a second backend: API_PROXY_TARGET=http://localhost:8002
+const apiTarget = process.env.API_PROXY_TARGET ?? 'http://localhost:8000'
+const proxied = { target: apiTarget, changeOrigin: true }
+
 // https://vitejs.dev/config/
-// Trigger reload
 export default defineConfig({
   plugins: [
     react(),
@@ -18,22 +22,10 @@ export default defineConfig({
   ],
   server: {
     proxy: {
-      '/api': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/graphql': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/images': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/previews': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
+      '/api': proxied,
+      '/graphql': proxied,
+      '/images': proxied,
+      '/previews': proxied,
     },
   },
   optimizeDeps: {
