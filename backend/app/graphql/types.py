@@ -50,7 +50,7 @@ class Point:
     analysis_metadata: Optional[JSON]
     dino_rqi_score: Optional[float] = None
     created_at: datetime.datetime
-    rqi_source: str = "yolo"
+    rqi_source: str = "unknown"
     pano_id: Optional[str] = None
     # Street View panorama capture month (DB DATE, 1st of month). Exposed as
     # the "YYYY-MM" captureDate field below — month is the API's precision.

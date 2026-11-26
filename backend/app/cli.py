@@ -4,6 +4,7 @@ from typing import Optional
 from app.core.database import SessionLocal, engine
 from app.models.models import StreetViewImage, Base
 from app.core.config import settings
+from app.services.segment_aggregation import frame_usable
 from rich.console import Console
 from rich.table import Table
 from sqlalchemy import or_
@@ -75,10 +76,11 @@ def list_points():
             )
             .count()
         )
-        points_with_rqi = (
-            db.query(StreetViewImage)
-            .filter(StreetViewImage.rqi_score.isnot(None))
-            .count()
+        points_with_rqi = sum(
+            frame_usable(metadata)
+            for (metadata,) in db.query(StreetViewImage.analysis_metadata)
+            .filter(StreetViewImage.dino_rqi_score.isnot(None))
+            .yield_per(1000)
         )
 
         table = Table(title="Road Points Summary")
@@ -101,7 +103,8 @@ def list_points():
         if recent:
             console.print("\n[bold]Recent Points:[/bold]")
             for p in recent:
-                rqi_str = f"RQI: {p.rqi_score}" if p.rqi_score else "No RQI"
+                score = p.dino_rqi_score if frame_usable(p.analysis_metadata) else None
+                rqi_str = f"RQI: {score}" if score is not None else "No RQI"
                 console.print(
                     f"  [{p.id}] ({p.latitude:.6f}, {p.longitude:.6f}) heading={int(p.heading)}° - {rqi_str}"
                 )
@@ -175,7 +178,7 @@ def fetch_missing_images(
 @app.command()
 def analyze_image(image_path: str):
     """
-    Analyze a single image for road quality.
+    Analyze a single image for damage (YOLO).
 
     IMAGE_PATH: Path to the image file.
     """
@@ -191,15 +194,7 @@ def analyze_image(image_path: str):
 
     result = road_quality_service.analyze_image(image_path)
 
-    # Display results
-    from app.core.rqi_scale import SCALE
-
-    rqi_color = {"excellent": "green", "good": "green", "fair": "yellow",
-                 "poor": "red", "very_poor": "bold red"}
-    level = SCALE.level(SCALE.nearest(result.rqi_score))
-    color = rqi_color.get(level.key, "white")
-
-    console.print(f"\n[{color}]RQI Score: {result.rqi_score} ({level.label_hu})[/{color}]")
+    # YOLO supplies damage information; its legacy score is not product RQI.
     console.print(f"Damage count: {result.damage_count}")
 
     if result.damage_types:

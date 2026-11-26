@@ -1,6 +1,7 @@
 """Product RQI comes only from usable DINO measurements (no PostGIS or model)."""
 import datetime as dt
 import json
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -159,3 +160,51 @@ def test_grid_keeps_usable_frames_and_bbox_filter(grid_db):
     cells = queries.Query().road_quality_grid(zoom=10, bbox=[19.0, 47.4, 19.1, 47.6])["cells"]
     assert len(cells) == 1
     assert cells[0][2] == (SCALE.best + SCALE.value_of("poor")) / 2
+
+
+@pytest.mark.parametrize("is_dino", [False, True])
+def test_training_stats_never_use_yolo_as_rqi(monkeypatch, is_dino):
+    db = PointSession([
+        image(),
+        image(dino_rqi_score=SCALE.value_of("poor")),
+        image(dino_rqi_score=SCALE.best, analysis_metadata={"frame_quality": {"usable": False}}),
+    ])
+    monkeypatch.setattr(queries, "get_db_session", lambda: db)
+    result = queries.Query().training_stats(is_dino=is_dino)
+    assert result.good_count == result.fair_count == 0
+    assert result.poor_count == 1
+    assert result.avg_rqi == SCALE.value_of("poor")
+    assert sum(getattr(result, f"rqi{value}_count") for value in SCALE.values) == 1
+    assert db.closed
+
+
+def test_training_stats_preserve_manual_labels_over_dino(monkeypatch):
+    class TrainingSession(PointSession):
+        def query(self, model):
+            if model is queries.TrainingDataModel:
+                return PointQuery([SimpleNamespace(image_filename="frame.jpg", manual_rqi=SCALE.best)])
+            return super().query(model)
+
+    db = TrainingSession([image(dino_rqi_score=SCALE.value_of("poor"))])
+    monkeypatch.setattr(queries, "get_db_session", lambda: db)
+    result = queries.Query().training_stats()
+    assert result.annotated == result.good_count == 1
+    assert result.avg_rqi == SCALE.best
+
+
+def test_cli_analyze_image_reports_damage_without_yolo_rqi(monkeypatch, tmp_path, capsys):
+    from app import cli
+
+    result = SimpleNamespace(
+        rqi_score=SCALE.best, damage_count=2, damage_types={"pothole": 2}, analysis_metadata={},
+    )
+    monkeypatch.setitem(sys.modules, "app.services.road_quality", SimpleNamespace(
+        road_quality_service=SimpleNamespace(analyze_image=lambda path: result),
+    ))
+    path = tmp_path / "frame.jpg"
+    path.touch()
+    cli.analyze_image(str(path))
+    output = capsys.readouterr().out
+    assert "Damage count: 2" in output
+    assert "pothole: 2" in output
+    assert "RQI" not in output

@@ -1,6 +1,6 @@
 import strawberry
 from typing import List, Optional, cast
-from sqlalchemy import func, text
+from sqlalchemy import text
 import datetime
 
 from app.core.timeutil import utcnow
@@ -70,6 +70,8 @@ class AdminStats:
     rqi_good: int
     rqi_fair: int
     rqi_poor: int
+    rqi_unknown: int
+    rqi_unusable: int
     # Users & jobs
     total_users: int
     admin_users: int
@@ -396,9 +398,6 @@ class Query:
     @strawberry.field(permission_classes=[IsAdmin])
     def admin_stats(self) -> AdminStats:
         """Aggregate usage/coverage/job stats for the admin monitoring page."""
-        effective = func.coalesce(
-            StreetViewImage.dino_rqi_score, StreetViewImage.rqi_score
-        )
         month_start = utcnow().replace(
             day=1, hour=0, minute=0, second=0, microsecond=0
         )
@@ -411,19 +410,26 @@ class Query:
                 .filter(StreetViewImage.created_at >= month_start)
                 .count()
             )
-            analyzed = db.query(StreetViewImage).filter(effective.isnot(None)).count()
+            good = fair = poor = unknown = unusable = 0
             # Buckets on the canonical scale: good = Kiváló..Jó, fair = Közepes,
-            # poor = Rossz..Nagyon rossz (direction-agnostic helpers).
+            # poor = Rossz..Nagyon rossz. Use the same usability helper as Points;
+            # rejected frames and missing DINO measurements never enter a bucket.
             good_v, fair_v = SCALE.value_of("good"), SCALE.value_of("fair")
-            good = db.query(StreetViewImage).filter(
-                SCALE.at_or_better(effective, good_v)
-            ).count()
-            fair = db.query(StreetViewImage).filter(
-                SCALE.worse_than(effective, good_v), SCALE.at_or_better(effective, fair_v)
-            ).count()
-            poor = db.query(StreetViewImage).filter(
-                SCALE.worse_than(effective, fair_v)
-            ).count()
+            scores = db.query(
+                StreetViewImage.dino_rqi_score, StreetViewImage.analysis_metadata
+            ).yield_per(1000)
+            for score, metadata in scores:
+                if not frame_usable(metadata):
+                    unusable += 1
+                elif score is None:
+                    unknown += 1
+                elif SCALE.at_or_better(score, good_v):
+                    good += 1
+                elif SCALE.at_or_better(score, fair_v):
+                    fair += 1
+                else:
+                    poor += 1
+            analyzed = good + fair + poor
 
             per_day_rows = db.execute(
                 text(
@@ -458,10 +464,12 @@ class Query:
                 ],
                 total_points=total_images,
                 analyzed_points=analyzed,
-                pending_analysis=total_images - analyzed,
+                pending_analysis=unknown,
                 rqi_good=good,
                 rqi_fair=fair,
                 rqi_poor=poor,
+                rqi_unknown=unknown,
+                rqi_unusable=unusable,
                 total_users=total_users,
                 admin_users=admin_users,
                 recent_jobs=[
@@ -582,7 +590,8 @@ class Query:
             annotated = annotated_count
             pending = total - annotated
             
-            # Quality stats (Prioritize Manual RQI over AI RQI)
+            # Manual labels take precedence; automatic RQI is always usable DINO,
+            # including when the dashboard is managing YOLO damage analysis.
             effective_scores = []
             for p in relevant_points:
                 fname = get_filename(p.image_url)
@@ -590,10 +599,8 @@ class Query:
                 
                 if td and td.manual_rqi is not None:
                      effective_scores.append(td.manual_rqi)
-                elif is_dino and p.dino_rqi_score is not None:
+                elif frame_usable(p.analysis_metadata) and p.dino_rqi_score is not None:
                     effective_scores.append(p.dino_rqi_score)
-                elif not is_dino and p.rqi_score is not None:
-                    effective_scores.append(p.rqi_score)
             
             avg_rqi = sum(effective_scores) / len(effective_scores) if effective_scores else 0.0
             
@@ -611,9 +618,9 @@ class Query:
             per_level = {v: 0 for v in SCALE.values}
             for s in effective_scores:
                 per_level[SCALE.nearest(s, ties="worse")] += 1
-            rqi1, rqi2, rqi3, rqi4, rqi5 = (per_level[v] for v in (1, 2, 3, 4, 5))
 
-            # 5. Pending analysis count (images without RQI score)
+            # Pending work for the selected analysis engine (YOLO damage or DINO
+            # RQI); this controls the dashboard's analysis action, not RQI stats.
             if is_dino:
                 pending_analysis_count = db.query(StreetViewImage).filter(StreetViewImage.dino_rqi_score.is_(None)).count()
             else:
@@ -627,11 +634,7 @@ class Query:
                 good_count=good,
                 fair_count=fair,
                 poor_count=poor,
-                rqi1_count=rqi1,
-                rqi2_count=rqi2,
-                rqi3_count=rqi3,
-                rqi4_count=rqi4,
-                rqi5_count=rqi5,
+                **{f"rqi{value}_count": count for value, count in per_level.items()},
                 pending_analysis=pending_analysis_count
             )
         finally:
