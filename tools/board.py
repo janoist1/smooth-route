@@ -10,6 +10,7 @@ Usage (from any worktree):
     python3 tools/board.py add "Title" [--status todo] [--who backend] [--branch b] [--note "…"]
     python3 tools/board.py move T-7 doing|review|owner|done|todo [--note "…"]
     python3 tools/board.py note T-7 "short progress note"
+    python3 tools/board.py decide T-7 "what we chose and why, in plain words"
     python3 tools/board.py set T-7 --who qa --branch claude/x --title "…" \
         --goal "why" --context "background" --ac "criterion 1; criterion 2"
     python3 tools/board.py render
@@ -105,12 +106,14 @@ def render(data) -> None:
         meta = " · ".join(html.escape(x) for x in (t.get("who") or "", t.get("branch") or "") if x)
         note = f'<p class="note">{html.escape(t["note"])}</p>' if t.get("note") else ""
         det = ""
-        if t.get("goal") or t.get("context") or t.get("ac"):
+        if t.get("goal") or t.get("context") or t.get("ac") or t.get("decisions"):
             ac = "".join(f"<li>{html.escape(x)}</li>" for x in t.get("ac") or [])
+            dec = "".join(f"<li>{html.escape(x[1])} <small>({x[0]})</small></li>" for x in t.get("decisions") or [])
             det = ("<details><summary>details</summary>"
                    + (f'<p><b>Goal:</b> {html.escape(t["goal"])}</p>' if t.get("goal") else "")
                    + (f'<p><b>Context:</b> {html.escape(t["context"])}</p>' if t.get("context") else "")
-                   + (f"<p><b>Done when:</b></p><ul>{ac}</ul>" if ac else "") + "</details>")
+                   + (f"<p><b>Done when:</b></p><ul>{ac}</ul>" if ac else "")
+                   + (f"<p><b>Decisions:</b></p><ul>{dec}</ul>" if dec else "") + "</details>")
         note += det
         return (f'<article class="card"><header><b>{t["id"]}</b><time>{t["updated"]}</time></header>'
                 f'<h3>{html.escape(t["title"])}</h3>{note}'
@@ -158,6 +161,8 @@ def main() -> None:
         x.add_argument("--goal"); x.add_argument("--context"); x.add_argument("--ac", help="acceptance criteria, ';'-separated")
     m = sub.add_parser("move"); m.add_argument("id"); m.add_argument("status", choices=KEYS); m.add_argument("--note")
     n = sub.add_parser("note"); n.add_argument("id"); n.add_argument("text")
+    dc = sub.add_parser("decide", help="record a decision (plain language: what + why)")
+    dc.add_argument("id"); dc.add_argument("text")
     s = sub.add_parser("set"); s.add_argument("id"); s.add_argument("--who"); s.add_argument("--branch"); s.add_argument("--title")
     s.add_argument("--goal"); s.add_argument("--context"); s.add_argument("--ac", help="acceptance criteria, ';'-separated")
     ls = sub.add_parser("list"); ls.add_argument("--status", choices=KEYS)
@@ -173,6 +178,7 @@ def main() -> None:
                     continue
                 for t in (t for t in data["tickets"] if t["status"] == key):
                     print(f'{t["id"]:6} {key:7} {t.get("who") or "-":16} {t["title"]}' + (f' — {t["note"]}' if t.get("note") else ""))
+            print("tip: record major decisions in plain language: board.py decide T-<n> \"what we chose + why\"")
         return
 
     with Board(write=True) as data:
@@ -193,6 +199,8 @@ def main() -> None:
                 t["note"] = args.note
         elif args.cmd == "note":
             t["note"] = args.text
+        elif args.cmd == "decide":
+            t.setdefault("decisions", []).append([now(), args.text])
         elif args.cmd == "set":
             for k in ("who", "branch", "title", "goal", "context"):
                 if getattr(args, k):

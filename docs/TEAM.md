@@ -106,6 +106,9 @@ gitignored), so every worktree and session sees the same board; the owner just o
   one-line progress update, `move … review` when its branch is ready, `add` for new
   work it discovers. The lead moves tickets to `done` after merging.
 - Titles short, notes one line, English.
+- Record **major decisions** on the ticket with `decide T-<n> "…"`: what was chosen
+  and why, in plain words a non-specialist owner can follow (no jargon without a
+  short explanation).
 
 ## Check-ins
 
