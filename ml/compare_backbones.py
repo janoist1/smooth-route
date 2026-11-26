@@ -16,6 +16,8 @@ from sklearn.metrics import cohen_kappa_score, mean_absolute_error
 from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import StandardScaler
 
+import rqi_scale as R  # script dir is on sys.path
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 IMAGES = os.path.join(ROOT, "data", "images")
 CACHE = os.path.join(ROOT, "ml", "cache")
@@ -53,16 +55,16 @@ def cv(X, y, yc):
     for tr, te in skf.split(X, yc):
         sc = StandardScaler().fit(X[tr])
         m = Ridge(alpha=10.0).fit(sc.transform(X[tr]), y[tr])
-        pred = np.clip(np.round(m.predict(sc.transform(X[te]))), 1, 4).astype(int)
+        pred = np.clip(np.round(m.predict(sc.transform(X[te]))), R.MODEL_MIN, R.MODEL_MAX).astype(int)
         maes.append(mean_absolute_error(yc[te], pred))
         off1s.append(np.mean(np.abs(yc[te] - pred) <= 1))
-        qwks.append(cohen_kappa_score(yc[te], pred, weights="quadratic", labels=[1, 2, 3, 4]))
+        qwks.append(cohen_kappa_score(yc[te], pred, weights="quadratic", labels=R.MODEL_LEVELS))
     return np.mean(maes), np.mean(off1s), np.mean(qwks)
 
 
 def main():
     df = pd.read_csv(os.path.join(CACHE, "dataset.csv"))
-    df = df[(df["rqi"] != 5) & (df["is_road_prob"] >= 0.55)].reset_index(drop=True)
+    df = df[(~df["rqi"].isin(R.DROPPED_LEVELS)) & (df["is_road_prob"] >= 0.55)].reset_index(drop=True)
     paths = [os.path.join(IMAGES, f) for f in df["image_filename"]]
     y = df["manual_rqi"].values.astype(float)
     yc = df["rqi"].values.astype(int)

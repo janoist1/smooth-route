@@ -8,7 +8,8 @@ stands for a known number of metres, so the summary is plain bookkeeping:
 - ``total_length_m``    the whole path
 - ``covered_length_m``  metres whose sample matched a segment WITH data
 - ``length_by_rqi``     those metres split by the segment's class, one entry
-                        per class in ascending label order
+                        per class, BEST FIRST (``RqiScale.best_to_worst``), so
+                        the API keeps its meaning whichever way the scale runs
 - ``mean_score``        length-weighted mean of the segments' scores
 - ``matched_m``         metres matched per segment id (for the worst-list)
 
@@ -58,7 +59,7 @@ class SegmentRef:
 class RouteStats:
     total_length_m: float = 0.0
     covered_length_m: float = 0.0
-    length_by_rqi: list[float] = field(default_factory=list)   # per class, ascending label
+    length_by_rqi: list[float] = field(default_factory=list)   # per class, best first
     mean_score: Optional[float] = None
     matched_m: dict[Hashable, float] = field(default_factory=dict)
 
@@ -77,7 +78,7 @@ def compute_route_stats(
     Segments without data (``rqi`` / ``score`` None, or a class the scale does
     not know) are ignored: a stretch covered only by them counts as uncovered.
     """
-    classes = scale.ascending
+    classes = scale.best_to_worst
     stats = RouteStats(length_by_rqi=[0.0] * len(classes))
     usable = [s for s in segments if s.rqi in classes and s.score is not None]
     by_id = {s.id: s for s in usable}

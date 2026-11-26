@@ -1,6 +1,9 @@
 # Kátyúőr – RQI modell (tiszta újrakezdés)
 
-Cél: egy Street View képről 1–5 skálán megbecsülni az út minőségét (RQI).
+Cél: egy Street View képről megbecsülni az út minőségét az RQI-skálán
+(5 szint, definíció: [../shared/rqi_scale.json](../shared/rqi_scale.json); a modell
+a Kiváló … Rossz szinteket becsli). **Az ebben a fájlban szereplő RQI-számok
+severity-számozásúak (1 = Kiváló … 4 = Rossz)** — lásd lent.
 Ez a `ml/` mappa a régi kísérletektől független, tiszta pipeline. Az itt
 tanított artifactot a backend `dino_service.py`-ja tölti be; a régi webes
 `train_dino_head.py` törölve, a v1 szkriptek az `ml/legacy/`-ban.
@@ -16,7 +19,7 @@ tanított artifactot a backend `dino_service.py`-ja tölti be; a régi webes
   - nem volt augmentáció, osztálysúlyozás, rétegzett split és fix seed;
   - a „legjobb modell" mentése a pici, zajos validációs halmazon lényegében
     véletlen checkpointot tartott meg.
-- Ezért **regresszióként** tanuljuk (folytonos 1–5 becslés, majd kerekítés),
+- Ezért **regresszióként** tanuljuk (folytonos becslés, majd vágópontok),
   augmentációval, osztálybalanszálással, és **kereszt-validációval** értékelünk,
   nem egyetlen split-tel. Empirikusan összevetünk 2 backbone-t (DINOv2 vs CLIP),
   és a CV szerint jobbat tartjuk meg.
@@ -42,11 +45,23 @@ python ml/audit_labels.py
 #    -> a v2 pipeline, ld. lent („Pipeline")
 ```
 
-## RQI skála (megerősítve a `backend/config/analysis_settings.json`-ból)
+## RQI skála
 
-**1 = Kiváló (sima), 2 = Jó, 3 = Közepes, 4 = Rossz, 5 = elfogadhatatlan.**
-Tehát *alacsonyabb szám = jobb út*. (Az RQI 5 osztály a gyakorlatban használhatatlan:
-3 meglévő képből egy szálloda-előcsarnok, egy járda — tanításnál eldobjuk.)
+Egyetlen definíció: [../shared/rqi_scale.json](../shared/rqi_scale.json) (szabályok:
+[../shared/README.md](../shared/README.md)). A termékben 2026-11-26 óta **5 = Kiváló,
+4 = Jó, 3 = Közepes, 2 = Rossz, 1 = Nagyon rossz** (nagyobb = jobb); rossz út =
+Közepes vagy rosszabb (`bad_from`). A Nagyon rossz szintnek 14, többnyire szemét
+címkéje van (előcsarnok, járda) — tanításnál eldobjuk (`R.DROPPED_LEVELS`), a
+modell a Kiváló … Rossz szinteket (`model_levels`) adja.
+
+**Az ML mindig „severity” számozásban dolgozik** (1 = Kiváló, nagyobb = rosszabb —
+a 2026-11-26 előtti számozás): `labels.csv`, a cache-ek, a célváltozó, a vágópontok,
+a P(bad) kalibrátor, a kapu és ennek a fájlnak minden száma. A szkriptek a
+konstansokat az `ml/rqi_scale.py`-ból veszik (`spatial_cv.RQI_LABELS / BAD_FROM /
+DROPPED_LEVELS`); a kanonikus skálára csak az export (`export_labels.sh`:
+`6 - manual_rqi`) és a backend (`dino_service` az artifact `scale_direction` kulcsa
+alapján, `segment_aggregation` a recept `scale_direction` kulcsa alapján) vált át.
+A megfordítás egyetlen ML-számot sem változtatott: a kapu kimenete bájtra azonos.
 
 ## Eredmények
 

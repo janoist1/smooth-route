@@ -6,7 +6,7 @@ import { Provider } from 'react-redux'
 import { combineReducers, configureStore } from '@reduxjs/toolkit'
 import createSagaMiddleware from 'redux-saga'
 import { all, delay } from 'redux-saga/effects'
-import { RQI_LEVELS } from '../../ui'
+import { RQI_LEVELS, fromSeverity, rqiValue } from '../../ui'
 
 const saved: unknown[] = []
 
@@ -27,8 +27,9 @@ vi.mock('../../graphql', () => ({
           reason: 'diverse',
           area: 'budapest',
           cellLabels: 0,
-          modelRqi: 2,
-          modelScore: 2.1,
+          // the API sends canonical values; the model said Jó (severity 2.1)
+          modelRqi: rqiValue('good'),
+          modelScore: fromSeverity(2.1),
         })),
         stats: { totalLabelled: 10, labelledToday: 0, eligible: 2, scored: 2 },
       },
@@ -37,7 +38,9 @@ vi.mock('../../graphql', () => ({
   *gqlMutate(options: { variables: unknown }) {
     yield delay(1)
     saved.push(options.variables)
-    return { quickLabel: { pointId: 7, rqi: 5, totalLabelled: 11, labelledToday: 1 } }
+    return {
+      quickLabel: { pointId: 7, rqi: RQI_LEVELS[RQI_LEVELS.length - 1].value, totalLabelled: 11, labelledToday: 1 },
+    }
   },
 }))
 

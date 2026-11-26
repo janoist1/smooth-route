@@ -41,7 +41,7 @@ DEVICE = "mps" if torch.backends.mps.is_available() else "cpu"
 
 def load_dataset():
     df = pd.read_csv(os.path.join(CACHE, "dataset_v2.csv"))
-    keep = (df["rqi"].values != 5) & (df["is_road_prob"].values >= 0.55)
+    keep = (~np.isin(df["rqi"].values, S.DROPPED_LEVELS)) & (df["is_road_prob"].values >= 0.55)
     return df[keep].reset_index(drop=True)
 
 

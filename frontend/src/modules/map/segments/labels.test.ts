@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { fromSeverity as sv } from '../../ui'
 import {
   captureStaleness,
   confidenceExplanation,
@@ -14,24 +15,27 @@ import {
   segmentTitle,
 } from './labels'
 
+// RQI values written as sv(severity), 1 = best, so they hold for either
+// numbering of the canonical scale (shared/rqi_scale.json).
+
 // 2026-11-18 (months are 0-based in Date).
 const NOW = new Date(2026, 10, 18)
 
 describe('rqiLabelHu', () => {
   it('names the four quality classes in Hungarian', () => {
-    expect(rqiLabelHu(1)).toBe('Kiváló')
-    expect(rqiLabelHu(2)).toBe('Jó')
-    expect(rqiLabelHu(3)).toBe('Közepes')
-    expect(rqiLabelHu(4)).toBe('Rossz')
+    expect(rqiLabelHu(sv(1))).toBe('Kiváló')
+    expect(rqiLabelHu(sv(2))).toBe('Jó')
+    expect(rqiLabelHu(sv(3))).toBe('Közepes')
+    expect(rqiLabelHu(sv(4))).toBe('Rossz')
   })
 
   it('uses the same bands as getRQILabel for continuous scores', () => {
-    expect(rqiLabelHu(1.5)).toBe('Kiváló')
-    expect(rqiLabelHu(1.6)).toBe('Jó')
-    expect(rqiLabelHu(2.5)).toBe('Jó')
-    expect(rqiLabelHu(2.6)).toBe('Közepes')
-    expect(rqiLabelHu(3.6)).toBe('Rossz')
-    expect(rqiLabelHu(4.8)).toBe('Nagyon rossz')
+    expect(rqiLabelHu(sv(1.5))).toBe('Kiváló')
+    expect(rqiLabelHu(sv(1.6))).toBe('Jó')
+    expect(rqiLabelHu(sv(2.5))).toBe('Jó')
+    expect(rqiLabelHu(sv(2.6))).toBe('Közepes')
+    expect(rqiLabelHu(sv(3.6))).toBe('Rossz')
+    expect(rqiLabelHu(sv(4.8))).toBe('Nagyon rossz')
   })
 
   it('says "Nincs adat" for a missing score', () => {

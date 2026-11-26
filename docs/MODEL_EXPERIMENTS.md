@@ -24,7 +24,11 @@ Egy 600×400-as Street View képről becsüljük az **RQI**-t (Road Quality Inde
 | 2 | jó (enyhe kopás, kevés repedés) |
 | 3 | közepes (látható repedéshálók, foltozások) |
 | 4 | rossz (mély kátyúk, töredezett felület) |
-| 5 | használhatatlan *(a gyakorlatban nincs elég példa → a modell 1–4-et ad)* |
+| 5 | nagyon rossz *(a gyakorlatban nincs elég példa → a modell 1–4-et ad)* |
+
+*Ez a napló a régi (severity) számozást használja: 1 = kiváló … 4 = rossz. A termékben
+2026-11-26 óta 5 = Kiváló … 1 = Nagyon rossz; az egyetlen definíció:
+[../shared/rqi_scale.json](../shared/rqi_scale.json).*
 
 A tanítóadat kézi címkézésből származik (Postgres `training_data` tábla,
 1917 címkézett kép, 2026 januárjában címkézve).

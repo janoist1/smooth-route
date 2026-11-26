@@ -146,7 +146,7 @@ def test_segment_with_an_unknown_class_is_not_coverage():
 
 def test_flipped_scale_reverses_worst_and_reindexes_classes():
     """After the scale flip (5 = excellent) the lowest score is the worst and
-    lengthByRqi is indexed by the classes 2, 3, 4, 5."""
+    lengthByRqi is still BEST FIRST: classes 5, 4, 3, 2."""
     flipped = config_from_dict(FLIPPED_CONFIG).scale
     road = [
         seg("a", 0, 150, 5, 4.8),       # excellent
@@ -155,9 +155,9 @@ def test_flipped_scale_reverses_worst_and_reindexes_classes():
     ]
     stats = compute_route_stats([at(1, 2), at(601, 2)], road, flipped)
     assert len(stats.length_by_rqi) == 4
-    assert stats.length_by_rqi[0] > 100          # class 2
-    assert stats.length_by_rqi[1] == 0.0         # class 3
-    assert stats.length_by_rqi[2] > 100          # class 4
-    assert stats.length_by_rqi[3] > 100          # class 5
+    assert stats.length_by_rqi[0] > 100          # class 5 (best)
+    assert stats.length_by_rqi[1] > 100          # class 4
+    assert stats.length_by_rqi[2] == 0.0         # class 3
+    assert stats.length_by_rqi[3] > 100          # class 2 (worst the model gives)
     assert sum(stats.length_by_rqi) == pytest.approx(stats.covered_length_m)
     assert worst_segment_ids(stats, road, flipped) == ["b", "d", "a"]

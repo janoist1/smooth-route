@@ -66,7 +66,7 @@ def main(argv):
         print(sql_to_severity(argv[2]))
         return 0
     print(f"canonical direction : {SCALE.direction}")
-    print(f"canonical levels    : " + ", ".join(
+    print("canonical levels    : " + ", ".join(
         f"{lv.value}={lv.label_hu}" for lv in SCALE.levels))
     print(f"ML severity levels  : {LEVELS} (model {MODEL_LEVELS}, dropped {DROPPED_LEVELS})")
     print(f"bad road            : severity >= {BAD_FROM}")

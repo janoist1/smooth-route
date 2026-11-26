@@ -47,7 +47,7 @@ done
 
 # ml/labels.csv is in the ML *severity* orientation (1 = best), whatever the
 # canonical direction in shared/rqi_scale.json is; ml/rqi_scale.py gives the SQL
-# that converts (plain `manual_rqi` today, `(6 - manual_rqi)` after a flip).
+# that converts: `(6 - manual_rqi)` since the 2026-11-26 flip (5 = Kiváló in the DB).
 PY="${PY:-.venv/bin/python}"
 [ -x "$PY" ] || PY=python3
 RQI_EXPR=$("$PY" ml/rqi_scale.py --sql td.manual_rqi)

@@ -10,13 +10,19 @@ does not require code changes here.
 
 v2 model (2026-07-03, 1903 images). Honest spatial CV (1 km grid cells,
 re-measured 2026-11-18, ml/spatial_cv.py): QWK 0.774, MAE 0.405, exact 61%,
-+-1 acc 98.5%, bad-road (RQI>=3) accuracy 86%, AUC 0.934. (The originally
++-1 acc 98.5%, bad-road (Közepes or worse) accuracy 86%, AUC 0.934. (The originally
 reported QWK 0.889 / MAE 0.195 came from a random 5-fold that leaked
 neighbouring Street View frames between train and test.)
 
 Public interface: `predict_rqi(path) -> Optional[int]` (unchanged),
 `predict_score(path) -> Optional[float]`, `predict_p_bad(path) -> Optional[float]`.
 Images are scored RAW (no vehicle masking / sky crop) to match training.
+
+Scale: every public method speaks the CANONICAL RQI scale (app.core.rqi_scale).
+The artifact's head, cut-points and P(bad) calibrator live in the orientation it
+was trained in (`scale_direction`, default "lower_is_better" = severity, which
+every artifact so far uses). Scores are converted at this boundary only, so a
+scale-direction flip needs neither retraining nor a new gate run.
 """
 import os
 from typing import Optional
@@ -24,6 +30,8 @@ from typing import Optional
 import numpy as np
 import torch
 from PIL import Image
+
+from app.core.rqi_scale import SCALE, SEVERITY
 
 
 def _project_root() -> str:
@@ -68,6 +76,10 @@ def validate_artifact(artifact: dict) -> list:
 
 
 class DinoInferenceService:
+    # Class-level defaults so test doubles built with __new__ work too.
+    scale = SCALE
+    scale_direction = SEVERITY  # orientation of the artifact's raw scores
+
     def __init__(self):
         self.device = self._get_device()
         self.backbone = None
@@ -110,6 +122,7 @@ class DinoInferenceService:
         self.thresholds = artifact.get("thresholds")
         self.p_bad_calibrator = artifact.get("p_bad_calibrator")
         self.rqi_clip = tuple(artifact.get("rqi_clip", (1, 4)))
+        self.scale_direction = artifact.get("scale_direction", SEVERITY)
         backbone_name = artifact.get("backbone", "facebook/dinov2-small")
 
         print(f"DinoInferenceService: loading {backbone_name} on {self.device} "
@@ -158,14 +171,21 @@ class DinoInferenceService:
 
         return np.concatenate([pool[k] for k in keys])[None, :]
 
+    # ----- scale boundary: artifact orientation <-> canonical ---------------
+    def _to_canonical(self, raw: float) -> float:
+        return self.scale.convert(raw, self.scale_direction)
+
+    def _to_raw(self, score: float) -> float:
+        return self.scale.to_direction(score, self.scale_direction)
+
     @torch.no_grad()
     def predict_score(self, image_path: str) -> Optional[float]:
-        """Continuous RQI estimate (1.0-4.0), or None on failure."""
+        """Continuous canonical RQI estimate (spans the model levels), or None on failure."""
         try:
             self.load_model()
             img = Image.open(image_path).convert("RGB")
             feat = self._features(img)
-            return float(self.pipeline.predict(feat)[0])
+            return float(self._to_canonical(float(self.pipeline.predict(feat)[0])))
         except Exception as e:
             print(f"DinoInferenceService ERROR: {e}")
             return None
@@ -184,30 +204,37 @@ class DinoInferenceService:
             return None
 
     def score_from_features(self, features: np.ndarray) -> float:
-        """Continuous RQI estimate from an `extract_features` vector."""
-        return float(self.pipeline.predict(features)[0])
+        """Continuous canonical RQI estimate from an `extract_features` vector
+        (the same number `predict_score` returns for that image)."""
+        return float(self._to_canonical(float(self.pipeline.predict(features)[0])))
 
     def predict_rqi(self, image_path: str) -> Optional[int]:
-        """RQI class (1-4) via tuned ordinal cut-points, or None on failure."""
+        """Canonical RQI level (one of SCALE.model_levels) via the tuned cut-points, or None."""
         score = self.predict_score(image_path)
         if score is None:
             return None
         return self.rqi_from_score(score)
 
     def rqi_from_score(self, score: float) -> int:
+        """Canonical continuous score -> canonical level, using the artifact's
+        cut-points (tuned in its own orientation)."""
+        raw = self._to_raw(score)
         if self.thresholds:
-            return int(np.digitize(score, self.thresholds) + 1)
-        lo, hi = self.rqi_clip
-        return int(np.clip(round(score), lo, hi))
+            level = int(np.digitize(raw, self.thresholds) + 1)
+        else:
+            lo, hi = self.rqi_clip
+            level = int(np.clip(round(raw), lo, hi))
+        return int(self._to_canonical(level))
 
     def p_bad_from_score(self, score: float) -> Optional[float]:
-        """Calibrated P(road is bad, RQI >= 3) from an existing score."""
+        """Calibrated P(road is bad: level at or worse than SCALE.bad_from) from a
+        canonical score. A probability, so it never needs flipping."""
         if self.p_bad_calibrator is None:
             return None
-        return float(self.p_bad_calibrator.predict([score])[0])
+        return float(self.p_bad_calibrator.predict([self._to_raw(score)])[0])
 
     def predict_p_bad(self, image_path: str) -> Optional[float]:
-        """Calibrated probability that the road is bad (RQI >= 3)."""
+        """Calibrated probability that the road is bad (SCALE.is_bad)."""
         score = self.predict_score(image_path)
         if score is None:
             return None

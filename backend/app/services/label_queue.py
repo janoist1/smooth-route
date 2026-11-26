@@ -78,7 +78,7 @@ class Frame:
     lon: float
     pano_id: Optional[str] = None
     score: Optional[float] = None   # continuous model RQI estimate (1.0-4.0)
-    p_bad: Optional[float] = None   # calibrated P(RQI >= 3)
+    p_bad: Optional[float] = None   # calibrated P(bad = Közepes or worse)
 
 
 @dataclass(frozen=True)

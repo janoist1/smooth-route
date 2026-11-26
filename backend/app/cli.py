@@ -195,10 +195,14 @@ def analyze_image(image_path: str):
     result = road_quality_service.analyze_image(image_path)
 
     # Display results
-    rqi_color = {1: "green", 2: "green", 3: "yellow", 4: "red", 5: "bold red"}
-    color = rqi_color.get(int(result.rqi_score), "white")
+    from app.core.rqi_scale import SCALE
 
-    console.print(f"\n[{color}]RQI Score: {result.rqi_score}/5[/{color}]")
+    rqi_color = {"excellent": "green", "good": "green", "fair": "yellow",
+                 "poor": "red", "very_poor": "bold red"}
+    level = SCALE.level(SCALE.nearest(result.rqi_score))
+    color = rqi_color.get(level.key, "white")
+
+    console.print(f"\n[{color}]RQI Score: {result.rqi_score} ({level.label_hu})[/{color}]")
     console.print(f"Damage count: {result.damage_count}")
 
     if result.damage_types:
