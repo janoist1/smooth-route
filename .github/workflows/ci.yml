@@ -46,5 +46,6 @@ jobs:
           pip install pytest ruff pydantic pydantic-settings httpx
           fastapi "sqlalchemy<2.1" geoalchemy2 psycopg2-binary
           strawberry-graphql sse-starlette alembic "PyJWT[crypto]"
+          requests googlemaps numpy
       - run: ruff check --select F821 .
       - run: pytest
