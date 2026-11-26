@@ -95,6 +95,21 @@ MAX_ROOT_FIELD_COUNT = {
     "roadSegments": 2,
     "points": 2,
     "roadQualityGrid": 2,
+    "segmentFrames": 2,  # ~10-35 ms each (frames + nearby segments matched)
+}
+
+# Paid Google fields: one per request IN TOTAL, not one of each (getRoute and
+# routeAlternatives each cost a Directions call, + 2 Geocoding + 1 Directions
+# on a miss).
+PAID_ROOT_FIELDS = ("getRoute", "routeAlternatives")
+MAX_PAID_ROOT_FIELDS = 1
+
+# Per-item fields that run their own DB query for EACH object they appear on:
+# allowed only below the listed root fields. Point.segmentId is one PostGIS
+# query + a line index per point (~5 ms locally, a Neon round trip in prod);
+# on `points(limit: 20000)` that is 20 000 queries from one anonymous request.
+PER_ITEM_FIELD_ROOTS = {
+    "segmentId": frozenset({"point"}),
 }
 
 # Root fields the anonymous public schema never serves, whatever their
@@ -423,6 +438,45 @@ def _root_field_nodes(
             )
 
 
+def _subtree_field_names(
+    selection_set: Optional[SelectionSetNode],
+    fragments: dict[str, FragmentDefinitionNode],
+    seen_fragments: set[str],
+):
+    """Every field name below a node (any depth), through fragments."""
+    if selection_set is None:
+        return
+    for selection in selection_set.selections:
+        if isinstance(selection, FieldNode):
+            yield selection.name.value
+            yield from _subtree_field_names(selection.selection_set, fragments, seen_fragments)
+        elif isinstance(selection, InlineFragmentNode):
+            yield from _subtree_field_names(selection.selection_set, fragments, seen_fragments)
+        elif isinstance(selection, FragmentSpreadNode):
+            name = selection.name.value
+            if name in seen_fragments or name not in fragments:
+                continue
+            seen_fragments.add(name)
+            yield from _subtree_field_names(
+                fragments[name].selection_set, fragments, seen_fragments
+            )
+
+
+def _check_per_item_fields(root: FieldNode, fragments) -> None:
+    allowed_roots = {
+        field: roots for field, roots in PER_ITEM_FIELD_ROOTS.items()
+        if root.name.value not in roots
+    }
+    if not allowed_roots:
+        return
+    for name in _subtree_field_names(root.selection_set, fragments, set()):
+        if name in allowed_roots:
+            only = ", ".join(sorted(allowed_roots[name]))
+            raise InputLimitError(
+                f"{name} is only available on {only}(id), not on {root.name.value}"
+            )
+
+
 def check_operation(
     schema: GraphQLSchema,
     document,
@@ -469,6 +523,12 @@ def check_operation(
         max_count = MAX_ROOT_FIELD_COUNT.get(name)
         if max_count is not None and len(keys) > max_count:
             raise InputLimitError(f"At most {max_count} {name} per request")
+        paid = sum(len(response_keys.get(f, ())) for f in PAID_ROOT_FIELDS)
+        if name in PAID_ROOT_FIELDS and paid > MAX_PAID_ROOT_FIELDS:
+            raise InputLimitError(
+                f"At most {MAX_PAID_ROOT_FIELDS} route request "
+                f"({' or '.join(PAID_ROOT_FIELDS)}) per request")
+        _check_per_item_fields(node, fragments)
         check = ROOT_FIELD_CHECKS.get(name)
         if check is not None:
             check(get_argument_values(field_def, node, coerced))

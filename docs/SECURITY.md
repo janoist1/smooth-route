@@ -35,7 +35,10 @@ Registered in `schema.py` via `schema_extensions(public=...)`. Rejections happen
 | Tokens per document | 2 000 | frontend max ~150; Strawberry's own `MaxTokensLimiter` is a no-op on the async (HTTP) path in 0.287, so `MaxTokensParser` replaces it |
 | Query depth | 8 | frontend max 3 (introspection not counted) |
 | Aliases | 10 | frontend uses none |
-| `getRoute` per request | 1 | each call = 1 Directions call (+2 Geocoding + 1 Directions on a miss) |
+| `getRoute` + `routeAlternatives` per request | 1 in total | each = 1 Directions call (+2 Geocoding + 1 Directions on a miss); `alternatives=true` is billed as one call |
+| `routeAlternatives` route quality | only for Google routes ≤ 800 km and ≤ 20 000 points; longer ones come back unmeasured (coverage 0) | Google picks the route: a text destination abroad could mean 3 × 2 000 km of matching |
+| `Point.segmentId` | only below `point(id)`; refused under `points` / `segmentFrames` | one PostGIS query per point (~5 ms locally, a Neon round trip in prod): `points(limit: 20000) { segmentId }` = 20 000 queries |
+| `segmentFrames` per request | 2 | ~10–35 ms each |
 | `getRoute` origin/destination | ≤ 200 chars, no control chars; a `lat,lng` must be inside `SERVICE_AREA` (HU + margin) | |
 | `points` | `limit` ≤ 20 000 with bbox (= frontend `MAP_POINT_LIMIT`), ≤ 1 000 without; `offset` ≤ 100 000; bbox exactly 4 numbers, ≤ 1 deg² | a 3-element bbox used to be ignored → whole table |
 | `roadQualityGrid`, `roadSegments` | zoom 0–22; bbox no larger than an 8K screen at that zoom (×2); no bbox only up to zoom ~5 | stops "street zoom over the whole country" |
@@ -43,6 +46,10 @@ Registered in `schema.py` via `schema_extensions(public=...)`. Rejections happen
 | `routeQuality(path)` | ≤ 20 000 points (= `segment_read.MAX_PATH_POINTS`), ≤ 800 km total | matcher costs ~1.1 ms CPU per km (benchmarked) |
 | `points`, `roadQualityGrid`, `roadSegments` per request | 2 each | |
 | `config` (server Google key) | refused on the public schema | defense in depth for the QA fix |
+| Label queue (`labelQueue`, `quickLabel`, undo, re-check) | not on the public schema; `IsAdmin` on the full schema | |
+
+Logs: Google client errors are logged through `secret_scan.redact_secrets`.
+`requests` puts the full URL, `key=` included, into connection-error messages.
 
 The validators are plain functions; call them first thing in a resolver when
 it is used outside the guard (e.g. a REST endpoint or a renamed argument):

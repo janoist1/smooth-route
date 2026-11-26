@@ -1,6 +1,7 @@
 import googlemaps
 from typing import Dict, List, Optional, Tuple
 from app.core.config import settings
+from app.core.secret_scan import redact_secrets
 from app.services.capture_date import parse_capture_date
 import math
 
@@ -27,7 +28,7 @@ class GoogleMapsService:
                 alternatives=False
             )
         except Exception as e:
-            print(f"DEBUG: Error in initial directions call: {e}")
+            print(f"DEBUG: Error in initial directions call: {_safe(e)}")
             directions_result = None
 
         if not directions_result:
@@ -48,9 +49,7 @@ class GoogleMapsService:
                         alternatives=False
                     )
                  except Exception as e:
-                     print(f"DEBUG: Error in retry directions call: {e}")
-                     import traceback
-                     traceback.print_exc()
+                     print(f"DEBUG: Error in retry directions call: {_safe(e)}")
                      directions_result = None
 
         if not directions_result:
@@ -64,7 +63,7 @@ class GoogleMapsService:
              decoded_points = googlemaps.convert.decode_polyline(encoded_polyline)
              return decoded_points
         except Exception as e:
-             print(f"DEBUG: Error parsing route result: {e}")
+             print(f"DEBUG: Error parsing route result: {_safe(e)}")
              return []
 
     def get_routes(self, origin: str, destination: str, max_routes: int = 3) -> List[Dict]:
@@ -91,7 +90,7 @@ class GoogleMapsService:
                     "summary": route.get("summary") or "",
                 })
             except (KeyError, TypeError) as exc:
-                print(f"DEBUG: skipping unparsable route: {exc}")
+                print(f"DEBUG: skipping unparsable route: {_safe(exc)}")
         return routes
 
     def _directions(self, origin, destination, alternatives: bool):
@@ -99,7 +98,7 @@ class GoogleMapsService:
             return self.client.directions(origin, destination, mode="driving",
                                           alternatives=alternatives)
         except Exception as exc:
-            print(f"DEBUG: Error in directions call: {exc}")
+            print(f"DEBUG: Error in directions call: {_safe(exc)}")
             return None
 
     def decode_polyline(self, polyline_str: str) -> List[Tuple[float, float]]:
@@ -219,7 +218,7 @@ class GoogleMapsService:
         try:
             return default_client().metadata(lat, lng, pano_id=pano_id, radius=radius)
         except StreetViewError as e:  # this lookup failed; the job goes on
-            print(f"SV Metadata error: {e}")
+            print(f"SV Metadata error: {_safe(e)}")
             return None
 
     def generate_street_view_metadata(self, points: List[Tuple[float, float]]) -> List[Dict]:
@@ -290,7 +289,13 @@ class GoogleMapsService:
                 return f"{location['lat']},{location['lng']}"
             return None
         except Exception as e:
-            print(f"Geocoding error: {e}")
+            print(f"Geocoding error: {_safe(e)}")
             return None
+
+def _safe(exc: BaseException) -> str:
+    """An exception for the log without credentials: requests/googlemaps put
+    the full request URL (with ``key=...``) into connection-error messages."""
+    return f"{type(exc).__name__}: {redact_secrets(str(exc))}"
+
 
 google_maps_service = GoogleMapsService()

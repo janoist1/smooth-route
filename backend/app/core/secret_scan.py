@@ -43,3 +43,21 @@ def find_secrets(
                 if pattern.search(text):
                     hits.append((row.get(id_key), column, name))
     return hits
+
+
+def redact_secrets(text: str) -> str:
+    """`text` with every credential-shaped substring replaced by ``[REDACTED]``
+    (for log lines built from exception messages)."""
+    for pattern in SECRET_PATTERNS.values():
+        text = pattern.sub(_redaction, text)
+    return text
+
+
+def _redaction(match: re.Match) -> str:
+    found = match.group(0)
+    # Keep the "?key=" / "postgresql://user:" prefix so the log stays readable.
+    for sep in ("=", "://"):
+        if sep in found:
+            head = found.split(sep, 1)[0] + sep
+            return head + "[REDACTED]" + ("@" if found.endswith("@") else "")
+    return "[REDACTED]"

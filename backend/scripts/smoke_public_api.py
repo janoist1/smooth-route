@@ -193,6 +193,15 @@ class Smoke:
                        "routeQuality along a rated segment",
                        f"covered {covered:.0f} of {total:.0f} m")
 
+        # Both refused before execution: no DB fan-out, no Google call.
+        res = self.gql('{ points(bbox: [19.0, 47.45, 19.15, 47.55], limit: 5) { segmentId } }')
+        self.check(bool(res.get("errors")) and not res.get("data"),
+                   "segmentId is refused on a points list")
+        res = self.gql('{ getRoute(origin: "a", destination: "b") { points { lat } } '
+                       'routeAlternatives(origin: "a", destination: "b") { fastestIndex } }')
+        self.check(bool(res.get("errors")) and not res.get("data"),
+                   "only one paid route field per request")
+
         res = self.gql(ROUTE_QUALITY, {"path": [[47.5, 19.0]] * 20001})
         self.check(bool(res.get("errors")) and not res.get("data"),
                    "routeQuality refuses an oversized path")

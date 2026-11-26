@@ -39,6 +39,31 @@ class RouteAlternatives:
     min_coverage: float
 
 
+def measurable(route: dict) -> bool:
+    """Whether the route's quality may be computed on this request.
+
+    Google decides the route, so a text destination outside the country can
+    return a 2 000 km drive x 3 alternatives. Quality is measured only within
+    the public routeQuality caps (limits.MAX_PATH_KM / MAX_PATH_POINTS); a
+    longer route is returned with no quality data instead of failing the
+    request after the paid Directions call.
+    """
+    from app.graphql.limits import MAX_PATH_KM, MAX_PATH_POINTS
+
+    return (route["distance_m"] <= MAX_PATH_KM * 1000
+            and len(route["points"]) <= MAX_PATH_POINTS)
+
+
+def unmeasured_quality(route: dict):
+    """A RouteQualityResult with nothing covered (no DB, no matching)."""
+    from app.services.segment_read import RouteQualityResult, load_config
+
+    return RouteQualityResult(
+        total_length_m=route["distance_m"], covered_length_m=0.0,
+        length_by_rqi=[0.0] * len(load_config().scale.best_to_worst), mean_score=None,
+        worst_segments=[])
+
+
 @strawberry.type
 class RouteAlternativesQuery:
     @strawberry.field(permission_classes=[IsAuthenticatedUnlessPublicRead])
@@ -60,6 +85,9 @@ class RouteAlternativesQuery:
         db = get_db_session()
         try:
             for r in routes:
+                if not measurable(r):
+                    qualities.append(route_quality_type(unmeasured_quality(r)))
+                    continue
                 path = [[p["lat"], p["lng"]] for p in r["points"]]
                 qualities.append(route_quality_type(compute(db, path)))
         finally:
