@@ -5,7 +5,7 @@ PYTHON_VENV = .venv
 PYTHON = $(PYTHON_VENV)/bin/python
 UVICORN = $(PYTHON_VENV)/bin/uvicorn
 
-.PHONY: setup backend frontend dev lint clean retrain postprocess
+.PHONY: setup backend frontend dev lint clean retrain postprocess test-ml
 
 setup:
 	@echo "🔍 Setting up environments..."
@@ -84,3 +84,7 @@ retrain:
 # -> collector report). Incremental, idempotent, safe while the collector runs.
 postprocess:
 	bash backend/scripts/postprocess_new_frames.sh
+
+# Unit tests for the ML promotion pipeline (synthetic data; no torch/MPS/images, ~20 s)
+test-ml:
+	$(PYTHON) -m pytest -q ml/tests
