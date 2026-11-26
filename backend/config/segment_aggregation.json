@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "segment_length_m": 150,
+  "aggregator": "median_score",
+  "trim_fraction": 0.1,
+  "thresholds": [1.51, 2.47, 3.18],
+  "p_bad_threshold": 0.5,
+  "min_images": 3,
+  "confidence": {
+    "n_ref": 8,
+    "spread_ref": 0.6,
+    "margin_ref": 0.3,
+    "high": 0.66,
+    "medium": 0.33
+  },
+  "age": {
+    "grace_years": 3,
+    "half_life_years": 5
+  }
+}

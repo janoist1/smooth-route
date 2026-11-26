@@ -61,6 +61,39 @@ A new module can start as a single `index.ts`; add folders only when needed.
   payloads; they only speed up DevTools.
 - **RQI display logic** lives in one place: `modules/ui/utils/rqi.ts`.
 
+## Map layers and road segments
+
+What the map draws depends on the zoom (single rule: `layersForZoom` in
+`modules/map/segments/style.ts`, used by both the router saga and `MapView`):
+
+| Zoom | Layer | Source |
+|---|---|---|
+| < 13 | quality grid (average RQI per cell) | `roadQualityGrid` |
+| 13–15 | road segments | `roadSegments(bbox, zoom)` |
+| ≥ 16 | road segments + clickable frame dots | `roadSegments` + `points` |
+
+Below zoom 16 the frame dots only appear around a selected segment. If the
+backend does not know `roadSegments` (older deploy), the first failed request
+flips `roads.supported` and the map keeps the legacy split (grid < 14, dots ≥ 14).
+
+`modules/map/segments/` is a sub-module of `modules/map` with the usual layout
+(own slice under the store key `roads`, sagas, selectors, `hooks.ts`):
+
+- `style.ts`, `labels.ts`, `routeSummary.ts`, `geometry.ts` — pure rules
+  (drawing, Hungarian wording, route maths); unit-tested, no React/Leaflet.
+- `api.ts` — the GraphQL documents. Hand-typed `TypedDocumentNode`s until
+  `npm run codegen` has seen the new schema; then drop the manual types.
+- `sagas.ts` — `fetchSegments` is debounced and cancelled (`takeLatestAsync` +
+  `delay`); `fetchRouteQuality` runs when `planRoute` succeeds.
+- `mock.ts` — deterministic stand-in for the two queries. Enable with
+  `VITE_MOCK_SEGMENTS=1`, or in the dev server with `?mockSegments=1`
+  (`&mockCoverage=0` shows the "no data" route summary).
+
+Components: `SegmentLayer` (imperative Leaflet layer on the shared canvas),
+`SegmentDetailCard`, `RouteQualityCard` (inside `RoutePlanner`), `MapLegend`.
+Layout that changes on a phone lives in `components/roadCards.css` (breakpoint
+600 px, mirrored by `modules/map/screen.ts`).
+
 ## GraphQL types
 
 Types are generated (`modules/graphql/generated/`): with the backend running,

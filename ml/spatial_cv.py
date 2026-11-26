@@ -90,8 +90,12 @@ def spatial_folds(yc, groups, n_splits=N_SPLITS, seed=SEED):
     return list(sgkf.split(np.zeros(len(yc)), yc, groups))
 
 
-def tune_thresholds(y_true, pred):
-    """Greedy per-boundary search for the 3 ordinal cut-points, maximising QWK."""
+def tune_thresholds(y_true, pred, sample_weight=None):
+    """Greedy per-boundary search for the 3 ordinal cut-points, maximising QWK.
+
+    sample_weight: optional per-item weight (e.g. segment length in metres,
+    see ml/segment_eval.py); None = the official unweighted per-image search.
+    """
     th = [1.5, 2.5, 3.5]
     for _ in range(3):
         for i in range(3):
@@ -101,7 +105,8 @@ def tune_thresholds(y_true, pred):
             for t in np.linspace(lo + 0.02, hi - 0.02, 60):
                 cand = sorted(th[:i] + [t] + th[i + 1:])
                 q = cohen_kappa_score(y_true, np.digitize(pred, cand) + 1,
-                                      weights="quadratic", labels=RQI_LABELS)
+                                      weights="quadratic", labels=RQI_LABELS,
+                                      sample_weight=sample_weight)
                 if q > best_q:
                     best_q, best_t = q, t
             th[i] = best_t
@@ -116,18 +121,23 @@ def _fit_predict(make_model, Xtr, ytr, Xte):
 
 
 def nested_spatial_cv(X, y, yc, groups, make_model, *, n_splits=N_SPLITS,
-                      seed=SEED, tune=True, inner_splits=INNER_SPLITS):
+                      seed=SEED, tune=True, inner_splits=INNER_SPLITS,
+                      return_inner=False):
     """Spatial outer CV with nested (inner spatial CV) cut-point tuning.
 
     make_model: zero-arg factory for the head (StandardScaler is prepended).
     Returns dict(oof=continuous OOF score, pred=OOF class, fold=fold id per
-    sample, thresholds=list per fold).
+    sample, thresholds=list per fold). With return_inner=True (needs tune)
+    also ``inner``: per outer fold a (train_idx, inner_oof) pair — the inner
+    spatial OOF scores of that fold's training images, for anything else that
+    must be fitted without touching the test fold (P(bad) calibration,
+    segment-level cut-points; see ml/segment_eval.py).
     """
     folds = spatial_folds(yc, groups, n_splits, seed)
     oof = np.zeros(len(y))
     pred = np.zeros(len(y), dtype=int)
     fold_id = np.zeros(len(y), dtype=int)
-    ths = []
+    ths, inner_oofs = [], []
     for k, (tr, te) in enumerate(folds):
         oof[te] = _fit_predict(make_model, X[tr], y[tr], X[te])
         fold_id[te] = k
@@ -138,11 +148,15 @@ def nested_spatial_cv(X, y, yc, groups, make_model, *, n_splits=N_SPLITS,
                 ioof[ite] = _fit_predict(make_model, X[tr][itr], y[tr][itr],
                                          X[tr][ite])
             th = tune_thresholds(yc[tr], ioof)
+            inner_oofs.append((tr, ioof))
         else:
             th = [1.5, 2.5, 3.5]
         ths.append(th)
         pred[te] = np.digitize(oof[te], th) + 1
-    return {"oof": oof, "pred": pred, "fold": fold_id, "thresholds": ths}
+    res = {"oof": oof, "pred": pred, "fold": fold_id, "thresholds": ths}
+    if return_inner:
+        res["inner"] = inner_oofs
+    return res
 
 
 def head_factory(estimator):
@@ -150,19 +164,25 @@ def head_factory(estimator):
     return lambda: clone(estimator)
 
 
-def ordinal_metrics(yc, yp, score):
-    """Headline metrics. yp = integer class, score = continuous (higher=worse)."""
-    is_bad = (np.asarray(yc) >= BAD_FROM).astype(int)
+def ordinal_metrics(yc, yp, score, sample_weight=None):
+    """Headline metrics. yp = integer class, score = continuous (higher=worse).
+
+    sample_weight: optional per-item weight (segment length for the
+    length-weighted segment metrics); None = the official per-image metrics.
+    """
+    yc, yp, w = np.asarray(yc), np.asarray(yp), sample_weight
+    is_bad = (yc >= BAD_FROM).astype(int)
     m = {
         "n": int(len(yc)),
-        "mae": float(mean_absolute_error(yc, yp)),
-        "exact": float(np.mean(yc == yp)),
-        "off1": float(np.mean(np.abs(yc - yp) <= 1)),
+        "mae": float(mean_absolute_error(yc, yp, sample_weight=w)),
+        "exact": float(np.average(yc == yp, weights=w)),
+        "off1": float(np.average(np.abs(yc - yp) <= 1, weights=w)),
         "qwk": float(cohen_kappa_score(yc, yp, weights="quadratic",
-                                       labels=RQI_LABELS)),
-        "bad_acc": float(np.mean((yp >= BAD_FROM).astype(int) == is_bad)),
+                                       labels=RQI_LABELS, sample_weight=w)),
+        "bad_acc": float(np.average((yp >= BAD_FROM).astype(int) == is_bad,
+                                    weights=w)),
     }
-    m["bad_auc"] = (float(roc_auc_score(is_bad, score))
+    m["bad_auc"] = (float(roc_auc_score(is_bad, score, sample_weight=w))
                     if 0 < is_bad.sum() < len(is_bad) else float("nan"))
     return m
 

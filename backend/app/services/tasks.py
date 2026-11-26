@@ -3,9 +3,33 @@ import traceback
 from app.core.timeutil import utcnow
 from app.services.job_service import update_job, JobStatus, create_job
 
+def refresh_road_segments(job_id: str, since=None) -> None:
+    """Rebuild the road-segment layer after a job changed the frames.
+
+    `since` given (route job): bbox-limited rebuild around the frames created
+    from that moment on. `since=None` (analysis job): scores may have changed
+    anywhere, so a full rebuild from the cached OSM data.
+
+    Best effort by design: the segments are a derived view, so nothing here
+    may fail the job. Without OSM data for a new area (Overpass unreachable)
+    the refresh is logged and skipped; `scripts/build_segments.py` catches up.
+    """
+    try:
+        from app.services import road_segments
+
+        update_job(job_id, message="Útszakaszok frissítése...")
+        if since is None:
+            road_segments.refresh_segments_full()
+        else:
+            road_segments.refresh_segments_since(since)
+    except Exception:
+        print(f"Road-segment refresh skipped: {traceback.format_exc()}")
+
+
 def run_route_processing(job_id: str, origin: str, destination: str):
     """Run the full route processing pipeline using RouteProcessingService."""
     print(f"DEBUG: Process started for job {job_id}")
+    started_at = utcnow()  # frames created from here on belong to this job
     try:
         from app.services.road_quality import road_quality_service
         from app.services.google_maps import google_maps_service
@@ -56,7 +80,10 @@ def run_route_processing(job_id: str, origin: str, destination: str):
         road_quality_service.analyze_points(job_id=job_id, strategy="YOLO")
         print(f"DEBUG: Calling analyze_points (DINO CLASSIFICATION) for job {job_id}")
         road_quality_service.analyze_points(job_id=job_id, strategy="CLASSIFICATION")
-        
+
+        # Step 4: refresh the road-segment layer for the new area (best effort).
+        refresh_road_segments(job_id, started_at)
+
         # Complete
         update_job(
             job_id,
@@ -99,6 +126,9 @@ def run_analysis_job(job_id: str, strategy: str, limit: int = 0, reanalyze: bool
         if result.get("status") == "cancelled":
             print(f"DEBUG: Analysis job {job_id} was cancelled, not marking as completed.")
             return
+
+        # New scores → refresh the derived road-segment layer (best effort).
+        refresh_road_segments(job_id)
 
         strategy_used = result.get("strategy_used", strategy)
         update_job(
