@@ -125,21 +125,46 @@ test('clicking a frame dot opens the point card', async ({ page, isMobile }) => 
   )
 })
 
-test('route planner submits the form, draws the route and summarises it', async ({ page, isMobile }) => {
+const routeAlt = (index: number, lat: number, extra: Record<string, unknown>) => ({
+  index,
+  distanceM: 7600 + index * 400,
+  durationS: 540 + index * 120,
+  summary: index === 0 ? 'Teszt út (gyors)' : 'Teszt út (sima)',
+  coverage: 0,
+  isFastest: false,
+  isSmoothest: false,
+  points: [
+    { lat, lng: BALATON.lng - 0.05, __typename: 'RouteStep' },
+    { lat, lng: BALATON.lng + 0.05, __typename: 'RouteStep' },
+  ],
+  quality: {
+    totalLengthM: 7600 + index * 400,
+    coveredLengthM: 0,
+    lengthByRqi: [0, 0, 0, 0, 0],
+    meanScore: null,
+    __typename: 'RouteQuality',
+  },
+  __typename: 'RouteAlternative',
+  ...extra,
+})
+
+test('route planner: alternatives, selection and quality summary', async ({ page, isMobile }) => {
   // Deterministic and free: no Google Directions call, no sign-in needed.
+  // Route 0 (fastest) crosses the map centre; route 1 (smoothest) runs ~1 km north.
   await mockGql(page, 'Viewer', { me: null })
-  await mockGql(page, 'GetRoute', {
-    getRoute: {
-      points: [
-        { lat: BALATON.lat, lng: BALATON.lng - 0.05, __typename: 'RouteStep' },
-        { lat: BALATON.lat, lng: BALATON.lng + 0.05, __typename: 'RouteStep' },
+  await mockGql(page, 'RouteAlternatives', {
+    routeAlternatives: {
+      fastestIndex: 0,
+      smoothestIndex: 1,
+      routes: [
+        routeAlt(0, BALATON.lat, { isFastest: true }),
+        routeAlt(1, BALATON.lat + 0.01, { isSmoothest: true }),
       ],
-      __typename: 'RouteData',
+      __typename: 'RouteAlternatives',
     },
   })
 
-  // Zoom 12 (grid level): the route is a plain blue line, not the
-  // blue-and-dark "tube" drawn over road segments.
+  // Zoom 12 (grid level): routes are plain lines, not the "tube" over segments.
   await page.goto(mapUrl(BALATON, 12))
   await expect(page).toHaveURL(/[?&]z=12\b/)
 
@@ -152,18 +177,36 @@ test('route planner submits the form, draws the route and summarises it', async 
   await page.getByPlaceholder('pl. Szeged, Dóm tér').fill('Balatonfüred')
   const request = page.waitForRequest(r => {
     if (!r.url().endsWith('/graphql')) return false
-    return (r.postDataJSON() as { operationName?: string } | null)?.operationName === 'GetRoute'
+    return (r.postDataJSON() as { operationName?: string } | null)?.operationName === 'RouteAlternatives'
   })
-  const quality = page.waitForResponse(r => gqlOperation(r) === 'GetRouteQuality')
+  const firstQuality = page.waitForResponse(r => gqlOperation(r) === 'GetRouteQuality')
   await page.getByRole('button', { name: /Útvonal Mutatása/ }).click()
 
   expect((await request).postDataJSON().variables).toEqual({
     origin: 'Siófok',
     destination: 'Balatonfüred',
   })
-  await expect(page.getByText('Route not found')).toBeHidden()
 
-  // The mocked route crosses the map centre: the vector canvas turns blue there.
+  // Both alternatives, badged; the smoothest one is selected by default.
+  const alternatives = page.getByRole('region', { name: 'Útvonal-változatok' })
+  const fastest = alternatives.getByTestId('route-alt-0')
+  const smoothest = alternatives.getByTestId('route-alt-1')
+  await expect(fastest).toContainText('Leggyorsabb')
+  await expect(smoothest).toContainText('Legsimább')
+  await expect(smoothest).toHaveAttribute('aria-pressed', 'true')
+  expect((await firstQuality).ok()).toBe(true)
+
+  // Picking the fastest re-fetches the quality summary for ITS path.
+  const nextQuality = page.waitForRequest(r => {
+    if (!r.url().endsWith('/graphql')) return false
+    return (r.postDataJSON() as { operationName?: string } | null)?.operationName === 'GetRouteQuality'
+  })
+  await fastest.click()
+  await expect(fastest).toHaveAttribute('aria-pressed', 'true')
+  const path = (await nextQuality).postDataJSON().variables.path as [number, number][]
+  expect(path[0][0]).toBeCloseTo(BALATON.lat, 5)
+
+  // The selected route crosses the map centre: the vector canvas turns blue there.
   const { centre } = await screenProjector(page)
   await expect
     .poll(async () => {
@@ -172,8 +215,6 @@ test('route planner submits the form, draws the route and summarises it', async 
     })
     .toBe(true)
 
-  // Route-quality summary from the real backend (~7.6 km across the lake, no road data).
-  expect((await quality).ok()).toBe(true)
   const summary = page.getByRole('region', { name: 'Útvonal minősége' })
   await expect(summary.getByTestId('route-total')).toContainText('km')
 

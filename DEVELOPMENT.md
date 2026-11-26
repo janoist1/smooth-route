@@ -158,7 +158,11 @@ production build (`npm run build`) is not in CI — Vercel runs it on push.
 **E2E smoke (local only, not in CI yet):** `cd frontend && npm run test:e2e`
 (Playwright, `frontend/e2e/`). It checks that the map loads, the grid → road segments
 → frame dots switch on zoom, the segment and point cards, and the route planner
-(form, route line, route-quality summary), on a desktop and a phone viewport. It needs a running backend with map data (`make backend`,
+(form, alternatives with Legsimább/Leggyorsabb, route line, route-quality
+summary), on a desktop and a phone viewport. The quick-rate smoke
+(`e2e/quickrate.e2e.ts`, read-only: it never rates) runs only against an admin
+backend (`AUTH_MODE=disabled`, e.g. `API_PROXY_TARGET=http://localhost:8003
+E2E_PORT=5181`) and skips itself otherwise. It needs a running backend with map data (`make backend`,
 or `API_PROXY_TARGET=http://localhost:8002`), starts its own Vite on :5180
 (`E2E_PORT`; or reuse a running app with `E2E_BASE_URL`), and uses the installed
 Google Chrome (`E2E_CHANNEL=bundled` after `npx playwright install chromium` to
