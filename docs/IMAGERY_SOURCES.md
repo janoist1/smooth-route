@@ -54,6 +54,24 @@ recorded response: no token yet. Re-check the field names on the first real call
 - **Personal data:** Mapillary blurs faces and plates, but not perfectly. Keep the
   public site's no-stored-image policy, or blur again, before serving any frame.
 
+## External training data: StreetSurfaceVis (T-58)
+
+[StreetSurfaceVis v1.0](https://zenodo.org/record/11449977) (SurfaceAI, HTW Berlin;
+Kapp, Hoffmann, Weigmann, Mihaljević 2024): 9,122 Mapillary images from Germany
+with surface type and OSM-style quality labels, **CC BY-SA 4.0**. We use it for
+**model research only** (`ml/external_data.py`, Era 16 of
+[MODEL_EXPERIMENTS.md](MODEL_EXPERIMENTS.md)):
+
+- Local copy: `data/external/streetsurfacevis/` (the 256 px `s_256.zip` + label
+  CSV), gitignored. **Never commit, re-serve or show these images**; features
+  derived from them stay in the gitignored `ml/cache/`.
+- **Attribution** if a model trained on it ever ships or a result is published:
+  "StreetSurfaceVis (SurfaceAI, HTW Berlin), images © Mapillary contributors,
+  CC BY-SA 4.0", with the Zenodo link. Mapillary's terms apply to the images.
+- **Share-alike:** releasing the derived feature set or a labelled image set built
+  from it would have to be BY-SA. Model weights and map scores are a grey zone:
+  ask before shipping a model trained on it (owner decision, together with T-57).
+
 ## Coverage caveats
 
 - Budapest density is unchecked; crowdsourced coverage is patchy, uneven in age

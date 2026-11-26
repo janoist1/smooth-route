@@ -39,7 +39,9 @@ test), `spatial_analysis.py` (variogram, cell-size curve, region errors),
 (Era 11: how many and which labels help),
 `check_backend_parity.py` (backend rebuilds the training features exactly),
 `label_consistency.py` (the owner's blind re-check agreement — the practical QWK
-ceiling). `ml/legacy/` is v1, reference only.
+ceiling), `external_data.py` (Era 16: StreetSurfaceVis as extra training rows under
+spatial CV, leave-one-area-out and a Budapest hold-out), `scene_bias.py` (Era 16:
+Budapest error analysis by road type, focal-view and road-type-weight fixes). `ml/legacy/` is v1, reference only.
 
 ## One-command retrain
 
