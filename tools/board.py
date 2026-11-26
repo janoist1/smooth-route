@@ -125,7 +125,7 @@ def render(data) -> None:
         cols.append(f'<section class="col {key}"><h2>{en} <span>· {hu}</span><em>{len(items)}</em></h2>'
                     + "".join(card(t) for t in items) + "</section>")
     page = f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="30">
+<meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="60">
 <title>Team board</title><style>
 :root{{--bg:#f6f7f9;--fg:#1d2330;--muted:#667085;--card:#fff;--line:#e3e6ec;--todo:#94a3b8;--doing:#3b82f6;--review:#a855f7;--owner:#f59e0b;--done:#22c55e}}
 @media (prefers-color-scheme:dark){{:root{{--bg:#12151b;--fg:#e6e9ef;--muted:#98a2b3;--card:#1c2129;--line:#2a313c}}}}
@@ -142,7 +142,7 @@ main{{display:grid;grid-template-columns:repeat(5,minmax(200px,1fr));gap:12px;al
 .card h3{{font-size:14px;margin:4px 0}}.note{{margin:4px 0;color:var(--muted);font-size:13px}}
 details{{font-size:13px;margin:4px 0}}details summary{{cursor:pointer;color:var(--muted)}}details p,details ul{{margin:4px 0}}details ul{{padding-left:18px}}
 .card footer{{font-size:12px;color:var(--muted);word-break:break-all}}.owner .card{{border-color:var(--owner)}}
-</style></head><body><h1>Team board <small>updated {now()} · auto-refresh 30 s</small></h1>
+</style></head><body><h1>Team board <small>updated {now()} · auto-refresh 1 min</small></h1>
 <main>{''.join(cols)}</main></body></html>"""
     tmp = HTML_OUT.with_suffix(".tmp")
     tmp.write_text(page)

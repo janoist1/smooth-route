@@ -98,7 +98,7 @@ Report: branch, commits, results (numbers), follow-ups.
 One board for the whole team: `tools/board.py` (no deps, no server). Data and the
 rendered page live in the **main checkout** (`board/tickets.json`, `board/index.html`,
 gitignored), so every worktree and session sees the same board; the owner just opens
-`board/index.html` (auto-refreshes every 30 s).
+`board/index.html` (auto-refreshes every minute).
 
 - Columns: `todo` → `doing` → `review` (ready to merge / in QA) → `done`; `owner` =
   waiting on the owner's decision or action.
