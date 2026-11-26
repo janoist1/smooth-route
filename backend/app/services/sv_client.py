@@ -155,8 +155,10 @@ class StreetViewClient:
         or None when there is none. Free, but paced like everything else."""
         import json
 
+        # source=outdoor: no indoor panoramas for a location query (it does not
+        # exclude user outdoor photospheres; is_google_pano does that).
         params: dict = {"pano": pano_id} if pano_id else {
-            "location": f"{lat},{lng}", "radius": radius}
+            "location": f"{lat},{lng}", "radius": radius, "source": "outdoor"}
         status, _ctype, body = self._request(METADATA_URL, params, "metadata")
         self.quota.note_metadata()
         try:
@@ -171,6 +173,9 @@ class StreetViewClient:
                 "lat": location.get("lat"),
                 "lng": location.get("lng"),
                 "date": data.get("date"),
+                # "© Google" for Google's own car imagery; a person's name for
+                # user-contributed photospheres (see is_google_pano).
+                **({"copyright": data["copyright"]} if data.get("copyright") else {}),
             }
         if api_status in NO_PANO_STATUS:
             return None
@@ -216,6 +221,7 @@ class StreetViewClient:
             params["pano"] = pano_id
         else:
             params["location"] = f"{lat},{lng}"
+            params["source"] = "outdoor"
         return self._image_request(IMAGE_URL, params, job)
 
     def image_from_url(self, url: str, job: Optional[JobBudget] = None) -> bytes:
@@ -232,6 +238,24 @@ class StreetViewClient:
 
 
 _default_client: Optional[StreetViewClient] = None
+
+
+# User-contributed photospheres have ids like "CAoSF0NJSE0w…" (a wrapped photo
+# id) and a person's name as copyright; Google's car imagery says "© 2026 Google".
+USER_PANO_ID_PREFIX = "CAoS"
+
+
+def is_google_pano(meta: Optional[dict]) -> bool:
+    """True for Google's own Street View imagery (road-level car capture).
+
+    The copyright decides when present (it must name Google); without it, a
+    user-photosphere id pattern counts as not Google's."""
+    if not meta:
+        return False
+    copyright_ = meta.get("copyright")
+    if copyright_:
+        return "google" in copyright_.lower()
+    return not str(meta.get("pano_id") or "").startswith(USER_PANO_ID_PREFIX)
 
 
 def default_client() -> StreetViewClient:

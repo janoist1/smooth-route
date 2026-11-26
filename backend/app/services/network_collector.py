@@ -38,6 +38,7 @@ from app.services.network_sampling import Candidate, Cell, bearing_at_offset
 from app.services.segment_geometry import cumulative_lengths
 from app.services.sv_client import (
     DEFAULT_PITCH,
+    is_google_pano,
     StreetViewClient,
     StreetViewError,
     StreetViewFatal,
@@ -52,6 +53,9 @@ NEAR_EXISTING = "near_existing"
 META_ERROR = "meta_error"
 IMAGE_ERROR = "image_error"
 BAD_IMAGE = "bad_image"
+# A user-contributed photosphere, not Google car imagery: skipped for good
+# (free metadata call only; recorded so a resume does not retry it).
+USER_PANO = "user_pano"
 
 # A real 600×400 road photo is tens of kilobytes; anything tiny is an error
 # placeholder, not a frame.
@@ -155,6 +159,8 @@ def process_candidate(
         return NO_PANO, None, 0
 
     pano_id = meta["pano_id"]
+    if not is_google_pano(meta):
+        return USER_PANO, None, 0
     if pano_id in seen_panos or store.has_pano(pano_id):
         return DUP_PANO, None, 0
 

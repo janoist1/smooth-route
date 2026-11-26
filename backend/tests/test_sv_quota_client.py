@@ -290,7 +290,8 @@ def test_requests_are_paced_across_metadata_and_images(tmp_path):
     c.image(pano_id="P", heading=10)
     assert c.metadata(47.6, 19.05) is None
     assert t.sleeps == [1.0, 1.0]              # one shared, steady queue
-    assert http.calls[0][1] == {"location": "47.5,19.05", "radius": 25, "key": "SECRET-KEY"}
+    assert http.calls[0][1] == {"location": "47.5,19.05", "radius": 25, "source": "outdoor",
+                                 "key": "SECRET-KEY"}
     assert c.quota.used("metadata") == 2 and c.quota.used() == 1
 
 
