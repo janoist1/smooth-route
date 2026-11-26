@@ -28,9 +28,12 @@ Properties:
 - The metadata is merged in SQL (``jsonb ||``), so keys written concurrently
   by other tools are never overwritten with a stale copy.
 - ``--dry-run`` scores and reports but writes nothing (no DB, no log).
-- Every written frame is appended to ``data/rescore/dino_rescore_<artifact>.csv``
-  (id, old class, old score, new score, new class, new P(bad)); the class-shift
-  table printed at the end is computed from that log, i.e. over ALL runs.
+- Every written frame is appended to
+  ``data/rescore/dino_rescore_<artifact>_<scale direction>.csv`` (id, old
+  class, old score, new score, new class, new P(bad)); the class-shift table
+  printed at the end is computed from that log, i.e. over ALL runs on that
+  scale. (The scale direction is part of the name so numbers written before
+  and after a scale flip never share a log.)
 
 Feature vectors: ``--save-features PATH`` also stores, for every frame
 processed, the exact vector the head sees (the artifact's feature recipe;
@@ -269,7 +272,9 @@ def main() -> None:
         print(f"frames with an image: {len(rows)}; to re-score now: {len(todo)}; "
               f"skipped: {dict(skipped)}")
 
-        log_path = data_path("rescore", f"dino_rescore_{artifact}.csv")
+        from app.core.rqi_scale import SCALE
+
+        log_path = data_path("rescore", f"dino_rescore_{artifact}_{SCALE.direction}.csv")
         log_file = writer = None
         if not read_only and todo:
             log_path.parent.mkdir(parents=True, exist_ok=True)
