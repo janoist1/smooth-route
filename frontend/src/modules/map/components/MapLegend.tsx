@@ -105,7 +105,7 @@ export const MapLegend: React.FC = () => {
           )}
 
           <div className="map-legend__attribution">
-            Úthálózat:{' '}
+            Térkép és úthálózat:{' '}
             <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">
               © OpenStreetMap contributors
             </a>
