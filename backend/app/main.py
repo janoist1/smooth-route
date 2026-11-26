@@ -6,28 +6,46 @@ from app.core.paths import data_path, image_path
 import os
 from pathlib import Path
 
+# The public read-only deploy publishes no OpenAPI schema / Swagger UI: it
+# serves only /graphql (+ /health), and the docs would advertise local-only
+# REST endpoints.
+_public = settings.PUBLIC_READ_ONLY
 app = FastAPI(
     title="Kátyúőr API",
     description="Backend for Smooth Route application",
-    version="0.1.0"
+    version="0.1.0",
+    docs_url=None if _public else "/docs",
+    redoc_url=None if _public else "/redoc",
+    openapi_url=None if _public else "/openapi.json",
 )
 
 from fastapi.middleware.cors import CORSMiddleware
+from app.core.security_headers import SecurityHeadersMiddleware
 
-# Local dev is permissive; the public read-only deploy restricts to the
-# configured prod origin(s).
-if settings.PUBLIC_READ_ONLY:
-    _cors_origins = [o.strip() for o in settings.ALLOWED_ORIGINS.split(",") if o.strip()]
+# Public read-only deploy: only the configured prod origin(s), no cookies
+# (anonymous API; Apollo sends none cross-origin). Local dev: any localhost
+# port (worktree dev servers), but not arbitrary websites — with "*" any page
+# open in the developer's browser could drive the local admin API
+# (AUTH_MODE=disabled makes every caller admin).
+if _public:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[o.strip() for o in settings.ALLOWED_ORIGINS.split(",") if o.strip()],
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Content-Type", "Authorization"],
+    )
 else:
-    _cors_origins = ["http://localhost:5173", "http://localhost:8000", "*"]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=r"https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?",
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=_cors_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Added last = outermost: every response (incl. CORS preflights) gets them.
+app.add_middleware(SecurityHeadersMiddleware)
 
 from app.api.routes import router as api_router
 
@@ -39,14 +57,23 @@ if settings.RUN_MIGRATIONS_ON_STARTUP:
     from app.core.migrations import ensure_database_schema
     ensure_database_schema()
 
-# Include API router
-app.include_router(api_router)
+# Legacy REST API: local only. The public read-only deploy serves /graphql
+# alone — GET /api/v1/points returned the whole table unbounded, and the
+# image/export/job endpoints have nothing to serve there.
+if not _public:
+    app.include_router(api_router)
 
 # GraphQL — AuthGraphQL resolves the caller identity into the context.
 # Read-only deploy serves the query-only schema (no mutations reachable).
 from app.graphql.context import AuthGraphQL
 from app.graphql.schema import read_schema, schema
-graphql_app = AuthGraphQL(read_schema if settings.PUBLIC_READ_ONLY else schema)
+# Public: no GraphiQL page and POST only — a GET query can be fired from any
+# <img>/<link> on any site, spreading paid getRoute calls over visitors' IPs.
+graphql_app = (
+    AuthGraphQL(read_schema, graphql_ide=None, allow_queries_via_get=False)
+    if _public
+    else AuthGraphQL(schema)
+)
 app.add_route("/graphql", graphql_app)
 if not settings.PUBLIC_READ_ONLY:
     app.add_websocket_route("/graphql", graphql_app)
@@ -75,7 +102,6 @@ async def root():
 async def health_check():
     return {"status": "healthy"}
 
-@app.get("/images/{filename}")
 async def get_image(filename: str):
     """Serve an image from the canonical data directory."""
     from fastapi import HTTPException
@@ -89,7 +115,6 @@ async def get_image(filename: str):
 
     raise HTTPException(status_code=404, detail="Image not found")
 
-@app.get("/api/v1/exports/{filename}")
 async def get_export_file(filename: str):
     """Serve exported files (notebooks, datasets) from the data/exports directory."""
     import os
@@ -115,3 +140,9 @@ async def get_export_file(filename: str):
         media_type = "application/octet-stream"
         
     return FileResponse(export_path, media_type=media_type, filename=filename)
+
+
+# Local file servers (images, exports): not on the public read-only deploy.
+if not _public:
+    app.add_api_route("/images/{filename}", get_image, methods=["GET"])
+    app.add_api_route("/api/v1/exports/{filename}", get_export_file, methods=["GET"])
