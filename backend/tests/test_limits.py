@@ -138,6 +138,40 @@ class TestRouteEndpoints:
         # Vienna is inside the margin.
         validate_route_endpoints("48.2082, 16.3738", "Győr")
 
+    @pytest.mark.parametrize("address", [
+        "1051 Budapest, Nádor utca 5.", "47 Main Street", "E 19th Street, Budapest",
+        "Budapest, 47-es út", "Győr", "Debrecen",
+    ])
+    def test_real_addresses_keep_the_address_path(self, address):
+        assert validate_route_endpoints(address, "Budapest")[0] == address
+        assert limits.parse_lat_lng(address) is None
+
+    @pytest.mark.parametrize("value", [
+        "40.7 -74.0", "+34.05,-118.24", "40.7; -74.0", "40.7/−74.0",
+        "40.7 −74.0", "N40.7 W74.0", "N40.7 E-74.0", "40.7°N 74.0°W",
+        "lat: 40.7, lng: -74.0", "[40.7, -74.0]", "40.7 | -74.0",
+        "40.7x-74.0", "40.7 and -74.0", "4.07e1,-7.4e1", "４０.７,−７４.０",
+        "47.5 19.04", "+47.5,+19.04", "N47.5 E19.04", "47.5;19.04",
+        "47.5,,,19.04", "47.5,19.04,20", "47,5;19,04", "47.5", "47.5,",
+        "NaN,19.04", "47.5,Infinity", "NaN,NaN", "47.5\u00a019.04",
+        "47.5\t19.04", "47.5\n19.04", "47.5，19.04", "47.5,+19.04",
+        "40.7xyz-74.0", "40.7,-74.0 USA", "N40.7 W74.0 USA", "40,74 USA",
+        "⁴⁰.⁷,⁻⁷⁴.⁰", "47.5<separator>19.04",
+    ])
+    @pytest.mark.parametrize("endpoint", ["origin", "destination"])
+    def test_numeric_bypasses_and_noncanonical_pairs_rejected(self, value, endpoint):
+        args = {"origin": "Budapest", "destination": "Győr", endpoint: value}
+        with pytest.raises(InputLimitError) as caught:
+            validate_route_endpoints(**args)
+        assert caught.value.extensions == {"code": "BAD_USER_INPUT"}
+
+    def test_canonical_whitespace_and_service_area_boundaries(self):
+        assert validate_route_endpoints(" 47.5 , 19.04 ", "Győr")[0] == "47.5 , 19.04"
+        validate_route_endpoints("45.4,15.5", "49.0,23.5")
+        for value in ("45.399,19", "49.001,19", "47.5,15.499", "47.5,23.501"):
+            with pytest.raises(InputLimitError, match="outside the service area"):
+                validate_route_endpoints(value, "Budapest")
+
     @pytest.mark.parametrize(
         "origin",
         ["", "   ", None, "x" * 201, "Buda\x00pest", "40.7128,-74.0060", "95,19"],
@@ -200,6 +234,16 @@ class TestRoutePath:
 
 
 class TestPublicSchemaGuard:
+    @pytest.mark.parametrize("field", ["getRoute", "routeAlternatives"])
+    @pytest.mark.parametrize("value", ["40.7 -74.0", "+34.05,-118.24", "N40.7 W74.0", "47.5 19.04"])
+    def test_numeric_bypasses_blocked_before_execution(self, read_schema, field, value):
+        query = f'query($o: String!) {{ {field}(origin: $o, destination: "Győr") {{ points {{ lat }} }} }}'
+        # routeAlternatives has a different result type; the guard still runs
+        # only on valid documents, so use its actual result field.
+        if field == "routeAlternatives":
+            query = query.replace("points { lat }", "fastestIndex")
+        assert errors_of(read_schema, query, {"o": value})
+
     def test_getroute_alias_amplification_blocked(self, read_schema):
         query = "{ a: getRoute(origin: \"Budapest\", destination: \"Győr\") { points { lat } }" \
                 " b: getRoute(origin: \"Budapest\", destination: \"Pécs\") { points { lat } } }"

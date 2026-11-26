@@ -5,7 +5,8 @@
 The round-1 API (`PUBLIC_READ_ONLY=1`, Vercel → Neon) is anonymous. Anything a
 stranger can call costs money or capacity: Google Directions/Geocoding
 (`getRoute`), Neon compute and egress, Vercel function time and bandwidth. The
-code caps every **single request**; per-IP rates and hard money caps live in
+code caps every **single request** and applies a best-effort daily Google budget;
+per-IP rates and hard money caps live in
 the dashboards (owner checklist below). Nothing here knows who is calling.
 
 ## What the public deploy serves
@@ -35,11 +36,12 @@ Registered in `schema.py` via `schema_extensions(public=...)`. Rejections happen
 | Tokens per document | 2 000 | frontend max ~150; Strawberry's own `MaxTokensLimiter` is a no-op on the async (HTTP) path in 0.287, so `MaxTokensParser` replaces it |
 | Query depth | 8 | frontend max 3 (introspection not counted) |
 | Aliases | 10 | frontend uses none |
-| `getRoute` + `routeAlternatives` per request | 1 in total | each = 1 Directions call (+2 Geocoding + 1 Directions on a miss); `alternatives=true` is billed as one call |
+| `getRoute` + `routeAlternatives` per request | 1 in total | public: at most 1 Directions call, no Geocoding or retries; `alternatives=true` is billed as one call |
+| Directions + Geocoding per Pacific day | `GOOGLE_DIRECTIONS_DAILY_CAP=300` combined attempts (0 blocks all) | reserve before every call, including failed attempts; local and public modes |
 | `routeAlternatives` route quality | only for Google routes ≤ 800 km and ≤ 20 000 points; longer ones come back unmeasured (coverage 0) | Google picks the route: a text destination abroad could mean 3 × 2 000 km of matching |
 | `Point.segmentId` | only below `point(id)`; refused under `points` / `segmentFrames` | one PostGIS query per point (~5 ms locally, a Neon round trip in prod): `points(limit: 20000) { segmentId }` = 20 000 queries |
 | `segmentFrames` per request | 2 | ~10–35 ms each |
-| `getRoute` origin/destination | ≤ 200 chars, no control chars; a `lat,lng` must be inside `SERVICE_AREA` (HU + margin) | |
+| `getRoute` / `routeAlternatives` origin/destination | ≤ 200 chars, no control chars; decimal `lat,lng` must be inside `SERVICE_AREA` (HU + margin); other numeric formats are rejected | |
 | `points` | `limit` ≤ 20 000 with bbox (= frontend `MAP_POINT_LIMIT`), ≤ 1 000 without; `offset` ≤ 100 000; bbox exactly 4 numbers, ≤ 1 deg² | a 3-element bbox used to be ignored → whole table |
 | `roadQualityGrid`, `roadSegments` | zoom 0–22; bbox no larger than an 8K screen at that zoom (×2); no bbox only up to zoom ~5 | stops "street zoom over the whole country" |
 | `routeQuality(path)` per request | 1 | |
@@ -50,6 +52,29 @@ Registered in `schema.py` via `schema_extensions(public=...)`. Rejections happen
 
 Logs: Google client errors are logged through `secret_scan.redact_secrets`.
 `requests` puts the full URL, `key=` included, into connection-error messages.
+
+Coordinate parsing accepts only decimal `lat,lng`, with optional whitespace
+around the comma. Numeric alternatives such as `47.5 19.04`, semicolons, explicit
+plus signs, Unicode minus signs and N/E prefixes are **rejected**, even inside
+the bbox; they never fall through to address geocoding. Real addresses retain
+the existing Google path (including addresses abroad). Local requests with
+either endpoint a coordinate use at most 1 Directions call; two addresses may
+use at most 4 calls on a miss (Directions + 2 Geocoding + Directions). Public
+requests always use at most 1 Directions call. The SDK's automatic HTTP/API
+retries are disabled in both modes.
+
+The combined daily counter (`backend/app/services/directions_quota.py`) follows
+the Street View counter's exclusive file lock and atomic JSON replacement.
+Days reset at midnight US Pacific time. Local storage is
+`DATA_DIR/quota/google_directions.json`; `PUBLIC_READ_ONLY=1` uses
+`/tmp/smooth-route/quota/google_directions.json`, so it works with Vercel's
+read-only deployment bundle. Optional `GOOGLE_DIRECTIONS_QUOTA_PATH` sets an
+alternate counter file (use an absolute, writable path). Corrupt or unwritable
+storage blocks calls; exhaustion returns `RESOURCE_EXHAUSTED` with a clear error.
+Vercel's filesystem is ephemeral and not shared across instances: this is a
+**per-instance, best-effort cap**, lost on replacement/restart and independent
+on each instance. The hard cap is the Google Cloud quota in owner checklist
+item 3 below; the application counter does not replace it.
 
 The validators are plain functions; call them first thing in a resolver when
 it is used outside the guard (e.g. a REST endpoint or a renamed argument):

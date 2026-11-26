@@ -15,6 +15,13 @@ from app.core.config import settings
 from app.models.models import User
 
 
+@pytest.fixture(autouse=True)
+def isolated_directions_quota(monkeypatch, tmp_path):
+    """Mocked Google calls must never consume the developer's real budget."""
+    monkeypatch.setattr(settings, "GOOGLE_DIRECTIONS_QUOTA_PATH", str(tmp_path / "directions.json"))
+    monkeypatch.setattr(settings, "GOOGLE_DIRECTIONS_DAILY_CAP", 300)
+
+
 class FakeVerifier:
     """Token verifier stub: token string -> canned claims, or raises."""
 

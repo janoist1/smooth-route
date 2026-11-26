@@ -30,6 +30,14 @@ Run everything from `backend/` in a checkout of **the exact release commit**
       off. Keep it out of shell history:
       `read -rs PUBLISH_DATABASE_URL && export PUBLISH_DATABASE_URL`.
 - [ ] Note the time (T0). It's the restore point for Neon's own point-in-time restore.
+- [ ] Backend environment: `GOOGLE_DIRECTIONS_DAILY_CAP=300` (combined Directions
+      + Geocoding attempts per Pacific day; `0` blocks all). With
+      `PUBLIC_READ_ONLY=1`, the counter defaults to
+      `/tmp/smooth-route/quota/google_directions.json`; optional
+      `GOOGLE_DIRECTIONS_QUOTA_PATH` overrides the file with an absolute writable
+      path. Vercel storage makes this a per-instance, best-effort cap. Set the
+      hard Directions/Geocoding quotas in Google Cloud too
+      ([SECURITY.md](SECURITY.md#owner-checklist-dashboards-only), item 3).
 
 ## Steps
 

@@ -1,59 +1,46 @@
 import googlemaps
 from typing import Dict, List, Optional, Tuple
+from graphql import GraphQLError
 from app.core.config import settings
 from app.core.secret_scan import redact_secrets
+from app.graphql.limits import parse_lat_lng, validate_route_endpoints
 from app.services.capture_date import parse_capture_date
+from app.services.directions_quota import DirectionsQuotaExceeded, default_quota
 import math
+
+
+class _SingleAttemptClient(googlemaps.Client):
+    """Prevent the SDK's recursive HTTP/API-error retries from adding charges."""
+
+    def _request(self, url, params, first_request_time=None, retry_counter=0, *args, **kwargs):
+        if retry_counter:
+            raise googlemaps.exceptions.TransportError("Google Maps automatic retries are disabled")
+        return super()._request(url, params, first_request_time, retry_counter, *args, **kwargs)
+
 
 class GoogleMapsService:
     def __init__(self):
         if settings.GOOGLE_MAPS_API_KEY:
-            self.client = googlemaps.Client(key=settings.GOOGLE_MAPS_API_KEY)
+            self.client = _SingleAttemptClient(key=settings.GOOGLE_MAPS_API_KEY)
         else:
             self.client = None
 
     def get_route(self, origin: str, destination: str) -> List[Dict]:
-        """
-        Get route between origin and destination using Google Directions API.
-        Returns a list of steps/points.
+        """Get route points, with at most 1 billable call in public mode.
+
+        Local mode: at most 1 Directions call when either endpoint is a
+        coordinate pair; two addresses may use at most 4 calls on a miss
+        (1 Directions + 2 Geocoding + 1 Directions retry). Public mode never
+        geocodes/retries, even for addresses. SDK retries are disabled, and
+        the daily budget is reserved before every billable attempt.
         """
         if not self.client:
             raise ValueError("Google Maps API Key not configured")
-
-        try:
-            directions_result = self.client.directions(
-                origin,
-                destination,
-                mode="driving", language="hu", region="hu",
-                alternatives=False
-            )
-        except Exception as e:
-            print(f"DEBUG: Error in initial directions call: {_safe(e)}")
-            directions_result = None
+        origin, destination = validate_route_endpoints(origin, destination)
+        directions_result = self._route_directions(origin, destination, alternatives=False)
 
         if not directions_result:
-            # Try to geocode inputs and retry if they weren't coordinates
-            print(f"DEBUG: No route found for raw inputs. Attempting geocoding for {origin} -> {destination}")
-            
-            # Simple check if they look like coords (can use implicit knowledge or simple logic)
-            geo_origin = self.geocode(origin)
-            geo_dest = self.geocode(destination)
-            
-            if geo_origin and geo_dest:
-                 print(f"DEBUG: Retrying route with geocoded coords: {geo_origin} -> {geo_dest}")
-                 try:
-                     directions_result = self.client.directions(
-                        geo_origin,
-                        geo_dest,
-                        mode="driving", language="hu", region="hu",
-                        alternatives=False
-                    )
-                 except Exception as e:
-                     print(f"DEBUG: Error in retry directions call: {_safe(e)}")
-                     directions_result = None
-
-        if not directions_result:
-            print("DEBUG: Still no route found after geocoding.", flush=True)
+            print("DEBUG: No route found.", flush=True)
             return []
 
         # Extract the polyline from the first route's first leg
@@ -67,18 +54,20 @@ class GoogleMapsService:
              return []
 
     def get_routes(self, origin: str, destination: str, max_routes: int = 3) -> List[Dict]:
-        """Up to ``max_routes`` driving routes from ONE Directions request
-        (``alternatives=true``; Google bills it as one request). Each:
+        """Up to ``max_routes`` driving routes (``alternatives=true``).
+
+        Maximum billable calls, as in get_route: public mode = 1 Directions;
+        local with either endpoint a coordinate = 1 Directions; local with
+        two addresses = 4 (1 Directions + 2 Geocoding + 1 Directions retry).
+        No SDK retries; each attempt reserves the combined daily budget.
+        Each route:
         ``{"points": [{"lat", "lng"}, ...], "distance_m", "duration_s", "summary"}``,
-        in Google's order (its recommended route first). Same geocode retry as
-        get_route when the raw inputs give no route."""
+        in Google's order (its recommended route first).
+        """
         if not self.client:
             raise ValueError("Google Maps API Key not configured")
-        result = self._directions(origin, destination, alternatives=True)
-        if not result:
-            geo_origin, geo_dest = self.geocode(origin), self.geocode(destination)
-            if geo_origin and geo_dest:
-                result = self._directions(geo_origin, geo_dest, alternatives=True)
+        origin, destination = validate_route_endpoints(origin, destination)
+        result = self._route_directions(origin, destination, alternatives=True)
         routes = []
         for route in (result or [])[:max_routes]:
             try:
@@ -93,9 +82,31 @@ class GoogleMapsService:
                 print(f"DEBUG: skipping unparsable route: {_safe(exc)}")
         return routes
 
+    def _route_directions(self, origin: str, destination: str, alternatives: bool):
+        result = self._directions(origin, destination, alternatives=alternatives)
+        if (
+            not result
+            and not settings.PUBLIC_READ_ONLY
+            and parse_lat_lng(origin) is None
+            and parse_lat_lng(destination) is None
+        ):
+            geo_origin, geo_dest = self.geocode(origin), self.geocode(destination)
+            if geo_origin and geo_dest:
+                result = self._directions(geo_origin, geo_dest, alternatives=alternatives)
+        return result
+
+    @staticmethod
+    def _reserve_billable_call() -> None:
+        try:
+            default_quota().reserve()
+        except DirectionsQuotaExceeded as exc:
+            # Keep the clear quota error visible through public error masking.
+            raise GraphQLError(str(exc), extensions={"code": "RESOURCE_EXHAUSTED"}) from exc
+
     # language/region=hu: Hungarian route summaries ("… és …") and HU-biased
     # geocoding of the free-text endpoints; still one request.
     def _directions(self, origin, destination, alternatives: bool):
+        self._reserve_billable_call()
         try:
             assert self.client is not None, "Google Maps API key not configured"  # caught below, as before
             return self.client.directions(origin, destination, mode="driving", language="hu", region="hu",
@@ -280,11 +291,11 @@ class GoogleMapsService:
     def geocode(self, address: str) -> Optional[str]:
         """
         Geocodes an address string to 'lat,lng' format.
-        Returns None if geocoding fails.
+        Returns None if geocoding fails; daily budget errors propagate.
         """
         if not self.client:
             return None
-        
+        self._reserve_billable_call()
         try:
             result = self.client.geocode(address)
             if result:
