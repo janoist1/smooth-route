@@ -424,3 +424,37 @@ def test_record_maps_the_unlabelled_area_flag_to_the_reason():
     assert flagged.confidence_reason == "unlabelled_area"
     plain = _record(SimpleNamespace(**base, unlabelled_area=False), cfg)
     assert plain.confidence_reason != "unlabelled_area"
+
+
+class _CaptureDb:
+    """Fake session: records the SQL text, returns no rows."""
+
+    def __init__(self):
+        self.sql = None
+
+    def execute(self, clause, params=None):
+        self.sql = str(clause)
+        self.params = params
+
+        class _Rows:
+            def fetchall(self):
+                return []
+
+        return _Rows()
+
+
+def test_bbox_query_uses_plain_simplify_below_street_zoom():
+    # ST_SimplifyPreserveTopology (GEOS per row) cost ~85 ms of ~110 ms for a
+    # zoom-13 Budapest viewport; segments are single short LineStrings.
+    db = _CaptureDb()
+    fetch_segments_in_bbox(db, [19.0, 47.4, 19.2, 47.6], 13)
+    assert "ST_Simplify(s.geom, :tol, true)" in db.sql
+    assert "PreserveTopology" not in db.sql
+    assert db.params["tol"] == pytest.approx(simplify_tolerance_deg(13))
+
+
+def test_bbox_query_sends_raw_geometry_from_zoom_18():
+    db = _CaptureDb()
+    fetch_segments_in_bbox(db, [19.0, 47.49, 19.01, 47.5], 18)
+    assert "ST_AsGeoJSON(s.geom, 6)" in db.sql
+    assert "ST_Simplify" not in db.sql

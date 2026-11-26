@@ -43,6 +43,13 @@ else:
         allow_headers=["*"],
     )
 
+# gzip: a zoom-13 roadSegments answer for Budapest is ~350 KB of JSON and
+# compresses ~6x. Starlette skips text/event-stream, so the job SSE stream is
+# untouched; bodies under 1 KB are sent as they are.
+from starlette.middleware.gzip import GZipMiddleware
+
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
 # Added last = outermost: every response (incl. CORS preflights) gets them.
 app.add_middleware(SecurityHeadersMiddleware)
 
