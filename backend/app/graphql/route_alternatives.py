@@ -80,7 +80,7 @@ def _route_alternatives(origin: str, destination: str) -> RouteAlternatives:
     from app.core.config import settings
     from app.core.rqi_scale import SCALE
     from app.graphql.limits import validate_route_endpoints
-    from app.services.google_maps import google_maps_service
+    from app.services.routing import routing_service as google_maps_service
     from app.services.route_alternatives import RouteCandidate, rank_routes
     from app.services.segment_read import route_quality as compute
 

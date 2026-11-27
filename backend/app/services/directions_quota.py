@@ -1,14 +1,15 @@
-"""Combined daily budget for Google Directions and Geocoding requests.
+"""Combined daily budget for routing and geocoding requests, per provider.
 
 Reserve before sending, including attempts that fail. Like sv_quota, use an
 exclusive file lock and atomic JSON replacement, so processes sharing a file
 cannot overbook and a crash can only over-count. Days use Google's Pacific
 billing clock. Corrupt/unwritable storage fails closed.
 
-PUBLIC_READ_ONLY defaults to /tmp/smooth-route/quota/google_directions.json:
+PUBLIC_READ_ONLY defaults to /tmp/smooth-route/quota/{provider counter}.json:
 Vercel storage is ephemeral and instance-local, so this is a best-effort cap,
 not a deployment-wide limit. Google Cloud API quotas are the hard money cap.
-GOOGLE_DIRECTIONS_QUOTA_PATH overrides the file location in either mode.
+ROUTING_QUOTA_PATH overrides storage; GOOGLE_DIRECTIONS_QUOTA_PATH is the
+legacy alias. Google retains its existing google_directions.json counter.
 """
 from __future__ import annotations
 
@@ -23,11 +24,11 @@ from app.core.config import settings
 from app.services.sv_quota import _pacific_now
 
 
-class DirectionsQuotaExceeded(RuntimeError):
+class RoutingQuotaExceeded(RuntimeError):
     """The daily budget is exhausted or cannot safely be read/written."""
 
 
-class DirectionsQuota:
+class RoutingQuota:
     def __init__(
         self,
         path: Path | str,
@@ -66,8 +67,8 @@ class DirectionsQuota:
                 finally:
                     fcntl.flock(lock, fcntl.LOCK_UN)
         except (OSError, ValueError) as exc:
-            raise DirectionsQuotaExceeded(
-                "Google Directions/Geocoding daily counter is unavailable; try again later"
+            raise RoutingQuotaExceeded(
+                "Routing/geocoding daily counter is unavailable; try again later"
             ) from exc
 
     def used(self) -> int:
@@ -83,8 +84,8 @@ class DirectionsQuota:
             day = self._now().date().isoformat()
             used = data["days"].get(day, 0)
             if used >= self.daily_cap:
-                raise DirectionsQuotaExceeded(
-                    f"Google Directions/Geocoding daily cap reached ({used}/{self.daily_cap}); "
+                raise RoutingQuotaExceeded(
+                    f"Routing/geocoding daily cap reached ({used}/{self.daily_cap}); "
                     "try again after midnight Pacific time"
                 )
             total = data["days"][day] = used + 1
@@ -93,11 +94,19 @@ class DirectionsQuota:
         return total
 
 
-def default_quota() -> DirectionsQuota:
+def default_quota(provider: str = "google") -> RoutingQuota:
     """Resolve storage lazily; public deployments never write to the bundle."""
-    if settings.GOOGLE_DIRECTIONS_QUOTA_PATH:
-        path = Path(settings.GOOGLE_DIRECTIONS_QUOTA_PATH).expanduser()
+    override = settings.ROUTING_QUOTA_PATH or settings.GOOGLE_DIRECTIONS_QUOTA_PATH
+    if override:
+        path = Path(override).expanduser()
     else:
         root = Path("/tmp/smooth-route") if settings.PUBLIC_READ_ONLY else Path(settings.resolve_data_dir())
-        path = root / "quota" / "google_directions.json"
-    return DirectionsQuota(path, settings.GOOGLE_DIRECTIONS_DAILY_CAP)
+        filename = "google_directions.json" if provider == "google" else "osm_routing.json"
+        path = root / "quota" / filename
+    cap = settings.ROUTING_DAILY_CAP
+    return RoutingQuota(path, cap if cap is not None else settings.GOOGLE_DIRECTIONS_DAILY_CAP)
+
+
+# Preserve imports and Google counter files used by existing deployments.
+DirectionsQuota = RoutingQuota
+DirectionsQuotaExceeded = RoutingQuotaExceeded

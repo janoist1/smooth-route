@@ -20,6 +20,7 @@ from sqlalchemy import func, text
 from app.core.database import SessionLocal
 from app.models.models import StreetViewImage, street_view_location
 from app.services.google_maps import google_maps_service
+from app.services.routing import routing_service
 from app.services.job_service import JobStep, update_job
 from app.services.network_sampling import load_sampling, sample_route
 
@@ -34,7 +35,7 @@ def collect_points(origin: str, destination: str, job_id: str,
     try:
         # A planned alternative already has geometry: reuse it without Directions.
         if path is None:
-            route_points_dicts = google_maps_service.get_route(origin, destination)
+            route_points_dicts = routing_service.get_route(origin, destination)
             route_tuples = [(p['lat'], p['lng']) for p in route_points_dicts]
         else:
             route_tuples = path

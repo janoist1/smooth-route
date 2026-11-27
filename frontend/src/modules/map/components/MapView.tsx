@@ -20,6 +20,7 @@ import { useRqiDisplaySource } from '../../settings/hooks'
 import QualityGridLayer from './QualityGridLayer'
 import StaleImageToggle from './StaleImageToggle'
 import { BASE_MAPS } from '../baseMaps'
+import { routingAttribution } from '../routingAttribution'
 import { isStaleCapture } from '../captureDate'
 
 // Helper to handle map events
@@ -256,6 +257,7 @@ const MapView: React.FC<MapViewProps> = ({ onTrain, onMapMove }) => {
             <Polyline
               ref={routeCasingRef}
               positions={routePoints}
+              attribution={routingAttribution(routeAlternatives?.find(r => r.index === selectedRouteIndex)?.provider)}
               interactive={false}
               pathOptions={{
                 color: '#3b82f6', // blue-500
@@ -280,6 +282,7 @@ const MapView: React.FC<MapViewProps> = ({ onTrain, onMapMove }) => {
         {routePoints && !layers.segments && (
           <Polyline
             positions={routePoints}
+            attribution={routingAttribution(routeAlternatives?.find(r => r.index === selectedRouteIndex)?.provider)}
             interactive={false}
             pathOptions={{
               color: '#3b82f6', // blue-500

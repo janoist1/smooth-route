@@ -58,6 +58,17 @@ const setup = (routes?: RouteAlternative[]) => {
 afterEach(() => vi.resetAllMocks())
 
 describe('route planning and analysis', () => {
+  it.each(['osm', 'google'])('keeps the server-selected %s source when switching alternatives', async provider => {
+    query.mockResolvedValue({ data: { ...alternatives.data, routingProvider: provider } })
+    const { store, task } = setup()
+    try {
+      await store.dispatch(actions.planRoute(endpoints))
+      store.dispatch(actions.selectRouteAlternative(1))
+      expect(store.getState().map.routeAlternatives?.map(r => r.provider)).toEqual([provider, provider])
+      expect(store.getState().map.selectedRouteIndex).toBe(1)
+    } finally { task.cancel() }
+  })
+
   it('analyzes alternative 2 after it is selected instead of sending only the endpoints', async () => {
     query.mockResolvedValue(alternatives)
     mutate.mockResolvedValue({ processRoute: { id: 'job-2' } })

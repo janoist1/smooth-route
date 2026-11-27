@@ -105,6 +105,7 @@ def route_dicts(length_m):
 def test_no_route_stores_nothing(monkeypatch, updates):
     opened = []
     monkeypatch.setattr(rc, "google_maps_service", FakeMaps([]))
+    monkeypatch.setattr(rc, "routing_service", FakeMaps([]))
     monkeypatch.setattr(rc, "SessionLocal", lambda: opened.append(1))
     assert rc.collect_points("A", "B", "job1") is None
     assert opened == []
@@ -116,6 +117,7 @@ def test_first_pass_stores_one_pending_point_per_50_m(monkeypatch, updates):
     maps = FakeMaps(route_dicts(500))
     session = FakeSession()
     monkeypatch.setattr(rc, "google_maps_service", maps)
+    monkeypatch.setattr(rc, "routing_service", maps)
     monkeypatch.setattr(rc, "SessionLocal", lambda: session)
 
     rc.collect_points("A", "B", "job1")
@@ -140,6 +142,7 @@ def test_selected_alternative_is_sampled_without_directions(monkeypatch, updates
     maps = FakeMaps(AssertionError("selected route must not fetch Directions"))
     session = FakeSession()
     monkeypatch.setattr(rc, "google_maps_service", maps)
+    monkeypatch.setattr(rc, "routing_service", maps)
     monkeypatch.setattr(rc, "SessionLocal", lambda: session)
 
     rc.collect_points("A", "B", "job2", path=selected)
@@ -153,6 +156,7 @@ def test_points_with_a_stored_neighbour_are_not_stored_again(monkeypatch, update
     maps = FakeMaps(route_dicts(200))
     session = FakeSession(existing=[object(), None, object()])   # 1st and 3rd already known
     monkeypatch.setattr(rc, "google_maps_service", maps)
+    monkeypatch.setattr(rc, "routing_service", maps)
     monkeypatch.setattr(rc, "SessionLocal", lambda: session)
 
     rc.collect_points("A", "B", "job1")
@@ -215,6 +219,7 @@ def test_dedupe_uses_legacy_coordinates_and_prefers_stored_location(
 
     monkeypatch.setattr(session, "query", lambda model: SpatialQuery(session))
     monkeypatch.setattr(rc, "google_maps_service", maps)
+    monkeypatch.setattr(rc, "routing_service", maps)
     monkeypatch.setattr(rc, "SessionLocal", lambda: session)
     try:
         rc.collect_points("A", "B", "job1")
@@ -226,6 +231,7 @@ def test_dedupe_uses_legacy_coordinates_and_prefers_stored_location(
 
 def test_route_lookup_failure_is_raised_to_the_job(monkeypatch, updates):
     monkeypatch.setattr(rc, "google_maps_service", FakeMaps(RuntimeError("directions down")))
+    monkeypatch.setattr(rc, "routing_service", FakeMaps(RuntimeError("directions down")))
     with pytest.raises(RuntimeError, match="directions down"):
         rc.collect_points("A", "B", "job1")
 

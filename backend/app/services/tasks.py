@@ -32,7 +32,7 @@ def run_route_processing(job_id: str, origin: str, destination: str,
     started_at = utcnow()  # frames created from here on belong to this job
     try:
         from app.services.road_quality import road_quality_service
-        from app.services.google_maps import google_maps_service
+        from app.services.routing import routing_service
         import re
 
         print(f"DEBUG: Starting job {job_id} processing")
@@ -48,7 +48,7 @@ def run_route_processing(job_id: str, origin: str, destination: str,
 
         if path is None and not is_coordinate(origin):
             update_job(job_id, message=f"Cím feloldása: {origin}...")
-            geocoded = google_maps_service.geocode(origin)
+            geocoded = routing_service.geocode(origin)
             if geocoded:
                 final_origin = geocoded
                 print(f"DEBUG: Geocoded origin '{origin}' to '{final_origin}'")
@@ -57,7 +57,7 @@ def run_route_processing(job_id: str, origin: str, destination: str,
 
         if path is None and not is_coordinate(destination):
             update_job(job_id, message=f"Cím feloldása: {destination}...")
-            geocoded = google_maps_service.geocode(destination)
+            geocoded = routing_service.geocode(destination)
             if geocoded:
                 final_dest = geocoded
                 print(f"DEBUG: Geocoded destination '{destination}' to '{final_dest}'")

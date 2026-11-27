@@ -83,7 +83,7 @@ class TestResolver:
 
     def test_marks_fastest_and_smoothest_from_one_google_call(self, monkeypatch):
         import app.graphql.route_alternatives as mod
-        from app.services import google_maps, segment_read
+        from app.services import routing, segment_read
 
         calls = []
 
@@ -101,7 +101,7 @@ class TestResolver:
                                    mean_score=score, mean_rqi=segment_read.load_config().classify(score),
                                    worst_segments=[])
 
-        monkeypatch.setattr(google_maps.google_maps_service, "get_routes", fake_routes)
+        monkeypatch.setattr(routing.routing_service, "get_routes", fake_routes)
         monkeypatch.setattr(segment_read, "route_quality", fake_quality)
         monkeypatch.setattr(mod, "get_db_session", lambda: SimpleNamespace(close=lambda: None))
         from app.graphql.schema import schema

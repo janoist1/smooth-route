@@ -13,7 +13,7 @@ from app.graphql.schema import FullQuery, PublicQuery, read_schema, schema
 
 PUBLIC_QUERY_FIELDS = {
     "me", "point", "points", "roadQualityGrid", "roadSegments", "routeQuality",
-    "segmentFrames", "job", "activeJob", "routeAlternatives",
+    "segmentFrames", "job", "activeJob", "routeAlternatives", "routingProvider",
 }
 ADMIN_QUERY_FIELDS = {
     "config", "settings", "availableModels", "rqiModelInfo", "adminStats",
