@@ -28,16 +28,19 @@ class RouteOption:
     quality: RouteQuality
     coverage: float  # covered share of the route, 0..1
     is_fastest: bool
-    is_smoothest: bool
+    is_smoothest: bool = strawberry.field(
+        description="Lowest impact among routes within the duration budget and coverage floor; may be uncertain.")
+    smoothest_confident: bool = strawberry.field(
+        description="True only for the smoothest route when coverage meets ROUTE_SMOOTH_MIN_COVERAGE.")
 
 
 @strawberry.type
 class RouteAlternatives:
     routes: List[RouteOption]
     fastest_index: Optional[int]
-    smoothest_index: Optional[int]  # null: no route is fast enough AND covered enough
+    smoothest_index: Optional[int]  # null: no route meets the duration budget and coverage floor
     max_extra_duration: float
-    min_coverage: float
+    min_coverage: float  # eligibility floor, separate from the confidence threshold
 
 
 def measurable(route: dict) -> bool:
@@ -76,12 +79,13 @@ def _route_alternatives(origin: str, destination: str) -> RouteAlternatives:
     """Up to 3 driving routes from one Google Directions call, each with
     its RouteQuality; marks the fastest and the smoothest (lowest
     speed-weighted impact, RouteQuality.impactScore, within +ROUTE_SMOOTH_MAX_EXTRA_DURATION of the
-    fastest, with at least ROUTE_SMOOTH_MIN_COVERAGE of it measured)."""
+    fastest, with at least SMOOTHEST_COVERAGE_FLOOR of it measured).
+    Confidence additionally requires ROUTE_SMOOTH_MIN_COVERAGE."""
     from app.core.config import settings
     from app.core.rqi_scale import SCALE
     from app.graphql.limits import validate_route_endpoints
     from app.services.google_maps import google_maps_service
-    from app.services.route_alternatives import RouteCandidate, rank_routes
+    from app.services.route_alternatives import SMOOTHEST_COVERAGE_FLOOR, RouteCandidate, rank_routes
     from app.services.segment_read import route_quality as compute
 
     validate_route_endpoints(origin, destination)
@@ -102,8 +106,8 @@ def _route_alternatives(origin: str, destination: str) -> RouteAlternatives:
                             total_m=q.total_length_m, impact_score=q.impact_score)
              for r, q in zip(routes, qualities)]
     extra = settings.ROUTE_SMOOTH_MAX_EXTRA_DURATION
-    min_cov = settings.ROUTE_SMOOTH_MIN_COVERAGE
-    fastest, smoothest = rank_routes(cands, SCALE, extra, min_cov)
+    confident_coverage = settings.ROUTE_SMOOTH_MIN_COVERAGE
+    fastest, smoothest = rank_routes(cands, SCALE, extra)
     return RouteAlternatives(
         routes=[RouteOption(
             index=i,
@@ -111,7 +115,8 @@ def _route_alternatives(origin: str, destination: str) -> RouteAlternatives:
             distance_m=round(r["distance_m"], 1), duration_s=round(r["duration_s"], 1),
             summary=r["summary"], quality=q, coverage=round(c.coverage, 3),
             is_fastest=i == fastest, is_smoothest=i == smoothest,
+            smoothest_confident=i == smoothest and c.coverage >= confident_coverage,
         ) for i, (r, q, c) in enumerate(zip(routes, qualities, cands))],
         fastest_index=fastest, smoothest_index=smoothest,
-        max_extra_duration=extra, min_coverage=min_cov,
+        max_extra_duration=extra, min_coverage=SMOOTHEST_COVERAGE_FLOOR,
     )

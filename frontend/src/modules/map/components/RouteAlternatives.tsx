@@ -23,7 +23,8 @@ const badge = (bg: string): React.CSSProperties => ({
  * Google's alternative routes as selectable cards: time, distance, a quality
  * bar (same classes/colours as the route-quality card) and how much of the
  * route is measured. "Legsimább" / "Leggyorsabb" come from the backend
- * ranking (smoothest = best quality within +20 % time, enough coverage).
+ * ranking (smoothest = lowest impact within +20 % time and the coverage
+ * floor). Low-coverage winners carry an uncertain badge and coverage hint.
  */
 const RouteAlternatives: React.FC<RouteAlternativesProps> = ({ routes, selectedIndex, onSelect }) => {
   if (routes.length < 2) return null
@@ -61,7 +62,13 @@ const RouteAlternatives: React.FC<RouteAlternativesProps> = ({ routes, selectedI
                 {extra && ` · ${extra}`}
               </span>
               <span style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
-                {route.isSmoothest && <span style={badge('#16a34a')}>Legsimább</span>}
+                {route.isSmoothest && (
+                  <span
+                    style={badge(route.smoothestConfident ? '#16a34a' : '#64748b')}
+                    title={route.smoothestConfident ? undefined : `Kevés adat: az útvonal ${Math.round(route.coverage * 100)}%-áról van mérés`}>
+                    {route.smoothestConfident ? 'Legsimább' : 'Legsimább?'}
+                  </span>
+                )}
                 {route.isFastest && <span style={badge('#2563eb')}>Leggyorsabb</span>}
               </span>
             </span>

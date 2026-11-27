@@ -14,6 +14,7 @@ const route = (index: number, durationS: number, extra: Partial<RouteAlternative
   coverage: 0.8,
   isFastest: false,
   isSmoothest: false,
+  smoothestConfident: false,
   ...extra,
 })
 
@@ -27,11 +28,26 @@ describe('route alternatives helpers', () => {
       })
     const ranked = rankRouteAlternatives([
       candidate(0, 600, 800, 1), candidate(1, 720, 500, 0.5),
-      candidate(2, 721, 1000, 0), candidate(3, 650, 499, 0),
+      candidate(2, 721, 1000, 0), candidate(3, 650, 99.9, 0),
     ])
-    expect(ranked.map(r => r.coverage)).toEqual([0.8, 0.5, 1, 0.499])
+    expect(ranked.map(r => r.coverage)).toEqual([0.8, 0.5, 1, 0.0999])
     expect(ranked.filter(r => r.isSmoothest).map(r => r.index)).toEqual([1])
+    expect(ranked.map(r => r.smoothestConfident)).toEqual([false, true, false, false])
     expect(ranked.filter(r => r.isFastest).map(r => r.index)).toEqual([0])
+  })
+
+  it.each([
+    [0, false, false], [99.9, false, false], [100, true, false],
+    [430, true, false], [499.9, true, false], [500, true, true],
+  ])('refreshes eligibility and confidence with %s measured metres', (coveredLengthM, isSmoothest, smoothestConfident) => {
+    const ranked = rankRouteAlternatives([
+      route(0, 600, {
+        isSmoothest: true,
+        smoothestConfident: true,
+        quality: { ...quality, coveredLengthM },
+      }),
+    ])
+    expect(ranked[0]).toMatchObject({ coverage: coveredLengthM / 1000, isSmoothest, smoothestConfident })
   })
 
   it('falls back to canonical mean scores when any measured route lacks impact', () => {
@@ -48,13 +64,15 @@ describe('route alternatives helpers', () => {
     expect(ranked.filter(r => r.isFastest).map(r => r.index)).toEqual([4])
     expect(rankRouteAlternatives([
       route(0, 600, { isSmoothest: true, quality: { ...quality, totalLengthM: 0, coveredLengthM: 0, meanScore: null } }),
-    ])[0]).toMatchObject({ coverage: 0, isSmoothest: false, isFastest: true })
+    ])[0]).toMatchObject({ coverage: 0, isSmoothest: false, smoothestConfident: false, isFastest: true })
     expect(rankRouteAlternatives([])).toEqual([])
   })
 
-  it('shows the smoothest first, else the fastest, else Google’s first', () => {
-    const routes = [route(0, 600), route(1, 650)]
+  it('shows the confident smoothest first, else the fastest, else Google’s first', () => {
+    const routes = [route(0, 600), route(1, 650, { smoothestConfident: true })]
     expect(defaultRouteIndex({ routes, fastestIndex: 0, smoothestIndex: 1 })).toBe(1)
+    const uncertain = [route(0, 600), route(1, 650, { smoothestConfident: false })]
+    expect(defaultRouteIndex({ routes: uncertain, fastestIndex: 0, smoothestIndex: 1 })).toBe(0)
     expect(defaultRouteIndex({ routes, fastestIndex: 0, smoothestIndex: null })).toBe(0)
     expect(defaultRouteIndex({ routes, fastestIndex: null, smoothestIndex: null })).toBe(0)
     expect(defaultRouteIndex({ routes: [], fastestIndex: null, smoothestIndex: null })).toBeNull()
