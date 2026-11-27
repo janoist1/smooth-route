@@ -94,7 +94,7 @@ def run_route(monkeypatch, origin, destination, known=None, service=None):
     service = service or RouteService()
     geocoder = Geocoder(known or {})
     install(monkeypatch, "app.services.road_quality", road_quality_service=service)
-    install(monkeypatch, "app.services.google_maps", google_maps_service=geocoder)
+    install(monkeypatch, "app.services.routing", routing_service=geocoder)
     monkeypatch.setattr(tasks, "refresh_road_segments", lambda job_id, since=None: None)
     tasks.run_route_processing("job1", origin, destination)
     return service, geocoder
@@ -138,7 +138,7 @@ def test_failing_to_record_the_failure_does_not_raise(monkeypatch):
 
     monkeypatch.setattr(tasks, "update_job", broken_update)
     install(monkeypatch, "app.services.road_quality", road_quality_service=RouteService())
-    install(monkeypatch, "app.services.google_maps", google_maps_service=Geocoder({}))
+    install(monkeypatch, "app.services.routing", routing_service=Geocoder({}))
     tasks.run_route_processing("job1", "47.5,19.05", "47.6,19.1")
 
 

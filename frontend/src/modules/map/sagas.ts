@@ -64,10 +64,11 @@ const GET_POINT_DETAIL = gql(`
   }
 `)
 
-// One Google Directions call per plan (alternatives=true); every route comes
+// One routing call per plan (alternatives=true); every route comes
 // with its road quality from the stored segments.
 const ROUTE_ALTERNATIVES = gql(`
   query RouteAlternatives($origin: String!, $destination: String!) {
+    routingProvider
     routeAlternatives(origin: $origin, destination: $destination) {
       fastestIndex
       smoothestIndex
@@ -203,7 +204,9 @@ function* planRouteWorker(action: SagaActionFromCreator<typeof actions.planRoute
   }
 
   const res = result.data.routeAlternatives
+  const provider = result.data.routingProvider
   const routes: RouteAlternative[] = res.routes.map(r => ({
+    provider,
     index: r.index,
     points: r.points.map(p => [p.lat, p.lng] as [number, number]),
     distanceM: r.distanceM,

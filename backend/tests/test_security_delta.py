@@ -82,7 +82,7 @@ def test_alternatives_skip_quality_for_routes_over_the_cap(monkeypatch):
     import app.graphql.route_alternatives as mod
     from app.core.auth import Identity
     from app.graphql.limits import MAX_PATH_KM
-    from app.services import google_maps, segment_read
+    from app.services import routing, segment_read
 
     pts = [{"lat": 47.5, "lng": 19.05}, {"lat": 47.49, "lng": 19.06}]
     routes = [
@@ -97,7 +97,7 @@ def test_alternatives_skip_quality_for_routes_over_the_cap(monkeypatch):
         return SimpleNamespace(total_length_m=5000.0, length_by_rqi=[5000.0, 0, 0, 0, 0],
                                mean_score=4.0, worst_segments=[])
 
-    monkeypatch.setattr(google_maps.google_maps_service, "get_routes", lambda o, d: routes)
+    monkeypatch.setattr(routing.routing_service, "get_routes", lambda o, d: routes)
     monkeypatch.setattr(segment_read, "route_quality", fake_quality)
     monkeypatch.setattr(mod, "get_db_session", lambda: SimpleNamespace(close=lambda: None))
     from app.graphql.schema import schema
@@ -269,13 +269,13 @@ def test_async_fragment_budget_runs_before_other_validators():
 
 def test_modifier_rejected_before_google_or_address_fallback(monkeypatch):
     from app.core.config import settings
-    from app.services.google_maps import google_maps_service
+    from app.services.routing import routing_service
 
     def unexpected_call(*args, **kwargs):
         pytest.fail("modifier reached Google")
 
     monkeypatch.setattr(settings, "PUBLIC_READ_ONLY", True)
-    monkeypatch.setattr(google_maps_service, "get_routes", unexpected_call)
+    monkeypatch.setattr(routing_service, "get_routes", unexpected_call)
     assert rejected(run_public(
         '{ routeAlternatives(origin: "heading=90:40.7,-74.0", destination: "Győr") '
         '{ fastestIndex } }'), "modifiers")
@@ -322,7 +322,7 @@ def test_google_http_timeout_is_bounded_and_clean(monkeypatch, method, timeout_k
 def test_public_google_call_runs_off_event_loop(monkeypatch):
     from app.core.config import settings
     from app.graphql.schema import read_schema
-    from app.services.google_maps import google_maps_service
+    from app.services.routing import routing_service
     import app.graphql.route_alternatives as mod
 
     monkeypatch.setattr(settings, "PUBLIC_READ_ONLY", True)
@@ -333,7 +333,7 @@ def test_public_google_call_runs_off_event_loop(monkeypatch):
         worker_threads.append(threading.get_ident())
         return []
 
-    monkeypatch.setattr(google_maps_service, "get_routes", fake_routes)
+    monkeypatch.setattr(routing_service, "get_routes", fake_routes)
     monkeypatch.setattr(mod, "get_db_session", lambda: SimpleNamespace(close=lambda: None))
     result = asyncio.run(read_schema.execute(
         '{ routeAlternatives(origin: "Budapest", destination: "Győr") { fastestIndex } }',
@@ -347,7 +347,6 @@ def test_public_timeout_returns_generic_error_without_fallback(monkeypatch):
     import googlemaps
     from app.core.config import settings
     from app.graphql.schema import read_schema
-    from app.services.google_maps import google_maps_service
 
     calls = []
 
@@ -359,6 +358,8 @@ def test_public_timeout_returns_generic_error_without_fallback(monkeypatch):
         pytest.fail("timeout triggered a paid fallback")
 
     monkeypatch.setattr(settings, "PUBLIC_READ_ONLY", True)
+    from app.services.google_maps import google_maps_service
+    monkeypatch.setattr(settings, "ROUTING_PROVIDER", "google")
     monkeypatch.setattr(google_maps_service, "client",
                         SimpleNamespace(directions=timeout, geocode=unexpected_geocode))
     result = asyncio.run(read_schema.execute(

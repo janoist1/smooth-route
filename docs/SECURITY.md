@@ -1,11 +1,14 @@
 # Public API: security and cost limits
 
-*Status 2026-11-27 (T-105 independent public API review).*
+*Status 2026-11-27 (T-107 free routing; T-105 public API limits retained).*
 
 The round-1 API (`PUBLIC_READ_ONLY=1`, Vercel → Neon) is anonymous. Anything a
-stranger can call costs money or capacity: Google Directions/Geocoding
-(`getRoute`), Neon compute and egress, Vercel function time and bandwidth. The
-code caps every **single request** and applies a best-effort daily Google budget;
+stranger can call consumes capacity: public OSM routing/geocoding services,
+Neon compute and egress, Vercel function time and bandwidth. Route planning
+defaults to free OSRM + Nominatim (`ROUTING_PROVIDER=osm`), without a Google key
+or automatic paid fallback. Explicit `ROUTING_PROVIDER=google` retains paid
+Directions/Geocoding. Street View collection remains on Google, locally only.
+The code caps every **single request** and applies a best-effort daily routing budget;
 per-IP rates and hard money caps live in
 the dashboards (owner checklist below). Nothing here knows who is calling.
 
@@ -29,7 +32,7 @@ Wiring: `backend/app/main.py`; security headers on every response:
 ## Request limits (`backend/app/graphql/limits.py`)
 
 Registered in `schema.py` via `schema_extensions(public=...)`. Rejections happen
-**before execution** (no DB row read, no Google call) and carry
+**before execution** (no DB row read, no upstream call) and carry
 `extensions.code = "BAD_USER_INPUT"`.
 
 | Limit | Value | Why |
@@ -38,9 +41,9 @@ Registered in `schema.py` via `schema_extensions(public=...)`. Rejections happen
 | Expanded selections per document | 10 000 | iterative, cycle-safe, memoized per selection set/fragment; checked before depth/aliases and GraphQL validation; repeated spreads count toward the budget |
 | Query depth | 8 | frontend max 3 (introspection not counted) |
 | Aliases | 10 | frontend uses none |
-| `getRoute` + `routeAlternatives` per request | 1 in total | public: at most 1 Directions call, no Geocoding or retries; `alternatives=true` is billed as one call |
-| Directions + Geocoding per Pacific day | `GOOGLE_DIRECTIONS_DAILY_CAP=300` combined attempts (0 blocks all) | reserve before every call, including failed attempts; local and public modes |
-| `routeAlternatives` route quality | only for Google routes ≤ 800 km and ≤ 20 000 points; longer ones come back unmeasured (coverage 0) | Google picks the route: a text destination abroad could mean 3 × 2 000 km of matching |
+| `getRoute` + `routeAlternatives` per request | 1 in total | OSM: at most 1 routing attempt + 2 uncached geocodes; Google public: 1 Directions attempt; no retries |
+| Routing + geocoding per Pacific day | `ROUTING_DAILY_CAP=300` combined attempts (legacy `GOOGLE_DIRECTIONS_DAILY_CAP` alias; 0 blocks all) | reserve before every call, including failed attempts; local and public modes, both providers |
+| `routeAlternatives` route quality | only for returned routes ≤ 800 km and ≤ 20 000 points; longer ones come back unmeasured (coverage 0) | The upstream picks the route: a text destination abroad could mean 3 × 2 000 km of matching |
 | `Point.segmentId` | only below `point(id)`; refused under `points` / `segmentFrames` | one PostGIS query per point (~5 ms locally, a Neon round trip in prod): `points(limit: 20000) { segmentId }` = 20 000 queries |
 | `segmentFrames` per request | 2 | ~10–35 ms each |
 | `getRoute` / `routeAlternatives` origin/destination | ≤ 200 chars, no control chars; decimal `lat,lng` must be inside `SERVICE_AREA` (HU + margin); other numeric formats and `name:value` location modifiers are rejected | no `heading=…:`, `side_of_road:`, `via:` or `place_id:` address fallback |
@@ -53,42 +56,80 @@ Registered in `schema.py` via `schema_extensions(public=...)`. Rejections happen
 | `config` (server Google key) | refused on the public schema | defense in depth for the QA fix |
 | Label queue (`labelQueue`, `quickLabel`, undo, re-check) | not on the public schema; `IsAdmin` on the full schema | |
 
-Logs: Google client errors are logged through `secret_scan.redact_secrets`.
-`requests` puts the full URL, `key=` included, into connection-error messages.
+Routing/geocoding HTTP attempts use **2 s connect / 5 s read** timeouts,
+without automatic retries. OSM redirects are disabled as well. Timeouts stop
+processing and return generic `UPSTREAM_TIMEOUT`; OSM HTTP 429 returns
+`RESOURCE_EXHAUSTED`, other upstream failures use generic `UPSTREAM_ERROR`.
+OSM errors never contain upstream bodies, URLs or addresses, even in logs.
+Google client logs still pass through `secret_scan.redact_secrets` (the SDK can
+include `key=` in exception URLs). Both route resolvers offload blocking I/O
+to a worker thread; alternatives keep their DB session/matching there too.
 
 Coordinate parsing accepts only decimal `lat,lng`, with optional whitespace
-around the comma. Numeric alternatives such as `47.5 19.04`, semicolons, explicit
-plus signs, Unicode minus signs and N/E prefixes are **rejected**, even inside
-the bbox; they never fall through to address geocoding. Real addresses retain
-the existing Google path (including addresses abroad). Google location modifiers
-and any `name:value` prefix are rejected before address fallback, including
-modifiers hiding foreign coordinates. Local requests with
-either endpoint a coordinate use at most 1 Directions call; two addresses may
-use at most 4 calls on a miss (Directions + 2 Geocoding + Directions). Public
-requests always use at most 1 Directions call. The SDK's automatic HTTP/API
-retries are disabled in both modes.
-Directions and Geocoding share a client with a **2 s connect / 5 s read timeout**
-on every HTTP attempt. Timeouts return a generic `UPSTREAM_TIMEOUT` error with
-no URL or exception text and stop fallback/retry calls. Both route resolvers
-offload blocking Google I/O to a worker thread; `routeAlternatives` also keeps
-its synchronous DB session and matching work in that thread.
+around the comma. Numeric alternatives such as `47.5 19.04`, semicolons,
+explicit plus signs, Unicode minus signs and N/E prefixes are rejected.
+Location modifiers and any `name:value` prefix are rejected before address
+fallback. OSM text endpoints use Nominatim's HU-only search and resolved
+coordinates must pass `validate_route_endpoints` before OSRM. A plan uses
+zero to two geocodes followed by at most one routing call. Cached geocodes
+(including empty results) consume no request budget. Google retains its old
+behavior: public mode always at most one Directions call, no geocoding
+fallback; local mode with either endpoint a coordinate uses at most one
+Directions call, two addresses may use up to four combined calls on a miss.
 
-The combined daily counter (`backend/app/services/directions_quota.py`) follows
-the Street View counter's exclusive file lock and atomic JSON replacement.
-Days reset at midnight US Pacific time. Local storage is
-`DATA_DIR/quota/google_directions.json`; `PUBLIC_READ_ONLY=1` uses
-`/tmp/smooth-route/quota/google_directions.json`, so it works with Vercel's
-read-only deployment bundle. Optional `GOOGLE_DIRECTIONS_QUOTA_PATH` sets an
-alternate counter file (use an absolute, writable path). Corrupt or unwritable
-storage blocks calls; exhaustion returns `RESOURCE_EXHAUSTED` with a clear error.
+The combined daily counter (`backend/app/services/directions_quota.py`) uses
+an exclusive file lock and atomic JSON replacement, with a separate default
+counter per provider. Days reset at midnight US Pacific time for backward
+compatibility. Local storage is `DATA_DIR/quota/osm_routing.json` (Google:
+`google_directions.json`); public mode uses the same names under
+`/tmp/smooth-route/quota/`. `ROUTING_QUOTA_PATH` overrides the path; legacy
+`GOOGLE_DIRECTIONS_QUOTA_PATH` still works when unset. `ROUTING_DAILY_CAP`
+takes precedence over the legacy cap setting. Corrupt or unwritable storage
+blocks calls; exhaustion returns `RESOURCE_EXHAUSTED`.
 Vercel's filesystem is ephemeral and not shared across instances: this is a
-**per-instance, best-effort cap**, lost on replacement/restart and independent
-on each instance. The hard cap is the Google Cloud quota in owner checklist
-item 3 below; the application counter does not replace it.
-Finding 4 remains a documented limitation: there is no deployment-wide atomic
-application counter. **Only the separately configured Google Cloud hard quota
-caps deployment-wide Google usage**; its dashboard settings have not been
-verified by these offline tests. Budget alerts do not enforce a cap.
+**per-instance, best-effort cap**, lost on replacement/restart. It does not
+provide a deployment-wide counter or rate limiter. If Google is enabled,
+only its separately configured Cloud quotas provide a hard spending cap;
+budget alerts do not enforce one. Offline tests do not verify dashboards.
+
+## OSM public service policies and attribution (T-107)
+
+Policies checked 2026-11-27:
+[FOSSGIS routing](https://routing.openstreetmap.de/about.html), linking the
+[full FOSSGIS terms](https://www.fossgis.de/arbeitsgruppen/osm-server/nutzungsbedingungen/),
+and [Nominatim](https://operations.osmfoundation.org/policies/nominatim/).
+The full German FOSSGIS page was access-blocked during the check; the
+operator's English policy excerpt supplies the routing requirements below.
+These are donated public services with limited capacity, not unlimited free
+infrastructure. The application owner remains responsible for their use.
+
+- All OSM requests identify the app with
+  `User-Agent: simaut.hu road-quality map (+https://simaut.hu)`; no personal
+  e-mail or user credentials are sent.
+- **Both** OSRM and Nominatim are serialized and paced at at most one request
+  per second per process (independent locks, shared by worker threads and
+  service objects). A 256-entry, 24-hour in-process LRU stores Nominatim hits
+  and misses; concurrent duplicate searches coalesce into one lookup.
+- Only explicit, moderate, end-user route plans and their selected-path jobs
+  may use these hosts. No autocomplete, periodic lookup, bulk geocoding,
+  scraping or load tests. Do not submit personal/confidential material.
+  Nominatim is not exposed as a generic address-search API.
+- Public-service limits apply to the **whole application**, summed over users
+  and instances. Before deploying more than one worker/instance against these
+  hosts, provide one shared rate-limited proxy/cache, or change the URLs to
+  separately hosted services. Per-process throttles and daily caps do not
+  meet that aggregate requirement by themselves. A serverless fleet must not
+  rely on these local guards as its only policy enforcement.
+- `ROUTING_OSRM_URL` and `ROUTING_NOMINATIM_URL` allow switching hosts without
+  a frontend/software update. Check custom operators' policies and credits.
+  Do not automatically switch to paid Google when a public host fails.
+- OpenStreetMap-derived data is under **ODbL**; preserve attribution and any
+  applicable share-alike duties on redistributed databases. The map keeps
+  its © OpenStreetMap contributors/copyright link. While a planned OSM route
+  is displayed, Leaflet also credits **Útvonal: OSRM · FOSSGIS** and shows
+  **Térkép javítása** linking to `https://www.openstreetmap.org/fixthemap`.
+  Attribution remains visible when the route panel is collapsed. Explicit
+  Google mode displays its routing credit instead.
 
 The validators are plain functions; call them first thing in a resolver when
 it is used outside the guard (e.g. a REST endpoint or a renamed argument):
@@ -97,9 +138,11 @@ it is used outside the guard (e.g. a REST endpoint or a renamed argument):
 Admin data on a public type: `admin_only_field()` in `permissions.py` (null for
 non-admins, no error).
 
-Probe locally without spending quota: `.claude/launch.json` → `api-readonly-8004`
-(PUBLIC_READ_ONLY=1, Clerk unconfigured, Google key blanked). Never load-test the
-live URLs.
+For local public-schema probes, `.claude/launch.json` → `api-readonly-8004`
+sets public mode with Clerk unconfigured and the Google key blanked. OSM
+planning still contacts public services without a key: mock the routing
+client or set `ROUTING_DAILY_CAP=0` for zero-upstream probes. Never load-test
+the live URLs.
 
 ## Owner checklist (dashboards only)
 
@@ -112,11 +155,12 @@ items 4–7.
    (`/api/v1/config`, GraphQL `config`) since the round-1 launch. Create a new key,
    put it into the Vercel backend env, redeploy, then delete the old key.
 2. **Split and restrict keys** (Google Cloud → APIs & Services → Credentials):
-   - *Vercel server key*: API restriction = **Directions API + Geocoding API** only.
+   - Default OSM planning needs no Vercel Google key. For explicit Google mode,
+     *Vercel server key*: API restriction = **Directions API + Geocoding API** only.
      An HTTP-referrer restriction does not work for server-side calls, and
      Vercel has no fixed egress IP — so the API restriction + quotas are the guard.
-   - *Local Mac key* (`.env`): Street View Static + Metadata, Directions,
-     Geocoding; IP restriction if the home IP is static.
+   - *Local Mac key* (`.env`): Street View Static + Metadata; add Directions/
+     Geocoding only for explicit Google mode. IP restriction if the home IP is static.
    - The frontend needs no Google key (Leaflet tiles, Street View deep links).
 3. **Hard quotas** (APIs & Services → each API → Quotas): Directions and
    Geocoding e.g. 300 requests/day and 30/minute; Street View Static per day on

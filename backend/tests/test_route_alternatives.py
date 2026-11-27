@@ -107,7 +107,7 @@ class TestResolver:
     ):
         import app.graphql.route_alternatives as mod
         from app.core.config import settings
-        from app.services import google_maps, segment_read
+        from app.services import routing, segment_read
 
         calls = []
 
@@ -128,7 +128,7 @@ class TestResolver:
 
         monkeypatch.setattr(settings, "ROUTE_SMOOTH_MIN_COVERAGE", 0.5)
         monkeypatch.setattr(settings, "ROUTE_SMOOTH_MAX_EXTRA_DURATION", 0.2)
-        monkeypatch.setattr(google_maps.google_maps_service, "get_routes", fake_routes)
+        monkeypatch.setattr(routing.routing_service, "get_routes", fake_routes)
         monkeypatch.setattr(segment_read, "route_quality", fake_quality)
         monkeypatch.setattr(mod, "get_db_session", lambda: SimpleNamespace(close=lambda: None))
         from app.graphql.schema import schema

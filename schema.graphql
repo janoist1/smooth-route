@@ -252,6 +252,7 @@ type PublicJob {
 type Query {
   config: String!
   me: Viewer
+  routingProvider: String!
   getRoute(origin: String!, destination: String!): RouteData
   settings: [Setting!]!
   availableModels: [String!]!

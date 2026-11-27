@@ -44,10 +44,10 @@ def job(monkeypatch):
     def run(service, path=None):
         fake_rq = types.ModuleType("app.services.road_quality")
         fake_rq.road_quality_service = service
-        fake_gm = types.ModuleType("app.services.google_maps")
-        fake_gm.google_maps_service = object()
+        fake_gm = types.ModuleType("app.services.routing")
+        fake_gm.routing_service = object()
         monkeypatch.setitem(sys.modules, "app.services.road_quality", fake_rq)
-        monkeypatch.setitem(sys.modules, "app.services.google_maps", fake_gm)
+        monkeypatch.setitem(sys.modules, "app.services.routing", fake_gm)
         monkeypatch.setattr(tasks, "update_job", lambda job_id, **kw: updates.append(kw))
         monkeypatch.setattr(tasks, "refresh_road_segments",
                             lambda job_id, since=None: service.calls.append("segments"))

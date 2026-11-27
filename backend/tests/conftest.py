@@ -20,6 +20,8 @@ def isolated_directions_quota(monkeypatch, tmp_path):
     """Mocked Google calls must never consume the developer's real budget."""
     monkeypatch.setattr(settings, "GOOGLE_DIRECTIONS_QUOTA_PATH", str(tmp_path / "directions.json"))
     monkeypatch.setattr(settings, "GOOGLE_DIRECTIONS_DAILY_CAP", 300)
+    monkeypatch.setattr(settings, "ROUTING_DAILY_CAP", None)
+    monkeypatch.setattr(settings, "ROUTING_QUOTA_PATH", None)
 
 
 class FakeVerifier:

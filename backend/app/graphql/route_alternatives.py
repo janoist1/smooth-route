@@ -76,7 +76,7 @@ class RouteAlternativesQuery:
 
 
 def _route_alternatives(origin: str, destination: str) -> RouteAlternatives:
-    """Up to 3 driving routes from one Google Directions call, each with
+    """Up to 3 driving routes from one routing call (OSRM or Google), each with
     its RouteQuality; marks the fastest and the smoothest (lowest
     speed-weighted impact, RouteQuality.impactScore, within +ROUTE_SMOOTH_MAX_EXTRA_DURATION of the
     fastest, with at least SMOOTHEST_COVERAGE_FLOOR of it measured).
@@ -84,12 +84,12 @@ def _route_alternatives(origin: str, destination: str) -> RouteAlternatives:
     from app.core.config import settings
     from app.core.rqi_scale import SCALE
     from app.graphql.limits import validate_route_endpoints
-    from app.services.google_maps import google_maps_service
+    from app.services.routing import routing_service
     from app.services.route_alternatives import SMOOTHEST_COVERAGE_FLOOR, RouteCandidate, rank_routes
     from app.services.segment_read import route_quality as compute
 
     validate_route_endpoints(origin, destination)
-    routes = google_maps_service.get_routes(origin, destination)
+    routes = routing_service.get_routes(origin, destination)
     qualities = []
     db = get_db_session()
     try:

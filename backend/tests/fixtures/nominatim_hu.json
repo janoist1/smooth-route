@@ -1,0 +1,18 @@
+[
+  {
+    "place_id": 123456,
+    "licence": "Data © OpenStreetMap contributors, ODbL 1.0. https://osm.org/copyright",
+    "osm_type": "relation",
+    "osm_id": 37244,
+    "lat": "47.4979937",
+    "lon": "19.0403594",
+    "category": "boundary",
+    "type": "administrative",
+    "place_rank": 16,
+    "importance": 0.7,
+    "addresstype": "city",
+    "name": "Budapest",
+    "display_name": "Budapest, Közép-Magyarország, Magyarország",
+    "boundingbox": ["47.349", "47.613", "18.926", "19.335"]
+  }
+]

@@ -39,7 +39,7 @@ _query_fields = {
 PublicQuery = create_type("Query", [
     _query_fields[name] for name in (
         "me", "point", "points", "roadQualityGrid", "roadSegments",
-        "routeQuality", "segmentFrames", "routeAlternatives",
+        "routeQuality", "segmentFrames", "routeAlternatives", "routingProvider",
     )
 ] + get_object_definition(PublicJobQuery, strict=True).fields)
 # No mutation root; public extensions still disable introspection and mask

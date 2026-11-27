@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "Kátyúőr"
     DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5433/smooth_route"
     GOOGLE_MAPS_API_KEY: Optional[str] = None
+    ROUTING_PROVIDER: Literal["osm", "google"] = "osm"
+    ROUTING_OSRM_URL: str = "https://routing.openstreetmap.de/routed-car"
+    ROUTING_NOMINATIM_URL: str = "https://nominatim.openstreetmap.org"
 
     # Route alternatives: "Legsimább" = best length-weighted quality among the
     # routes at most this much slower than the fastest (0.2 = +20 %), and only
@@ -52,6 +55,10 @@ class Settings(BaseSettings):
     # Combined Directions + Geocoding requests per Pacific calendar day.
     # Zero disables billable route calls; negative values are invalid.
     GOOGLE_DIRECTIONS_DAILY_CAP: int = Field(default=300, ge=0)
+    # Combined routing + geocoding attempts for either provider. When unset,
+    # the legacy GOOGLE_DIRECTIONS_DAILY_CAP alias supplies the limit.
+    ROUTING_DAILY_CAP: Optional[int] = Field(default=None, ge=0)
+    ROUTING_QUOTA_PATH: Optional[str] = None
     # Optional counter file override. Public default is ephemeral /tmp;
     # local default is DATA_DIR/quota/google_directions.json.
     GOOGLE_DIRECTIONS_QUOTA_PATH: Optional[str] = None

@@ -1,4 +1,4 @@
-// Route alternatives (Google's alternative routes + their road quality).
+// Route alternatives from the selected provider + their road quality.
 // Pure helpers, unit-tested in alternatives.test.ts.
 import type { RouteQuality } from './segments/types'
 import { betterThan } from '../ui/utils/rqiScale'
@@ -6,6 +6,7 @@ import { betterThan } from '../ui/utils/rqiScale'
 const SMOOTHEST_COVERAGE_FLOOR = 0.1
 
 export interface RouteAlternative {
+  provider?: string
   index: number
   points: [number, number][]
   distanceM: number

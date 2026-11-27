@@ -13,7 +13,7 @@ the job stream. The tables below are checked against the schema objects by
 - **Read-only schema** — the public deploy (`PUBLIC_READ_ONLY=1`): the
   explicit `PublicQuery` allow-list: `me`, `point`, `points`, `roadQualityGrid`,
   `roadSegments`, `routeQuality`, `segmentFrames`, `job`, `activeJob`,
-  `routeAlternatives` (the "RO" = yes rows only). Existing resolvers and
+  `routeAlternatives`, `routingProvider` (the "RO" = yes rows only). Existing resolvers and
   permissions are reused except `job` / `activeJob`, which return a sanitized
   `PublicJob` status instead of the full schema's `Job`. No mutation root;
   admin, training, settings and `getRoute` root fields are absent from the
@@ -32,12 +32,12 @@ Access (`app/graphql/permissions.py`):
 Request limits (`app/graphql/limits.py`, both schemas): depth ≤ 8, aliases
 ≤ 10, ≤ 2000 tokens, ≤ 10 000 expanded selections across operations; cycles
 are rejected and fragment costs are memoized before other validators run.
-Per operation at most 1 paid route field (`getRoute` or
+Per operation at most 1 route field (`getRoute` or
 `routeAlternatives`), 1 `routeQuality`, 2 each of `points`, `roadQualityGrid`,
 `roadSegments`, `segmentFrames`; `Point.segmentId` only under `point`. Route
 endpoints given as coordinates must lie in the service area (Hungary + margin).
 Location modifiers (`heading=…:`, `side_of_road:`, `via:`, `place_id:` and any
-`name:value` prefix) are rejected before address fallback. Google HTTP attempts
+`name:value` prefix) are rejected before address fallback. Routing/geocoding HTTP attempts
 have 2 s connect / 5 s read timeouts; timeouts stop fallback/retries and return
 `UPSTREAM_TIMEOUT`. Route resolvers run blocking I/O in a worker thread.
 Input limit violations are `BAD_USER_INPUT` errors raised before any resolver runs.
@@ -53,8 +53,9 @@ Input limit violations are `BAD_USER_INPUT` errors raised before any resolver ru
 | `roadSegments` | anonymous | yes | road segments with quality in a viewport ([segment layer](#road-segment-layer)) |
 | `routeQuality` | anonymous | yes | quality summary of a path from the stored segments |
 | `segmentFrames` | anonymous | yes | the frames a segment was aggregated from |
-| `getRoute` | signed-in* | no | one driving route (one paid Google Directions call); full-schema API consumers only |
+| `getRoute` | signed-in* | no | one driving route from the selected provider; full-schema API consumers only |
 | `routeAlternatives` | signed-in* | yes | up to 3 routes with quality, fastest / smoothest ([routes](#routes)) |
+| `routingProvider` | anonymous | yes | selected routing source (`osm` or `google`) for map attribution; no upstream call |
 | `job` | anonymous | yes | job status by id; sanitized `PublicJob` on public schema |
 | `activeJob` | anonymous | yes | the running job, if any; sanitized `PublicJob` on public schema |
 | `config` | admin | no | server-side Google Maps key |
@@ -344,9 +345,9 @@ whichever base map is selected.
 ## Routes (`getRoute`, `routeAlternatives`)
 
 `routeAlternatives(origin, destination)`: up to 3 driving routes from ONE
-Google Directions request (`alternatives=true`, billed like `getRoute`), each
+routing request (OSRM `alternatives=2` = up to two alternatives), each
 with `distanceM`, `durationS`, `summary`, `points`, its `quality`
-(`RouteQuality` from the stored segments, no extra Google call) and `coverage`.
+(`RouteQuality` from the stored segments, no extra upstream call) and `coverage`.
 `fastestIndex`; `smoothestIndex` = lowest speed-weighted impact among routes at
 most `ROUTE_SMOOTH_MAX_EXTRA_DURATION` (0.2 = +20 %) slower than the fastest
 AND with at least the module constant `SMOOTHEST_COVERAGE_FLOOR` (0.1) measured;
@@ -360,9 +361,45 @@ The planner uses it instead of `getRoute`.
 `getRoute` is available only on the full schema; public callers use
 `routeAlternatives`.
 
+`app/services/routing.py` selects `ROUTING_PROVIDER=osm` (default, no key or
+paid fallback) or `google` (existing Directions/Geocoding path and Google key).
+OSM driving routes use `ROUTING_OSRM_URL` (default
+`https://routing.openstreetmap.de/routed-car`), `/route/v1/driving/lng,lat;lng,lat`,
+`overview=full`, `geometries=polyline`, `steps=true` (needed for summaries on
+the FOSSGIS server version); summaries join `legs[].summary`.
+Text endpoints first use `ROUTING_NOMINATIM_URL` (default
+`https://nominatim.openstreetmap.org`), `/search` with `countrycodes=hu`,
+`limit=1`, `accept-language=hu`, `format=jsonv2`. Resolved coordinates are also
+checked against the HU service area. A public OSM plan uses at most two
+uncached geocodes plus one routing attempt; no retries, redirects or provider
+fallback. Coordinate-only plans need one routing attempt. Google keeps its
+existing public one-Directions-call behavior, with no geocoding fallback.
+
+Both providers reserve the combined `ROUTING_DAILY_CAP` budget (default 300;
+legacy `GOOGLE_DIRECTIONS_DAILY_CAP` remains an alias) before each attempt.
+Timeouts are 2 s connect / 5 s read (`UPSTREAM_TIMEOUT`); OSM HTTP 429 and
+budget exhaustion return `RESOURCE_EXHAUSTED`. Upstream error bodies are never
+returned. OSRM and Nominatim each have a process-wide one-request-per-second
+throttle; Nominatim has a shared 256-entry, 24-hour LRU cache, including misses.
+Requests identify as `simaut.hu road-quality map (+https://simaut.hu)`.
+
+The frontend reads `routingProvider` with the plan and credits the selected
+source in Leaflet attribution while the route is displayed (also when the
+planner is collapsed): **Útvonal: OSRM · FOSSGIS**, with a **Térkép javítása**
+link to `https://www.openstreetmap.org/fixthemap`, or **Útvonal: Google Maps**
+for explicit Google mode. Existing © OpenStreetMap contributors/ODbL credit
+stays visible. Custom hosts need their operator's credit checked as well.
+Use is limited to moderate, user-triggered plans: no autocomplete, bulk,
+scraping or confidential input. Endpoint URLs can be changed without client
+updates. The [FOSSGIS policy](https://routing.openstreetmap.de/about.html) and
+[Nominatim policy](https://operations.osmfoundation.org/policies/nominatim/)
+apply across all users/instances; process throttles and instance caps alone
+do not enforce an application-wide limit. See [SECURITY.md](SECURITY.md) for
+deployment duties before scaling public hosts.
+
 `processRoute(input: {origin, destination, path})` (admin, full schema only)
 collects frames along the selected alternative's `path` (`[[lat, lng], ...]`),
-without another Directions or geocoding call. The optional path must have
+without another routing or geocoding call. The optional path must have
 2–20 000 points, total length ≤ 800 km, and every coordinate inside the Hungary
 service area; the existing `limits.py` path and endpoint validators apply.
 Omitting `path` retains endpoint-based route lookup for API consumers.
