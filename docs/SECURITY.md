@@ -103,6 +103,11 @@ live URLs.
 
 ## Owner checklist (dashboards only)
 
+Status 2026-11-27: items 1–3 done in Google Cloud (old key deleted, keys
+`simaut-prod-server` and `simaut-local-mac`, Directions + Geocoding v3 quotas
+300/day and 30/min). Left for the owner: paste the keys into Vercel and `.env`;
+items 4–7.
+
 1. **Rotate the Google Maps key** — it was readable anonymously from the live API
    (`/api/v1/config`, GraphQL `config`) since the round-1 launch. Create a new key,
    put it into the Vercel backend env, redeploy, then delete the old key.
