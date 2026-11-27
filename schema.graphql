@@ -344,7 +344,16 @@ type RouteOption {
   quality: RouteQuality!
   coverage: Float!
   isFastest: Boolean!
+
+  """
+  Lowest impact among routes within the duration budget and coverage floor; may be uncertain.
+  """
   isSmoothest: Boolean!
+
+  """
+  True only for the smoothest route when coverage meets ROUTE_SMOOTH_MIN_COVERAGE.
+  """
+  smoothestConfident: Boolean!
 }
 
 type RouteQuality {

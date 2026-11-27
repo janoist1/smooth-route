@@ -350,8 +350,13 @@ with `distanceM`, `durationS`, `summary`, `points`, its `quality`
 (`RouteQuality` from the stored segments, no extra upstream call) and `coverage`.
 `fastestIndex`; `smoothestIndex` = lowest speed-weighted impact among routes at
 most `ROUTE_SMOOTH_MAX_EXTRA_DURATION` (0.2 = +20 %) slower than the fastest
-AND with at least `ROUTE_SMOOTH_MIN_COVERAGE` (0.5) measured; `null` when none
-qualifies. Quality is compared through `app.core.rqi_scale` (direction-free).
+AND with at least the module constant `SMOOTHEST_COVERAGE_FLOOR` (0.1) measured;
+`null` when none qualifies. `minCoverage` reports this eligibility floor.
+Each route's `isSmoothest` marks that relative winner even with low coverage.
+`smoothestConfident: Boolean!` is true only when `isSmoothest` is true AND its
+unrounded coverage meets `ROUTE_SMOOTH_MIN_COVERAGE` (0.5). The planner shows
+the green "Legsimább" badge when confident, otherwise a muted "Legsimább?"
+badge with a coverage tooltip. Quality is compared through `app.core.rqi_scale` (direction-free).
 The planner uses it instead of `getRoute`.
 `getRoute` is available only on the full schema; public callers use
 `routeAlternatives`.

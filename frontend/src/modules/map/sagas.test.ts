@@ -35,6 +35,7 @@ const alternatives = {
         coverage: 0,
         isFastest: index === 0,
         isSmoothest: false,
+        smoothestConfident: false,
       })),
     },
   },
@@ -66,6 +67,33 @@ describe('route planning and analysis', () => {
       store.dispatch(actions.selectRouteAlternative(1))
       expect(store.getState().map.routeAlternatives?.map(r => r.provider)).toEqual([provider, provider])
       expect(store.getState().map.selectedRouteIndex).toBe(1)
+    } finally { task.cancel() }
+  })
+
+  it.each([false, true])('preserves smoothest confidence %s from the API when planning', async smoothestConfident => {
+    const response = {
+      data: {
+        routeAlternatives: {
+          ...alternatives.data.routeAlternatives,
+          smoothestIndex: 1,
+          routes: alternatives.data.routeAlternatives.routes.map(route => ({
+            ...route,
+            isSmoothest: route.index === 1,
+            smoothestConfident: route.index === 1 && smoothestConfident,
+            coverage: smoothestConfident ? 0.5 : 0.234,
+          })),
+        },
+      },
+    }
+    query.mockResolvedValue(response)
+    const { store, task } = setup()
+    try {
+      await store.dispatch(actions.planRoute(endpoints))
+      expect(query).toHaveBeenCalledWith(expect.objectContaining({ query: expect.stringContaining('smoothestConfident') }))
+      expect(store.getState().map.routeAlternatives?.[1]).toMatchObject({ isSmoothest: true, smoothestConfident })
+      // An uncertain "Legsimább?" winner is badged but not preselected.
+      expect(store.getState().map.selectedRouteIndex).toBe(
+        smoothestConfident ? 1 : alternatives.data.routeAlternatives.fastestIndex)
     } finally { task.cancel() }
   })
 
@@ -127,7 +155,7 @@ describe('alternative quality after analysis', () => {
       store.dispatch(actions.finishAnalysis())
       await vi.waitFor(() => expect(store.getState().map.routeAlternatives?.[1].isSmoothest).toBe(true))
       expect(store.getState().map.routeAlternatives).toEqual(stored.map((route, index) => ({
-        ...route, quality: fresh[index], coverage: 1, isSmoothest: index === 1,
+        ...route, quality: fresh[index], coverage: 1, isSmoothest: index === 1, smoothestConfident: index === 1,
       })))
       expect(store.getState().map.selectedRouteIndex).toBe(0)
       expect(store.getState().map.routePoints).toEqual(stored[0].points)

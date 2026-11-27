@@ -3,6 +3,8 @@
 import type { RouteQuality } from './segments/types'
 import { betterThan } from '../ui/utils/rqiScale'
 
+const SMOOTHEST_COVERAGE_FLOOR = 0.1
+
 export interface RouteAlternative {
   provider?: string
   index: number
@@ -15,6 +17,7 @@ export interface RouteAlternative {
   coverage: number
   isFastest: boolean
   isSmoothest: boolean
+  smoothestConfident: boolean
 }
 
 export interface RouteAlternativesResult {
@@ -23,10 +26,13 @@ export interface RouteAlternativesResult {
   smoothestIndex: number | null
 }
 
-/** The route shown first: the smoothest when one qualifies, else the fastest. */
+/** The route shown first: the smoothest when it is confident (enough
+ * coverage), else the fastest; an uncertain "Legsimább?" winner is only badged. */
 export const defaultRouteIndex = (res: RouteAlternativesResult): number | null => {
   if (res.routes.length === 0) return null
-  return res.smoothestIndex ?? res.fastestIndex ?? res.routes[0].index
+  const smoothest = res.routes.find(r => r.index === res.smoothestIndex)
+  if (smoothest?.smoothestConfident) return smoothest.index
+  return res.fastestIndex ?? res.smoothestIndex ?? res.routes[0].index
 }
 
 /** Re-rank stored paths after quality changes, using the API's default policy
@@ -35,7 +41,8 @@ export const defaultRouteIndex = (res: RouteAlternativesResult): number | null =
 export const rankRouteAlternatives = (
   routes: RouteAlternative[],
   maxExtraDuration = 0.2,
-  minCoverage = 0.5,
+  minCoverage = SMOOTHEST_COVERAGE_FLOOR,
+  minConfidentCoverage = 0.5,
 ): RouteAlternative[] => {
   if (routes.length === 0) return []
   const refreshed = routes.map(route => ({
@@ -73,6 +80,7 @@ export const rankRouteAlternatives = (
     ...route,
     isFastest: route.index === fastest.index,
     isSmoothest: route.index === smoothest?.index,
+    smoothestConfident: route.index === smoothest?.index && route.coverage >= minConfidentCoverage,
   }))
 }
 

@@ -18,9 +18,9 @@ def toward_best(x, by):
     return x - by if SCALE.lower_is_better else x + by
 
 
-def cand(duration, score, coverage=1.0, total=1000.0):
+def cand(duration, score, coverage=1.0, total=1000.0, impact_score=None):
     return RouteCandidate(duration_s=duration, distance_m=total, mean_score=score,
-                          covered_m=total * coverage, total_m=total)
+                          covered_m=total * coverage, total_m=total, impact_score=impact_score)
 
 
 class TestRank:
@@ -29,13 +29,22 @@ class TestRank:
         # 900 s is > +20 % of 600 s: not eligible although it is the best road.
         assert rank_routes(routes, SCALE) == (0, 1)
 
-    def test_low_coverage_route_is_never_called_smooth(self):
+    def test_low_coverage_route_can_win(self):
         routes = [cand(600, MID), cand(610, BEST, coverage=0.3)]
-        assert rank_routes(routes, SCALE) == (0, 0)
-        assert rank_routes(routes, SCALE, min_coverage=0.2) == (0, 1)
+        assert rank_routes(routes, SCALE) == (0, 1)
+        assert rank_routes(routes, SCALE, min_coverage=0.5) == (0, 0)
+
+    @pytest.mark.parametrize("coverage, winner", [(0.0, 0), (0.05, 0), (0.0999, 0), (0.1, 1)])
+    def test_coverage_floor_is_inclusive(self, coverage, winner):
+        assert rank_routes([cand(600, MID), cand(610, BEST, coverage)], SCALE) == (0, winner)
+
+    def test_low_coverage_winner_uses_impact_rather_than_mean_or_coverage(self):
+        routes = [cand(600, BEST, coverage=0.43, impact_score=1.2),
+                  cand(650, MID, coverage=0.1, impact_score=0.4)]
+        assert rank_routes(routes, SCALE) == (0, 1)
 
     def test_no_route_qualifies(self):
-        routes = [cand(600, None), cand(650, BEST, coverage=0.1)]
+        routes = [cand(600, None), cand(650, BEST, coverage=0.05)]
         assert rank_routes(routes, SCALE) == (0, None)
         assert rank_routes([], SCALE) == (None, None)
 
@@ -78,11 +87,26 @@ def test_get_routes_is_one_directions_call_with_alternatives():
 
 class TestResolver:
     QUERY = ('{ routeAlternatives(origin: "47.5,19.05", destination: "47.48,19.08") '
-             "{ fastestIndex smoothestIndex routes { index isFastest isSmoothest coverage "
+             "{ fastestIndex smoothestIndex minCoverage routes { index isFastest isSmoothest smoothestConfident coverage "
              "durationS summary quality { meanScore meanRqi coveredLengthM } points { lat } } } }")
 
-    def test_marks_fastest_and_smoothest_from_one_google_call(self, monkeypatch):
+    @pytest.mark.parametrize("coverage, fastest_coverage, winner, confident", [
+        (0.0, 0.0, None, False),
+        (0.05, 0.05, None, False),
+        (0.0999, 0.0999, None, False),
+        (0.1, 0.05, 1, False),
+        (0.3, 0.9, 1, False),
+        (0.43, 0.9, 1, False),
+        (0.4999, 0.9, 1, False),
+        (0.5, 0.9, 1, True),
+        (0.9, 0.9, 1, True),
+        (0.05, 0.9, 0, True),
+    ])
+    def test_marks_fastest_smoothest_and_confidence_from_one_google_call(
+        self, monkeypatch, coverage, fastest_coverage, winner, confident,
+    ):
         import app.graphql.route_alternatives as mod
+        from app.core.config import settings
         from app.services import routing, segment_read
 
         calls = []
@@ -97,10 +121,13 @@ class TestResolver:
         def fake_quality(db, path):
             better = len(path) == 3
             score = toward_best(MID, 1) if better else MID
-            return SimpleNamespace(total_length_m=1000.0, length_by_rqi=[900.0, 0, 0, 0],
+            covered = (coverage if better else fastest_coverage) * 1000
+            return SimpleNamespace(total_length_m=1000.0, length_by_rqi=[covered, 0, 0, 0],
                                    mean_score=score, mean_rqi=segment_read.load_config().classify(score),
                                    worst_segments=[])
 
+        monkeypatch.setattr(settings, "ROUTE_SMOOTH_MIN_COVERAGE", 0.5)
+        monkeypatch.setattr(settings, "ROUTE_SMOOTH_MAX_EXTRA_DURATION", 0.2)
         monkeypatch.setattr(routing.routing_service, "get_routes", fake_routes)
         monkeypatch.setattr(segment_read, "route_quality", fake_quality)
         monkeypatch.setattr(mod, "get_db_session", lambda: SimpleNamespace(close=lambda: None))
@@ -112,11 +139,16 @@ class TestResolver:
         assert res.errors is None, res.errors
         data = res.data["routeAlternatives"]
         assert calls == [("47.5,19.05", "47.48,19.08")]
-        assert data["fastestIndex"] == 0 and data["smoothestIndex"] == 1
-        assert [r["isSmoothest"] for r in data["routes"]] == [False, True]
-        assert data["routes"][1]["coverage"] == pytest.approx(0.9)
+        assert data["fastestIndex"] == 0 and data["smoothestIndex"] == winner
+        assert data["minCoverage"] == pytest.approx(0.1)
+        assert [r["isSmoothest"] for r in data["routes"]] == [i == winner for i in range(2)]
+        assert [r["smoothestConfident"] for r in data["routes"]] == [
+            i == winner and confident for i in range(2)
+        ]
+        assert data["routes"][1]["coverage"] == pytest.approx(round(coverage, 3))
         assert [r["quality"]["meanRqi"] for r in data["routes"]] == [
-            segment_read.load_config().classify(score) for score in (MID, toward_best(MID, 1))
+            segment_read.load_config().classify(score) if cov > 0 else None
+            for score, cov in ((MID, fastest_coverage), (toward_best(MID, 1), coverage))
         ]
 
     def test_anonymous_is_denied_on_the_full_schema(self):
