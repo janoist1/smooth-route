@@ -75,7 +75,7 @@ def test_public_fields_reuse_resolvers_arguments_and_permissions():
         }
 
     full, public = fields(FullQuery), fields(PublicQuery)
-    for name in PUBLIC_QUERY_FIELDS:
+    for name in PUBLIC_QUERY_FIELDS - {"job", "activeJob"}:
         assert public[name].base_resolver is full[name].base_resolver, name
         assert public[name].arguments == full[name].arguments, name
         assert public[name].permission_classes == full[name].permission_classes, name

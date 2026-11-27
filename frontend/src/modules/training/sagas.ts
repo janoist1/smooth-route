@@ -100,12 +100,9 @@ const GET_ACTIVE_JOB = gql(`
     query GetActiveJob {
         activeJob {
             id
-            type
             status
             progress
             total
-            details
-            result
         }
     }
 `)

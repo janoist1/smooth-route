@@ -23,6 +23,7 @@ from typing import Optional, Sequence, cast
 
 from sqlalchemy import text
 
+from app.graphql.limits import InputLimitError, validate_path_edges
 from app.services.map_matching import (
     DEFAULT_MAX_BEARING_DIFF_DEG,
     DEFAULT_MAX_DISTANCE_M,
@@ -32,6 +33,7 @@ from app.services.map_matching import (
 from app.services.route_scoring import speed_kmh
 from app.services.route_quality import (
     RouteStats,
+    ROUTE_SAMPLE_STEP_M,
     SegmentRef,
     compute_route_stats,
     worst_segment_ids,
@@ -43,7 +45,7 @@ from app.services.segment_aggregation import (
     confidence_reason,
     load_config,
 )
-from app.services.segment_geometry import LatLon, polyline_length_m
+from app.services.segment_geometry import LatLon, haversine_m, polyline_length_m
 
 # Below this Leaflet zoom the segment layer returns nothing: a screen then
 # spans tens of kilometres and the quality grid (roadQualityGrid) is the
@@ -61,6 +63,10 @@ MAX_PATH_POINTS = 20000
 # would mean millions of samples per anonymous request. No drivable route the
 # app plans comes near this (Hungary is ~530 km across).
 MAX_PATH_LENGTH_M = 2_000_000
+# Independent allocation budgets, including when helpers bypass GraphQL.
+MAX_GENERATED_PATH_POINTS = 25_000
+MAX_PATH_ENVELOPES = 4096
+MAX_ROUTE_SAMPLES = 250_000
 # A path is covered by many small envelopes instead of one huge bbox, so a
 # long diagonal route does not pull in every segment of the country.
 _ENVELOPE_MAX_SPAN_DEG = 0.02
@@ -125,7 +131,7 @@ def simplify_tolerance_deg(zoom: int) -> float:
 
 
 def normalize_path(path: Sequence[Sequence[float]]) -> list[LatLon]:
-    """Validate a GraphQL ``[[lat, lng], ...]`` path. Raises ``ValueError``."""
+    """Validate pairs and length (ValueError), and unsafe edges (InputLimitError)."""
     if len(path) > MAX_PATH_POINTS:
         raise ValueError(f"path has too many points (max {MAX_PATH_POINTS})")
     out: list[LatLon] = []
@@ -136,6 +142,7 @@ def normalize_path(path: Sequence[Sequence[float]]) -> list[LatLon]:
         if not (math.isfinite(lat) and math.isfinite(lng)) or abs(lat) > 90 or abs(lng) > 180:
             raise ValueError("path point out of range (expected [lat, lng])")
         out.append((lat, lng))
+    validate_path_edges(out)
     if polyline_length_m(out) > MAX_PATH_LENGTH_M:
         raise ValueError(f"path is too long (max {MAX_PATH_LENGTH_M // 1000} km)")
     return out
@@ -155,11 +162,24 @@ def densify_path(path: Sequence[LatLon], max_step_m: float = DENSIFY_MAX_STEP_M)
     short ones, so no single envelope has to cover it."""
     if not path:
         return []
-    out: list[LatLon] = [path[0]]
+    if not math.isfinite(max_step_m) or max_step_m <= 0:
+        raise InputLimitError("max_step_m must be finite and positive")
+    if len(path) > MAX_GENERATED_PATH_POINTS:
+        raise InputLimitError("path has too many generated points")
+    validate_path_edges(path)
+    # Plan the entire allocation before inserting even the first point.
+    edge_steps: list[int] = []
+    total = 1
     for a, b in zip(path, path[1:]):
         dy = (b[0] - a[0]) * 111_320.0
         dx = (b[1] - a[1]) * 111_320.0 * math.cos(math.radians((a[0] + b[0]) / 2.0))
         steps = max(1, math.ceil(math.hypot(dx, dy) / max_step_m))
+        total += steps
+        if total > MAX_GENERATED_PATH_POINTS:
+            raise InputLimitError("path has too many generated points")
+        edge_steps.append(steps)
+    out: list[LatLon] = [path[0]]
+    for a, b, steps in zip(path, path[1:], edge_steps):
         for i in range(1, steps):
             t = i / steps
             out.append((a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t))
@@ -179,14 +199,19 @@ def path_envelopes(
     box until it would grow past ``max_span_deg``; the next box starts at the
     previous point so no edge falls in a gap.
     """
-    boxes: list[tuple[float, float, float, float]] = []
     if not path:
-        return boxes
+        return []
     path = densify_path(path)
+    # Count first so the envelope array and SQL parameter arrays are bounded
+    # independently of the interpolation budget.
+    for count, _ in enumerate(_path_envelopes(path, max_span_deg, pad_deg), 1):
+        if count > MAX_PATH_ENVELOPES:
+            raise InputLimitError("path has too many envelopes")
+    return list(_path_envelopes(path, max_span_deg, pad_deg))
 
-    def close(s: float, w: float, n: float, e: float) -> None:
-        boxes.append((w - pad_deg, s - pad_deg, e + pad_deg, n + pad_deg))
 
+def _path_envelopes(path: Sequence[LatLon], max_span_deg: float, pad_deg: float):
+    """Yield envelopes without allocating their output array."""
     south = north = path[0][0]
     west = east = path[0][1]
     points_in_box = 1
@@ -198,7 +223,7 @@ def path_envelopes(
         if too_big and points_in_box > 1:
             # Close the box and restart it on the edge prev→this point. (A
             # single edge longer than the span simply gets a box of its own.)
-            close(south, west, north, east)
+            yield (west - pad_deg, south - pad_deg, east + pad_deg, north + pad_deg)
             south, north = min(prev[0], lat), max(prev[0], lat)
             west, east = min(prev[1], lng), max(prev[1], lng)
             points_in_box = 2
@@ -206,8 +231,7 @@ def path_envelopes(
             south, north, west, east = s, n, w, e
             points_in_box += 1
         prev = (lat, lng)
-    close(south, west, north, east)
-    return boxes
+    yield (west - pad_deg, south - pad_deg, east + pad_deg, north + pad_deg)
 
 
 def _latlng_path(geojson: str) -> list[LatLon]:
@@ -407,6 +431,12 @@ def summarize_route(
     confidence level is "low" — a single noisy frame should not headline the
     route summary.
     """
+    validate_path_edges(path)
+    samples = 0
+    for a, b in zip(path, path[1:]):
+        samples += math.ceil(haversine_m(a, b) / ROUTE_SAMPLE_STEP_M)
+        if samples > MAX_ROUTE_SAMPLES:
+            raise InputLimitError("path has too many generated samples")
     cfg = cfg or load_config()
     refs = [
         SegmentRef(id=r.id, coords=r.path, rqi=r.rqi, score=r.score, length_m=r.length_m,

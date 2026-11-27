@@ -201,14 +201,18 @@ class Query:
     # Costs a Google Directions API call per invocation. Authenticated in the
     # full app; anonymous on the round-1 public read-only deploy (quota-capped).
     @strawberry.field(permission_classes=[IsAuthenticatedUnlessPublicRead])
-    def get_route(self, origin: str, destination: str) -> Optional[RouteData]:
+    async def get_route(self, origin: str, destination: str) -> Optional[RouteData]:
         from app.services.google_maps import google_maps_service
+        from starlette.concurrency import run_in_threadpool
+        from graphql import GraphQLError
         try:
             # google_maps_service.get_route returns list of dicts {'lat': float, 'lng': float}
-            polyline_points = google_maps_service.get_route(origin, destination)
+            polyline_points = await run_in_threadpool(google_maps_service.get_route, origin, destination)
             return RouteData(
                 points=[RouteStep(lat=p['lat'], lng=p['lng']) for p in polyline_points]
             )
+        except GraphQLError:
+            raise
         except Exception as e:
             import traceback
             traceback.print_exc()

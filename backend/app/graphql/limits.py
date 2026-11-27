@@ -6,8 +6,8 @@ the edge (Vercel WAF), hard money caps to the GCP quota page.
 
 Three layers, all registered in schema.py via `schema_extensions()`:
 
-1. Document limits: token count (`MaxTokensParser`), query depth and alias
-   count (Strawberry built-ins). They run at parse/validation time, before
+1. Document limits: token count (`MaxTokensParser`), fragment expansion,
+   query depth and aliases. They run at parse time, before other validators or
    any resolver.
 2. `PublicQueryGuard`: checks the arguments of the anonymous, data-heavy root
    fields (points, roadQualityGrid, getRoute, roadSegments, routeQuality) and
@@ -26,6 +26,7 @@ import math
 import re
 import unicodedata
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any, Optional
 
 from graphql import (
@@ -35,6 +36,7 @@ from graphql import (
     GraphQLError,
     GraphQLSchema,
     InlineFragmentNode,
+    OperationDefinitionNode,
     SelectionSetNode,
     parse,
 )
@@ -43,18 +45,18 @@ from graphql.utilities import get_operation_ast
 from strawberry.extensions import (
     DisableIntrospection,
     MaskErrors,
-    MaxAliasesLimiter,
-    QueryDepthLimiter,
     SchemaExtension,
 )
 
 # --- Document limits ---------------------------------------------------------
 # The deepest frontend document is 3 levels (trainingPoints.items.field);
-# introspection fields are not counted by QueryDepthLimiter. No frontend
+# introspection fields are not counted for depth. No frontend
 # document uses aliases; the largest is ~150 tokens.
 MAX_QUERY_DEPTH = 8
 MAX_ALIASES = 10
 MAX_TOKENS = 2000
+# Bound the expanded selection tree before graphql-core's validators run.
+MAX_DOCUMENT_WORK = 10_000
 
 # --- points(bbox, limit, offset) ---------------------------------------------
 MAX_POINTS_LIMIT = 20_000  # == frontend MAP_POINT_LIMIT (modules/map/sagas.ts)
@@ -128,6 +130,8 @@ _COORD_WORDS = frozenset({
     "nan", "inf", "infinity",
 })
 _CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
+# Google location modifiers (including future names) must not become addresses.
+_LOCATION_PREFIX_RE = re.compile(r"^[\w-]+(?:\s*=[^:]*)?\s*:", re.UNICODE)
 
 
 class InputLimitError(GraphQLError):
@@ -288,6 +292,8 @@ def validate_route_endpoint(value: Any, name: str) -> str:
         )
     if _CONTROL_RE.search(value):
         raise InputLimitError(f"{name} contains control characters")
+    if _LOCATION_PREFIX_RE.match(unicodedata.normalize("NFKC", value)):
+        raise InputLimitError(f"{name} location modifiers are not supported")
     coords = parse_lat_lng(value)
     if coords is not None:
         lat, lng = coords
@@ -363,10 +369,17 @@ def validate_route_path(path: Any) -> list[tuple[float, float]]:
             raise InputLimitError("path point out of range (expected [lat, lng])")
         coords.append((lat, lng))
 
+    validate_path_edges(coords)
     total_km = sum(_haversine_km(a, b) for a, b in zip(coords, coords[1:]))
     if total_km > MAX_PATH_KM:
         raise InputLimitError(f"path is longer than {MAX_PATH_KM:.0f} km")
     return coords
+
+
+def validate_path_edges(path: Sequence[tuple[float, float]]) -> None:
+    """Linear longitude interpolation does not support crossing the dateline."""
+    if any(abs(b[1] - a[1]) > 180 for a, b in zip(path, path[1:])):
+        raise InputLimitError("path edges must not cross the antimeridian")
 
 
 # --- Extensions -------------------------------------------------------------------
@@ -395,17 +408,90 @@ class MaxTokensParser(SchemaExtension):
         ctx = self.execution_context
         if ctx.graphql_document is None and ctx.query:
             ctx.graphql_document = parse(ctx.query, max_tokens=MAX_TOKENS)
+        if ctx.graphql_document is not None:
+            check_document_limits(ctx.graphql_document)
         yield
 
 
-class DepthLimit(QueryDepthLimiter):
-    def __init__(self, *, execution_context=None) -> None:
-        super().__init__(max_depth=MAX_QUERY_DEPTH)
+@dataclass(frozen=True)
+class _SelectionCost:
+    work: int = 0
+    depth: int = 0
+    aliases: int = 0
+    restricted_fields: frozenset[str] = frozenset()
 
 
-class AliasLimit(MaxAliasesLimiter):
-    def __init__(self, *, execution_context=None) -> None:
-        super().__init__(max_alias_count=MAX_ALIASES)
+def check_document_limits(document) -> dict[int, _SelectionCost]:
+    """Summarize each selection set once, including each fragment once.
+
+    Iterative postorder avoids recursion limits on long fragment chains.
+    Memoized costs count repeated spreads without expanding them. Cycles and
+    expansion work are rejected before depth/alias and graphql-core validation.
+    """
+    fragments = {d.name.value: d for d in document.definitions
+                 if isinstance(d, FragmentDefinitionNode)}
+    owners = [d for d in document.definitions
+              if isinstance(d, (OperationDefinitionNode, FragmentDefinitionNode))]
+    costs: dict[int, _SelectionCost] = {}
+    visiting: set[int] = set()
+
+    def child(selection):
+        if isinstance(selection, (FieldNode, InlineFragmentNode)):
+            return selection.selection_set
+        if isinstance(selection, FragmentSpreadNode):
+            fragment = fragments.get(selection.name.value)
+            return fragment.selection_set if fragment else None
+        return None
+
+    for owner in owners:
+        stack = [(owner.selection_set, False)]
+        while stack:
+            selections, done = stack.pop()
+            key = id(selections)
+            if key in costs:
+                continue
+            if not done:
+                if key in visiting:
+                    raise InputLimitError("fragment cycles are not allowed")
+                visiting.add(key)
+                stack.append((selections, True))
+                stack.extend((c, False) for s in selections.selections
+                             if (c := child(s)) is not None)
+                continue
+            work = aliases = depth = 0
+            restricted: set[str] = set()
+            for selection in selections.selections:
+                subtree = child(selection)
+                cost = costs[id(subtree)] if subtree is not None else _SelectionCost()
+                work += 1 + cost.work
+                aliases += cost.aliases
+                restricted.update(cost.restricted_fields)
+                field_depth = cost.depth
+                if isinstance(selection, FieldNode):
+                    aliases += int(selection.alias is not None)
+                    if selection.name.value in PER_ITEM_FIELD_ROOTS:
+                        restricted.add(selection.name.value)
+                    field_depth = (1 + cost.depth if subtree is not None else 0)
+                    if selection.name.value.startswith("__"):
+                        field_depth = 0
+                depth = max(depth, field_depth)
+                if work > MAX_DOCUMENT_WORK:
+                    raise InputLimitError("document exceeds fragment expansion budget")
+            costs[key] = _SelectionCost(work, depth, aliases, frozenset(restricted))
+            visiting.remove(key)
+
+    # Include all operations, even when operationName selects just one. Fragment
+    # definitions are already included in their operation's memoized cost.
+    operations = [costs[id(d.selection_set)] for d in owners
+                  if isinstance(d, OperationDefinitionNode)]
+    if sum(c.work for c in operations) > MAX_DOCUMENT_WORK:
+        raise InputLimitError("document exceeds fragment expansion budget")
+    if any(c.depth > MAX_QUERY_DEPTH for c in operations):
+        raise InputLimitError(f"query exceeds maximum operation depth of {MAX_QUERY_DEPTH}")
+    aliases = sum(c.aliases for c in operations)
+    if aliases > MAX_ALIASES:
+        raise InputLimitError(f"{aliases} aliases found. Allowed: {MAX_ALIASES}")
+    return costs
 
 
 class NoIntrospection(DisableIntrospection):
@@ -474,38 +560,15 @@ def _root_field_nodes(
             )
 
 
-def _subtree_field_names(
-    selection_set: Optional[SelectionSetNode],
-    fragments: dict[str, FragmentDefinitionNode],
-    seen_fragments: set[str],
-):
-    """Every field name below a node (any depth), through fragments."""
-    if selection_set is None:
-        return
-    for selection in selection_set.selections:
-        if isinstance(selection, FieldNode):
-            yield selection.name.value
-            yield from _subtree_field_names(selection.selection_set, fragments, seen_fragments)
-        elif isinstance(selection, InlineFragmentNode):
-            yield from _subtree_field_names(selection.selection_set, fragments, seen_fragments)
-        elif isinstance(selection, FragmentSpreadNode):
-            name = selection.name.value
-            if name in seen_fragments or name not in fragments:
-                continue
-            seen_fragments.add(name)
-            yield from _subtree_field_names(
-                fragments[name].selection_set, fragments, seen_fragments
-            )
-
-
-def _check_per_item_fields(root: FieldNode, fragments) -> None:
+def _check_per_item_fields(root: FieldNode, costs: dict[int, _SelectionCost]) -> None:
     allowed_roots = {
         field: roots for field, roots in PER_ITEM_FIELD_ROOTS.items()
         if root.name.value not in roots
     }
     if not allowed_roots:
         return
-    for name in _subtree_field_names(root.selection_set, fragments, set()):
+    cost = costs.get(id(root.selection_set), _SelectionCost())
+    for name in cost.restricted_fields:
         if name in allowed_roots:
             only = ", ".join(sorted(allowed_roots[name]))
             raise InputLimitError(
@@ -526,6 +589,7 @@ def check_operation(
     Anything this function cannot interpret (unknown operation, variable
     coercion errors) is left for normal execution to report.
     """
+    costs = check_document_limits(document)
     operation = get_operation_ast(document, operation_name)
     if operation is None:
         return
@@ -564,7 +628,7 @@ def check_operation(
             raise InputLimitError(
                 f"At most {MAX_PAID_ROOT_FIELDS} route request "
                 f"({' or '.join(PAID_ROOT_FIELDS)}) per request")
-        _check_per_item_fields(node, fragments)
+        _check_per_item_fields(node, costs)
         check = ROOT_FIELD_CHECKS.get(name)
         if check is not None:
             check(get_argument_values(field_def, node, coerced))
@@ -615,7 +679,7 @@ def schema_extensions(public: bool) -> list:
     and masks unexpected errors; the full local schema keeps both for dev.
     """
     guard = PublicSchemaGuard if public else PublicQueryGuard
-    extensions: list = [MaxTokensParser, DepthLimit, AliasLimit, guard]
+    extensions: list = [MaxTokensParser, guard]
     if public:
         extensions += [NoIntrospection, MaskUnexpectedErrors]
     return extensions

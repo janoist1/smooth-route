@@ -14,8 +14,6 @@ const GET_JOB = gql(`
       progress
       total
       message
-      result
-      error
       createdAt
       completedAt
     }
@@ -40,8 +38,8 @@ function* pollJobWorker(action: SagaActionFromCreator<typeof actions.pollJob>) {
         progress: job.progress || 0,
         total: job.total || 100,
         message: job.message,
-        error: job.error,
-        result: job.result,
+        error: null,
+        result: null,
         startedAt: job.createdAt,
         completedAt: job.completedAt,
     }
