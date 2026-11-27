@@ -1,15 +1,27 @@
-# Imagery sources: Google Street View vs Mapillary
+# Imagery sources: Google Street View vs open imagery
 
-*Prototype status 2026-11-26 (T-71). Not legal advice: get a proper legal read
-before growth or monetisation ([LANDSCAPE.md](LANDSCAPE.md) risks).*
+*Status 2026-11-27 (T-57, T-106). Not legal advice.*
 
 ## Why a second source
 
-Every training and scored frame today is Google Street View. Google Maps Platform
-terms restrict caching, exporting and deriving content from Street View imagery,
-and may forbid ML on it ([LANDSCAPE.md](LANDSCAPE.md), *unverified*). Mapillary
-images are licensed **CC BY-SA 4.0**: we may store them, run a model on them and
-show them, with attribution and share-alike.
+Every training and scored frame today is Google Street View. **Verified
+2026-11-27** in the primary texts (global Maps Platform ToS §3.2.3, EEA ToS §3.3.2;
+the EEA terms govern a Hungarian billing account): Google forbids bulk-downloading
+and storing Street View images, using Maps content to train, test, validate or
+fine-tune ML models, and creating content based on Maps content. Our pipeline does
+all three. Storing pano IDs is allowed (EEA Service Specific Terms). Owner decision
+(T-57): the project is a test for now and the Street View images will be deleted;
+any growth needs an open source.
+
+| Source | Licence | ML + published scores | Notes |
+|---|---|---|---|
+| Mapillary | CC BY-SA 4.0 | allowed by the licence; Mapillary's own terms page needs a login and was not read | first candidate: API client below exists; Budapest coverage unmeasured |
+| Panoramax | per instance: Etalab 2.0, or CC BY-SA 4.0 + an explicit AI/derived-data permission | explicitly allowed (federation policy) | has a road-damage → road-segment workflow in its docs; Hungarian coverage unknown |
+| KartaView | CC BY-SA 4.0 (credit "© Grab and KartaView Contributors") | allowed by the licence | maintained (app update Oct 2026); API 100/h anonymous, 1,000/h with a token |
+| Own capture (phone) | ours | ours | GDPR applies to raw frames (faces, plates): lawful basis, blur, retention; publishing only segment scores is the low-risk part |
+
+Research with links: board T-57 / T-106 (Codex, 2026-11-27). Before choosing,
+sample the target roads and count usable, recent road-surface frames per segment.
 
 ## Code (prototype, no token yet)
 
