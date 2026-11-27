@@ -74,7 +74,9 @@ class TestRealSchemaWiring:
     so no DB/services are touched."""
 
     def exec(self, schema, query, identity):
-        return schema.execute_sync(query, context_value={"identity": identity})
+        import asyncio
+
+        return asyncio.run(schema.execute(query, context_value={"identity": identity}))
 
     def test_admin_mutations_denied_for_anonymous_and_user(self, schema):
         mutation = 'mutation { updateSetting(input: {key: "k", value: "1"}) { key } }'

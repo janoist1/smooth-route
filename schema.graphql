@@ -239,6 +239,16 @@ input ProcessRouteInput {
   path: [[Float!]!] = null
 }
 
+type PublicJob {
+  id: String!
+  status: String!
+  progress: Int!
+  total: Int!
+  message: String!
+  createdAt: DateTime!
+  completedAt: DateTime
+}
+
 type Query {
   config: String!
   me: Viewer

@@ -106,7 +106,9 @@ class TestResolver:
         monkeypatch.setattr(mod, "get_db_session", lambda: SimpleNamespace(close=lambda: None))
         from app.graphql.schema import schema
 
-        res = schema.execute_sync(self.QUERY, context_value={"identity": USER})
+        import asyncio
+
+        res = asyncio.run(schema.execute(self.QUERY, context_value={"identity": USER}))
         assert res.errors is None, res.errors
         data = res.data["routeAlternatives"]
         assert calls == [("47.5,19.05", "47.48,19.08")]
@@ -120,7 +122,9 @@ class TestResolver:
     def test_anonymous_is_denied_on_the_full_schema(self):
         from app.graphql.schema import schema
 
-        res = schema.execute_sync(self.QUERY, context_value={"identity": None})
+        import asyncio
+
+        res = asyncio.run(schema.execute(self.QUERY, context_value={"identity": None}))
         assert res.data is None and "Authentication required" in res.errors[0].message
 
 

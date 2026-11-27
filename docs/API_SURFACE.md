@@ -1,6 +1,6 @@
 # API surface inventory
 
-*Updated 2026-11-26.* GraphQL (`/graphql`) is the product API; REST is only
+*Updated 2026-11-27.* GraphQL (`/graphql`) is the product API; REST is only
 the job stream. The tables below are checked against the schema objects by
 `backend/scripts/check_api_docs.py` (fields, access, read-only flag, and
 `schema.graphql` freshness) — change a resolver, then update its row.
@@ -14,9 +14,11 @@ the job stream. The tables below are checked against the schema objects by
   explicit `PublicQuery` allow-list: `me`, `point`, `points`, `roadQualityGrid`,
   `roadSegments`, `routeQuality`, `segmentFrames`, `job`, `activeJob`,
   `routeAlternatives` (the "RO" = yes rows only). Existing resolvers and
-  permissions are reused. No mutation root; admin, training, settings and
-  `getRoute` root fields are absent from the schema and fail validation for
-  every caller. Introspection off, unexpected errors masked, POST only.
+  permissions are reused except `job` / `activeJob`, which return a sanitized
+  `PublicJob` status instead of the full schema's `Job`. No mutation root;
+  admin, training, settings and `getRoute` root fields are absent from the
+  schema and fail validation for every caller. Introspection off, unexpected
+  errors masked, POST only.
 
 Access (`app/graphql/permissions.py`):
 
@@ -28,11 +30,17 @@ Access (`app/graphql/permissions.py`):
 | `admin` | `IsAdmin` — admin identity required; full schema only |
 
 Request limits (`app/graphql/limits.py`, both schemas): depth ≤ 8, aliases
-≤ 10, ≤ 2000 tokens; per operation at most 1 paid route field (`getRoute` or
+≤ 10, ≤ 2000 tokens, ≤ 10 000 expanded selections across operations; cycles
+are rejected and fragment costs are memoized before other validators run.
+Per operation at most 1 paid route field (`getRoute` or
 `routeAlternatives`), 1 `routeQuality`, 2 each of `points`, `roadQualityGrid`,
 `roadSegments`, `segmentFrames`; `Point.segmentId` only under `point`. Route
 endpoints given as coordinates must lie in the service area (Hungary + margin).
-Violations are `BAD_USER_INPUT` errors raised before any resolver runs.
+Location modifiers (`heading=…:`, `side_of_road:`, `via:`, `place_id:` and any
+`name:value` prefix) are rejected before address fallback. Google HTTP attempts
+have 2 s connect / 5 s read timeouts; timeouts stop fallback/retries and return
+`UPSTREAM_TIMEOUT`. Route resolvers run blocking I/O in a worker thread.
+Input limit violations are `BAD_USER_INPUT` errors raised before any resolver runs.
 
 ## Queries
 
@@ -47,8 +55,8 @@ Violations are `BAD_USER_INPUT` errors raised before any resolver runs.
 | `segmentFrames` | anonymous | yes | the frames a segment was aggregated from |
 | `getRoute` | signed-in* | no | one driving route (one paid Google Directions call); full-schema API consumers only |
 | `routeAlternatives` | signed-in* | yes | up to 3 routes with quality, fastest / smoothest ([routes](#routes)) |
-| `job` | anonymous | yes | job status by id |
-| `activeJob` | anonymous | yes | the running job, if any |
+| `job` | anonymous | yes | job status by id; sanitized `PublicJob` on public schema |
+| `activeJob` | anonymous | yes | the running job, if any; sanitized `PublicJob` on public schema |
 | `config` | admin | no | server-side Google Maps key |
 | `settings` | admin | no | all settings rows |
 | `availableModels` | admin | no | YOLO weight files in `data/models` |
@@ -84,6 +92,18 @@ Violations are `BAD_USER_INPUT` errors raised before any resolver runs.
 | `startRetrain` | admin | no | start `ml/retrain.py` as a job |
 | `promoteCandidate` | admin | no | make the retrained candidate the live model |
 | `startRescoreAndRebuild` | admin | no | re-score stored frames, then rebuild the segments |
+
+## Public job status
+
+On the public schema, `job(id)` and `activeJob` return `PublicJob` with only
+`id`, `status`, `progress`, `total`, `message`, `createdAt`, `completedAt`.
+`message` is a fixed string for the state (e.g. `Job failed.`), never the stored
+message. `error`, `result`, `details`, `type` and `currentStep` are absent, for
+every public caller including signed-in admins. The full schema keeps `Job`
+and its diagnostic fields. The codegen SDL (`schema.graphql`) describes the
+full schema and also includes `PublicJob` for the public contract. Frontend
+`GetJob` / `GetActiveJob` select only common status fields; admin SSE still
+provides detailed progress on the full backend.
 
 ## `Point`
 
@@ -186,7 +206,10 @@ this map query, so returned `rqi` / `score` are in practice never null.
   no API call. (It is a viewpoint link: Google picks the nearest panorama.)
 
 **`routeQuality`** — `path` = `[[lat, lng], ...]` (at most 20 000 points and
-800 km, `limits.py`). The path is sampled every 10 m; a sample belongs to the nearest segment within
+800 km, `limits.py`); edges crossing the antimeridian are rejected. Independent
+service budgets cap generated/interpolated points at 25 000, envelopes at
+4 096 and matching samples at 250 000 before allocation (`BAD_USER_INPUT`).
+The path is sampled every 10 m; a sample belongs to the nearest segment within
 **15 m** whose direction is within **45°** of the route's (modulo 180°, so
 both travel directions count). Samples more than 5 m past a segment's end do
 not count, so a data gap is not credited to its neighbours.

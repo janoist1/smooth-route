@@ -106,18 +106,14 @@ const PROCESS_ROUTE = gql(`
   }
 `)
 
-// Reuse the already-generated GetActiveJob document (identical string) so the
-// typed gql resolves without a codegen run.
+// Shared with training; only fields available on the public status type.
 const GET_ACTIVE_JOB = gql(`
     query GetActiveJob {
         activeJob {
             id
-            type
             status
             progress
             total
-            details
-            result
         }
     }
 `)

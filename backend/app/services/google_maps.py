@@ -1,4 +1,5 @@
 import googlemaps
+import requests
 from typing import Dict, List, Optional, Tuple
 from graphql import GraphQLError
 from app.core.config import settings
@@ -21,7 +22,10 @@ class _SingleAttemptClient(googlemaps.Client):
 class GoogleMapsService:
     def __init__(self):
         if settings.GOOGLE_MAPS_API_KEY:
-            self.client = _SingleAttemptClient(key=settings.GOOGLE_MAPS_API_KEY)
+            self.client = _SingleAttemptClient(
+                key=settings.GOOGLE_MAPS_API_KEY, connect_timeout=2, read_timeout=5,
+                retry_over_query_limit=False,
+            )
         else:
             self.client = None
 
@@ -111,6 +115,8 @@ class GoogleMapsService:
             assert self.client is not None, "Google Maps API key not configured"  # caught below, as before
             return self.client.directions(origin, destination, mode="driving", language="hu", region="hu",
                                           alternatives=alternatives)
+        except (googlemaps.exceptions.Timeout, requests.exceptions.Timeout) as exc:
+            raise _timeout_error() from exc
         except Exception as exc:
             print(f"DEBUG: Error in directions call: {_safe(exc)}")
             return None
@@ -309,9 +315,17 @@ class GoogleMapsService:
                 location = result[0]['geometry']['location']
                 return f"{location['lat']},{location['lng']}"
             return None
+        except (googlemaps.exceptions.Timeout, requests.exceptions.Timeout) as exc:
+            raise _timeout_error() from exc
         except Exception as e:
             print(f"Geocoding error: {_safe(e)}")
             return None
+
+
+def _timeout_error() -> GraphQLError:
+    return GraphQLError("Google Maps request timed out. Please try again later.",
+                        extensions={"code": "UPSTREAM_TIMEOUT"})
+
 
 def _safe(exc: BaseException) -> str:
     """An exception for the log without credentials: requests/googlemaps put
