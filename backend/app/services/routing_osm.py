@@ -116,6 +116,18 @@ def _decode_polyline(encoded: str) -> list[dict]:
     return coords
 
 
+def _summary(legs: list[dict]) -> str:
+    """Road names from OSRM leg summaries ("M1; M7, M7"), de-duplicated in
+    order and joined like a short Google summary ("M1, M7")."""
+    names: list[str] = []
+    for leg in legs:
+        for part in str(leg.get("summary") or "").replace(";", ",").split(","):
+            name = part.strip()
+            if name and name not in names:
+                names.append(name)
+    return ", ".join(names)
+
+
 class OsmRoutingService:
     def geocode(self, address: str) -> str | None:
         address, _ = validate_route_endpoints(address, address)
@@ -189,7 +201,7 @@ class OsmRoutingService:
                 routes.append({
                     "points": _decode_polyline(route["geometry"]),
                     "distance_m": distance, "duration_s": duration,
-                    "summary": " · ".join(leg["summary"] for leg in route["legs"] if leg.get("summary")),
+                    "summary": _summary(route["legs"]),
                 })
             return routes
         except (AttributeError, KeyError, TypeError, ValueError):

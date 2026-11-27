@@ -60,7 +60,7 @@ def test_osrm_parsing_and_one_call_for_three_alternatives(service, upstream):
     assert len(routes) == 3
     assert routes[0]["distance_m"] == 5000.5
     assert routes[0]["duration_s"] == 600.2
-    assert [r["summary"] for r in routes] == ["Kossuth Lajos utca · M1", "Fő utca", ""]
+    assert [r["summary"] for r in routes] == ["Kossuth Lajos utca, M1", "Fő utca", ""]
     assert routes[0]["points"] == [{"lat": 47.5, "lng": 19.04}, {"lat": 47.48, "lng": 19.08}]
     upstream.assert_called_once_with(
         "https://routing.openstreetmap.de/routed-car/route/v1/driving/19.04,47.5;19.08,47.48",
@@ -320,3 +320,10 @@ def test_public_upstream_error_is_not_body_text(service, upstream):
     assert result.errors[0].extensions == {"code": "RESOURCE_EXHAUSTED"}
     assert "private" not in result.errors[0].message
     upstream.assert_called_once()
+
+
+def test_osrm_summary_dedupes_road_names_in_order():
+    from app.services.routing_osm import _summary
+    # Shape seen on routing.openstreetmap.de for Budapest -> Székesfehérvár.
+    assert _summary([{"summary": "M1; M7, M7"}]) == "M1, M7"
+    assert _summary([{"summary": "Fő utca"}, {"summary": "Fő utca, M1"}, {}]) == "Fő utca, M1"
