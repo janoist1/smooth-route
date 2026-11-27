@@ -8,14 +8,19 @@ Smoothest = the lowest speed-weighted impact (route_scoring: a defect at
 90 km/h counts 1.8x, at 30 km/h 0.6x; falls back to the plain length-weighted
 mean quality when a route has no impact score) among routes that are
   (a) at most ``max_extra_duration`` slower than the fastest (default +20 %),
-  (b) covered by quality data on at least ``min_coverage`` of their length,
-so a route we know little about is never called smooth. None when no route
-qualifies; the UI then shows no "Legsimább" badge.
+  (b) covered by quality data on at least ``min_coverage`` of their length
+      (default 10 % floor).
+This selects a relative winner even with sparse data; the API separately
+reports whether its coverage is high enough for a confident badge. None
+when no route qualifies.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Optional, Sequence
+
+
+SMOOTHEST_COVERAGE_FLOOR = 0.1
 
 
 @dataclass(frozen=True)
@@ -34,7 +39,7 @@ class RouteCandidate:
 
 def rank_routes(routes: Sequence[RouteCandidate], scale,
                 max_extra_duration: float = 0.2,
-                min_coverage: float = 0.5) -> tuple[Optional[int], Optional[int]]:
+                min_coverage: float = SMOOTHEST_COVERAGE_FLOOR) -> tuple[Optional[int], Optional[int]]:
     """(fastest index, smoothest index or None)."""
     if not routes:
         return None, None

@@ -79,6 +79,7 @@ const ROUTE_ALTERNATIVES = gql(`
         coverage
         isFastest
         isSmoothest
+        smoothestConfident
         points {
           lat
           lng
@@ -212,6 +213,7 @@ function* planRouteWorker(action: SagaActionFromCreator<typeof actions.planRoute
     coverage: r.coverage,
     isFastest: r.isFastest,
     isSmoothest: r.isSmoothest,
+    smoothestConfident: r.smoothestConfident,
   }))
   const selected = defaultRouteIndex({ routes, fastestIndex: res.fastestIndex ?? null, smoothestIndex: res.smoothestIndex ?? null })
   const chosen = routes.find(r => r.index === selected)
