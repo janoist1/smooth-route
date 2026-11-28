@@ -20,7 +20,7 @@ public site is read-only (Vercel + Neon); analysis runs locally.
 | If you work on… | Open | Don't read |
 |---|---|---|
 | **RQI model / `ml/`** | [ml/README.md](ml/README.md), [docs/GLOSSARY.md](docs/GLOSSARY.md) | `frontend/**` |
-| **Road segments / route quality** | [docs/API_SURFACE.md](docs/API_SURFACE.md) (road-segment layer); config `backend/config/segment_aggregation.json` ([DEVELOPMENT.md](DEVELOPMENT.md#segment-aggregation-config)); ML recipe: [ml/README.md](ml/README.md#segment-evaluation) | `frontend/**` unless UI |
+| **Road segments / route quality** | [docs/API_SURFACE.md](docs/API_SURFACE.md) (road-segment layer); per-side (travel-direction) quality: [docs/ROAD_SIDES.md](docs/ROAD_SIDES.md); config `backend/config/segment_aggregation.json` ([DEVELOPMENT.md](DEVELOPMENT.md#segment-aggregation-config)); ML recipe: [ml/README.md](ml/README.md#segment-evaluation) | `frontend/**` unless UI |
 | **Collecting frames** (Street View quota, network collection, post-processing) | [DEVELOPMENT.md — Collecting Street View frames safely](DEVELOPMENT.md#collecting-street-view-frames-safely) | `ml/**` |
 | **Frontend UI** | [frontend/ARCHITECTURE.md](frontend/ARCHITECTURE.md) | `ml/**` |
 | **Backend API / GraphQL** | [docs/API_SURFACE.md](docs/API_SURFACE.md); config, tables, deps: [DEVELOPMENT.md](DEVELOPMENT.md) | `ml/**`, `frontend/**` |
