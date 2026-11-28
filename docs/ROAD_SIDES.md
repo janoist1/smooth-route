@@ -1,17 +1,20 @@
 # Road sides: quality per travel direction
 
-*Status 2026-11-28 (T-111…T-114). Owner request: analyse both directions. A road is
-sometimes better on one side, and the planner should use the side it drives on.*
+*Status 2026-11-28 (T-111…T-114). The owner asked to analyse both directions: a road
+is sometimes better on one side, and the planner should use the side it drives on.
+**Result: per-side quality from Street View is parked.** Google does not tell us
+which way its car drove (see below). The parts that work today are planned as
+T-112 and T-113.*
 
 ## The problem
 
 Today a two-way road gets **one** score from frames that look one way:
 
-- **Collection.** The network collector points the camera along the OSM way's
-  drawing direction (`network_collector.py`). The route collector points it along
-  the planned route.
-- **Matching.** Matching ignores direction: `map_matching` compares bearings
-  modulo 180°, and `build_rows` pools all frames of a piece into one aggregate.
+- **Collection.** The network collector points the camera along the OSM way's drawing
+  direction (`network_collector.py`). The route collector points it along the
+  planned route.
+- **Matching.** It ignores direction: `map_matching` compares bearings modulo 180°,
+  and `build_rows` pools all frames of a piece.
 
 On wide roads this has two effects:
 - The far lanes are small, or hidden by oncoming traffic.
@@ -20,52 +23,43 @@ On wide roads this has two effects:
 Dual carriageways (motorways, most divided trunk roads) are already fine. OSM maps
 each carriageway as its own `oneway` way, so each gets its own segments.
 
-## What the data says (2026-11-28)
-
-**Segments with frames: 2,312.** Coverage by road type:
-
-| Road type (OSM tags) | Seen from both camera directions | One camera direction only |
+| Segments with frames (2,312), by OSM tags | Seen from both camera directions | One camera direction only |
 |---|---|---|
 | one-way / motorway / roundabout | 274 | 1,097 (fine: one direction exists) |
 | two-way, 1–2 lanes | 5 | 615 (117 km) |
 | two-way, ≥ 3 lanes | 7 | 307 (58 km) |
 
-**Which lanes a frame shows well depends on where the Google car drove, not on
-where the camera points.** The pano sits in the car's own lanes, and those stay
-close in both camera directions. So the *side* of a frame is the side of the
-centreline its pano is on.
+## Why per-side quality is parked
 
-On the 315 two-way multi-lane segments:
-- **Frames:** 3,976 in total. Panos sit right of the centreline (median 3.9 m), left of it (median 2.3 m), or within 1 m (1,182 frames, too close to call). The asymmetry hints at a slightly offset OSM centreline.
-- **Segments:** 88 already have panos on both sides, 124 only on the right, 77 only on the left, and 26 only near the centre.
+Which lanes a frame shows well depends on where the Google car drove, not on where
+the camera points. So a frame's side would have to come from the travel direction
+of the car. **The Street View Static API does not give that direction.** Its metadata
+has only the location, pano id and date, so the pano's position was the only clue.
 
-**Free probe for the missing side.** Street View metadata is free. For each of 25 sampled multi-lane segments, I queried 6 m left and right of the midpoint with a 10 m radius. 10 of the 25 returned two different panos on opposite sides, one per travel direction.
+What we tried (T-111, branch `codex/t111-road-sides`, commit 474e9f7, local only).
+The plumbing worked and passed every gate: per-side columns, GraphQL `sides`, the
+planner picking the driven side, and the segment card. The side signal did not:
 
-Some of those panos are old (2014, 2016), so filter by date.
+1. **Pano position against the OSM centreline.** Within *one* drive the lateral offset wanders 2–5 m along the road:
+   - Rákóczi út: one drive went from +6 m to −2 m.
+   - Haraszti út: one drive went from −3 m to +2 m.
+   - Váci út: one drive spread over +2 to +13 m.
+2. **Rules tried, both failed on real data:**
+   - "Split at the largest lateral gap": a continuous spread always has a gap.
+   - "Frames clearly on both sides of the line, overlapping along the road": still split the Haraszti út drive, because panos from older runs (2019, 2022) are mixed into the same stretch.
+3. An earlier count claimed that 88 of 315 multi-lane segments "already have both sides". It was wrong: it mixed in legacy frames whose stored position is an interpolated route point, not a pano.
 
-## Method
+The dev DB was restored to Alembic 0010 and rebuilt with the current engine, with a
+backup in `data/backups/`. Nothing of T-111 is merged.
 
-Hungary drives on the right, so with respect to the OSM way's drawing direction:
-**right side = forward lanes, left side = backward lanes.**
+**What would unblock it:**
+- **Own capture** (docs/IMAGERY_SOURCES.md): the phone's GPS course gives the travel direction of every frame, so the side is known exactly. The parked plumbing can be reused.
+- Or **image-based side detection**: in a forward-looking frame, the road's centre marking left of the image centre means the car is in the forward lanes. This is ML work and needs labels.
 
-1. **Side of a frame.** Compute the signed lateral offset of the pano position from the stitched line at the snapped point. Do this only for two-way lines (not `oneway`, not a roundabout, not `highway=motorway`).
-   - Do not trust the absolute sign alone, because the centreline is biased. Per stitched line, split the offsets into two groups when there is a clear gap: group means ≥ 2.5 m apart, each group with ≥ 2 frames. The more-right group is `fwd`.
-   - With one group only, assign a side if |offset| ≥ 1.5 m; otherwise the frame is `unknown`.
-   - The camera heading does not decide the side.
-2. **Aggregate per side.** Use the same `aggregate_frames` over the `fwd` frames and over the `bwd` frames, in addition to today's pooled aggregate. Today's pooled aggregate stays the segment's main score.
-   - Store `score_fwd/rqi_fwd/n_fwd/confidence_fwd` and the `_bwd` equivalents. They are null when a side has no frames.
-   - A side counts as **reliable** with ≥ 3 frames and the normal confidence rule.
-3. **Planner.** For each route sample, the travel direction against the segment's drawing direction picks `fwd` or `bwd`. Use that side's class when it is reliable, else the pooled class.
-4. **Map.** One line, as today. When both sides are reliable and differ by ≥ 1 class, the segment card shows both sides, e.g. "→ irányban: Jó, ← irányban: Rossz". Drawing two offset lines at high zoom is a later step (T-114).
-
-## Phases
+## What works with Street View today
 
 | Ticket | What | Cost |
 |---|---|---|
-| **T-111** | Side per frame + per-side aggregates + migration + GraphQL fields + planner uses the side + segment card | no downloads |
-| **T-112** | Fill the missing side on two-way roads with ≥ 3 lanes. Use free metadata at a laterally offset point; accept a pano that is on the other side and not older than the existing side by > 3 years; fetch 1 image per ~25 m along that side's travel direction | ~450 Street View images for today's 227 one-sided multi-lane segments |
-| **T-113** | Occlusion flag: a vehicle covering much of the lower road area. Down-weight or skip the frame (frame-quality flag) | model work, no downloads |
-| **T-114** | Map: two offset lines per side at zoom ≥ 16 when the sides differ | frontend |
-
-Per-lane scores (not just per side) would need lane-level labels. Out of scope until
-the per-side numbers prove useful.
+| **T-112** | **More views on two-way roads with ≥ 3 lanes**, pooled into the normal score. Free metadata 6 m left and right of the centreline often returns a second pano from another drive: 10 of 25 probed segments. Those views show the far lanes closer. The collector's near-existing dedupe must allow it, and very old panos must be filtered out | ~450 Street View images for ~315 segments |
+| **T-113** | **Occlusion flag:** a vehicle covering much of the lower road area. Down-weight or skip the frame (frame-quality flag) | model work, no downloads |
+| T-111 / T-114 | Per-side scores + two offset lines on the map | parked until a direction-aware source exists |

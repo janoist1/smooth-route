@@ -88,6 +88,7 @@ Getting section-level data:
 - Daylight and a dry road only.
 - One frame every ~10 m, triggered by distance, not by time.
 - Record the mount metadata (height, pitch, phone model) with each run.
+- Store the GPS course (travel direction) with every frame. Street View cannot tell which way its car drove, so this is what makes per-side road quality possible ([ROAD_SIDES.md](ROAD_SIDES.md)).
 
 **Apps:** none of the ready apps fits fully, so a small capture mode of our own (web app or app) is likely.
 - Open Camera has only timed capture.
